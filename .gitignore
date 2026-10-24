@@ -1,0 +1,14 @@
+node_modules/
+target/
+dist/
+.env
+.env.*.local
+*.log
+*.db
+*.sqlite*
+coverage/
+test-results/
+playwright-report/
+.superpowers/
+artifacts/
+!deploy/.env.example

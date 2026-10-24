@@ -1,0 +1,12 @@
+{
+  "name": "tri-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tools/tests/*.test.mjs",
+    "inventory": "node tools/inventory.mjs",
+    "contracts:check": "node tools/compare-contracts.mjs"
+  }
+}
