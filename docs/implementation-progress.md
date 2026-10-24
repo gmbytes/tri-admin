@@ -1,12 +1,15 @@
 # tri-admin 实施记录
 
-计划：`docs/superpowers/plans/2026-10-24-tri-admin-tauri-rust-tok.md`。
+当前计划：`docs/superpowers/plans/2026-10-24-tri-admin-tauri-rust-tok-mongodb.md`（2026-10-24 用户确认后台也改为 MongoDB）。
 
 ## 约定与裁定
 
 - Ruling: 使用用户指定的新目录 `tri-admin` 作为独立 Git 工程，在 `codex/tauri-rust-migration` 分支实施；来源 `vue-admin` 不修改。原因：目标目录本身已隔离于来源项目。若之后需要合并仓库，需另行处理历史归属。
 - Ruling: 当前由主实现者在本会话逐项推进；最终安排独立代码审查，避免每项任务重复加载上下文。
 - Ruling: Windows 环境中的技能 Bash 辅助脚本若不兼容，使用等价本机脚本保持 ledger、任务 brief、基准提交和验证记录；不跳过验证。
+- Ruling: 用户确认新后台使用 MongoDB，SQLx/MySQL 运行时方案已被 V2 替代。已采集的 MySQL 空表仅保留为导入基线。跨存储按业务域冻结/转换/切换，回退包含数据反向转换，不能继续使用共库切路由假设。
+- Ruling: 主后台锁定本机已有 Rust 1.94.0；tok 要求的 1.99.0 在独立游戏验证工程处理，避免拖动后台工具链。
+- Ruling: 环境文件改用跨平台 Node 生成器，已有文件不覆盖，随机凭据不打印；测试环境与既有服务端口隔离。
 
 ## 预检
 
@@ -22,8 +25,12 @@
 
 Task 1: in progress — 建立接口清单与契约工具。
 
-Task 2–12: pending。
+Task 2: in progress — Rust/MongoDB 基础与副本集集成测试。
+
+Task 3–12: pending。
 
 ## 验证记录
 
-尚未产生功能验证结果。
+- Node 工具测试 16/16 通过；接口清单 232 项，其中运行时 210、未注册 22。
+- 来源空表结构：36 表、334 字段、84 索引字段，采集于独立 13316 MySQL 容器。
+- Rust 基础测试已观察到缺失实现的编译失败；MongoDB 版本的测试正在按 V2 执行。

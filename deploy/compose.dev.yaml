@@ -1,0 +1,19 @@
+name: tri-admin-dev
+services:
+  mongodb:
+    image: mongodb/mongodb-community-server@sha256:116c6fdffc2ae2325726f6ab94893b502478d17d129e9ec2b78f67e9077e676f
+    command: ["mongod", "--replSet", "tri-admin-rs", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:13317:27017"
+    volumes:
+      - tri_admin_mongo:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --eval 'try { rs.status(); quit(db.hello().isWritablePrimary ? 0 : 1); } catch (e) { if (e.code === 94) { rs.initiate({_id:"tri-admin-rs",members:[{_id:0,host:"localhost:27017"}]}); } else { throw e; } } quit(1);'
+      interval: 3s
+      timeout: 5s
+      retries: 40
+volumes:
+  tri_admin_mongo:

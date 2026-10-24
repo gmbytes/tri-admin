@@ -1,0 +1,2623 @@
+{
+  "version": 1,
+  "source": "mysql",
+  "target": "mongodb",
+  "counts": {
+    "tables": 36,
+    "columns": 334,
+    "indexFields": 84
+  },
+  "tables": [
+    {
+      "source": "casbin_rule",
+      "target": "casbin_rule",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "ptype",
+          "target": "ptype",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v0",
+          "target": "v0",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v1",
+          "target": "v1",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v2",
+          "target": "v2",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v3",
+          "target": "v3",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v4",
+          "target": "v4",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "v5",
+          "target": "v5",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "exa_attachment_category",
+      "target": "exa_attachment_category",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(255)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "pid",
+          "target": "pid",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "exa_customers",
+      "target": "exa_customers",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "customer_name",
+          "target": "customer_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "customer_phone_data",
+          "target": "customer_phone_data",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "sys_user_id",
+          "target": "sys_user_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_user_authority_id",
+          "target": "sys_user_authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "exa_file_chunks",
+      "target": "exa_file_chunks",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "exa_file_id",
+          "target": "exa_file_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "file_chunk_number",
+          "target": "file_chunk_number",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "file_chunk_path",
+          "target": "file_chunk_path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "exa_file_upload_and_downloads",
+      "target": "exa_file_upload_and_downloads",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "class_id",
+          "target": "class_id",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "url",
+          "target": "url",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "tag",
+          "target": "tag",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "key",
+          "target": "key",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "exa_files",
+      "target": "exa_files",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "file_name",
+          "target": "file_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "file_md5",
+          "target": "file_md5",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "file_path",
+          "target": "file_path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "chunk_total",
+          "target": "chunk_total",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "is_finish",
+          "target": "is_finish",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "jwt_blacklists",
+      "target": "jwt_blacklists",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "jwt",
+          "target": "jwt",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "open_api_logs",
+      "target": "open_api_logs",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "app_id",
+          "target": "app_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "app_key",
+          "target": "app_key",
+          "sourceType": "varchar(32)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "method",
+          "target": "method",
+          "sourceType": "varchar(10)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status_code",
+          "target": "status_code",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "ip",
+          "target": "ip",
+          "sourceType": "varchar(50)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "latency",
+          "target": "latency",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "request_body",
+          "target": "request_body",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "response_body",
+          "target": "response_body",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "error_message",
+          "target": "error_message",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "open_app_scopes",
+      "target": "open_app_scopes",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "app_id",
+          "target": "app_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "scope",
+          "target": "scope",
+          "sourceType": "varchar(100)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "scope_name",
+          "target": "scope_name",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "open_app_users",
+      "target": "open_app_users",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "app_id",
+          "target": "app_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "username",
+          "target": "username",
+          "sourceType": "varchar(100)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "nickname",
+          "target": "nickname",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "mobile",
+          "target": "mobile",
+          "sourceType": "varchar(30)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "email",
+          "target": "email",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "password",
+          "target": "password",
+          "sourceType": "varchar(255)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "avatar",
+          "target": "avatar",
+          "sourceType": "varchar(255)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "session_version",
+          "target": "session_version",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "last_login_at",
+          "target": "last_login_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "last_login_ip",
+          "target": "last_login_ip",
+          "sourceType": "varchar(50)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "source",
+          "target": "source",
+          "sourceType": "varchar(30)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "open_apps",
+      "target": "open_apps",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "app_name",
+          "target": "app_name",
+          "sourceType": "varchar(100)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "app_key",
+          "target": "app_key",
+          "sourceType": "varchar(32)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "description",
+          "target": "description",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "expires_at",
+          "target": "expires_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "rate_limit",
+          "target": "rate_limit",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "allowed_ips",
+          "target": "allowed_ips",
+          "sourceType": "varchar(1000)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "allow_register",
+          "target": "allow_register",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "allow_password_login",
+          "target": "allow_password_login",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "allow_sms_login",
+          "target": "allow_sms_login",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "allow_email_login",
+          "target": "allow_email_login",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "user_isolation_mode",
+          "target": "user_isolation_mode",
+          "sourceType": "varchar(20)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "created_by",
+          "target": "created_by",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "contact",
+          "target": "contact",
+          "sourceType": "varchar(200)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "source",
+          "target": "source",
+          "sourceType": "varchar(20)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "remark",
+          "target": "remark",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "login_fail_max_attempts",
+          "target": "login_fail_max_attempts",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "login_fail_lock_minutes",
+          "target": "login_fail_lock_minutes",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "open_scopes",
+      "target": "open_scopes",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "scope",
+          "target": "scope",
+          "sourceType": "varchar(100)",
+          "nullable": false,
+          "conversion": "preserve"
+        },
+        {
+          "source": "scope_name",
+          "target": "scope_name",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "description",
+          "target": "description",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "category",
+          "target": "category",
+          "sourceType": "varchar(50)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_api_tokens",
+      "target": "sys_api_tokens",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "user_id",
+          "target": "user_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "authority_id",
+          "target": "authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "token",
+          "target": "token",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "token_preview",
+          "target": "token_preview",
+          "sourceType": "varchar(80)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "expires_at",
+          "target": "expires_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "remark",
+          "target": "remark",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_apis",
+      "target": "sys_apis",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "description",
+          "target": "description",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "api_group",
+          "target": "api_group",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "method",
+          "target": "method",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_authorities",
+      "target": "sys_authorities",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "authority_id",
+          "target": "authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "authority_name",
+          "target": "authority_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "parent_id",
+          "target": "parent_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "default_router",
+          "target": "default_router",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_authority_btns",
+      "target": "sys_authorities",
+      "mode": "embed-ids",
+      "targetField": "button_permissions",
+      "ownerKey": "authority_id",
+      "valueKey": null,
+      "fields": [
+        {
+          "source": "authority_id",
+          "target": "authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_menu_id",
+          "target": "sys_menu_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_base_menu_btn_id",
+          "target": "sys_base_menu_btn_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_authority_menus",
+      "target": "sys_authorities",
+      "mode": "embed-ids",
+      "targetField": "menu_ids",
+      "ownerKey": "sys_authority_authority_id",
+      "valueKey": "sys_base_menu_id",
+      "fields": [
+        {
+          "source": "sys_base_menu_id",
+          "target": "sys_base_menu_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_authority_authority_id",
+          "target": "sys_authority_authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_auto_code_histories",
+      "target": "sys_auto_code_histories",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "table_name",
+          "target": "table_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "package",
+          "target": "package",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "request",
+          "target": "request",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "struct_name",
+          "target": "struct_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "abbreviation",
+          "target": "abbreviation",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "business_db",
+          "target": "business_db",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "description",
+          "target": "description",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "templates",
+          "target": "templates",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "Injections",
+          "target": "Injections",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "flag",
+          "target": "flag",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "api_ids",
+          "target": "api_ids",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "menu_id",
+          "target": "menu_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "export_template_id",
+          "target": "export_template_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "package_id",
+          "target": "package_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_auto_code_packages",
+      "target": "sys_auto_code_packages",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "desc",
+          "target": "desc",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "label",
+          "target": "label",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "template",
+          "target": "template",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "package_name",
+          "target": "package_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "module",
+          "target": "module",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_base_menu_btns",
+      "target": "sys_base_menu_btns",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "desc",
+          "target": "desc",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "sys_base_menu_id",
+          "target": "sys_base_menu_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_base_menu_parameters",
+      "target": "sys_base_menu_parameters",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "sys_base_menu_id",
+          "target": "sys_base_menu_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "type",
+          "target": "type",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "key",
+          "target": "key",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "value",
+          "target": "value",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_base_menus",
+      "target": "sys_base_menus",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "menu_level",
+          "target": "menu_level",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "parent_id",
+          "target": "parent_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "hidden",
+          "target": "hidden",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "component",
+          "target": "component",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "sort",
+          "target": "sort",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "active_name",
+          "target": "active_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "keep_alive",
+          "target": "keep_alive",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "default_menu",
+          "target": "default_menu",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "title",
+          "target": "title",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "icon",
+          "target": "icon",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "close_tab",
+          "target": "close_tab",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "transition_type",
+          "target": "transition_type",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_data_authority_id",
+      "target": "sys_authorities",
+      "mode": "embed-ids",
+      "targetField": "data_authority_ids",
+      "ownerKey": "sys_authority_authority_id",
+      "valueKey": "data_authority_id_authority_id",
+      "fields": [
+        {
+          "source": "sys_authority_authority_id",
+          "target": "sys_authority_authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "data_authority_id_authority_id",
+          "target": "data_authority_id_authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_dictionaries",
+      "target": "sys_dictionaries",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "type",
+          "target": "type",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "desc",
+          "target": "desc",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "parent_id",
+          "target": "parent_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_dictionary_details",
+      "target": "sys_dictionary_details",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "label",
+          "target": "label",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "value",
+          "target": "value",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "extend",
+          "target": "extend",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sort",
+          "target": "sort",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_dictionary_id",
+          "target": "sys_dictionary_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "parent_id",
+          "target": "parent_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "level",
+          "target": "level",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_error",
+      "target": "sys_error",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "form",
+          "target": "form",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "info",
+          "target": "info",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "level",
+          "target": "level",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "solution",
+          "target": "solution",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "varchar(20)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_export_template_condition",
+      "target": "sys_export_template_condition",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "template_id",
+          "target": "template_id",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "from",
+          "target": "from",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "column",
+          "target": "column",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "operator",
+          "target": "operator",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_export_template_join",
+      "target": "sys_export_template_join",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "template_id",
+          "target": "template_id",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "joins",
+          "target": "joins",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "table",
+          "target": "table",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "on",
+          "target": "on",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_export_templates",
+      "target": "sys_export_templates",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "db_name",
+          "target": "db_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "table_name",
+          "target": "table_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "template_id",
+          "target": "template_id",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "template_info",
+          "target": "template_info",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "sql",
+          "target": "sql",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "import_sql",
+          "target": "import_sql",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "limit",
+          "target": "limit",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "order",
+          "target": "order",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_ignore_apis",
+      "target": "sys_ignore_apis",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "method",
+          "target": "method",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_login_logs",
+      "target": "sys_login_logs",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "username",
+          "target": "username",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "ip",
+          "target": "ip",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "tinyint(1)",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "error_message",
+          "target": "error_message",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "agent",
+          "target": "agent",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "user_id",
+          "target": "user_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_operation_records",
+      "target": "sys_operation_records",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "ip",
+          "target": "ip",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "method",
+          "target": "method",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "path",
+          "target": "path",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "status",
+          "target": "status",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "latency",
+          "target": "latency",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "agent",
+          "target": "agent",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "error_message",
+          "target": "error_message",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "body",
+          "target": "body",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "resp",
+          "target": "resp",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "user_id",
+          "target": "user_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_params",
+      "target": "sys_params",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "name",
+          "target": "name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "key",
+          "target": "key",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "value",
+          "target": "value",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "desc",
+          "target": "desc",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_user_authority",
+      "target": "sys_users",
+      "mode": "embed-ids",
+      "targetField": "authority_ids",
+      "ownerKey": "sys_user_id",
+      "valueKey": "sys_authority_authority_id",
+      "fields": [
+        {
+          "source": "sys_user_id",
+          "target": "sys_user_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "sys_authority_authority_id",
+          "target": "sys_authority_authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        }
+      ]
+    },
+    {
+      "source": "sys_users",
+      "target": "sys_users",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "uuid",
+          "target": "uuid",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "username",
+          "target": "username",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "password",
+          "target": "password",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "nick_name",
+          "target": "nick_name",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "header_img",
+          "target": "header_img",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "authority_id",
+          "target": "authority_id",
+          "sourceType": "bigint unsigned",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "phone",
+          "target": "phone",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "email",
+          "target": "email",
+          "sourceType": "varchar(191)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "enable",
+          "target": "enable",
+          "sourceType": "bigint",
+          "nullable": true,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "origin_setting",
+          "target": "origin_setting",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    },
+    {
+      "source": "sys_versions",
+      "target": "sys_versions",
+      "mode": "collection",
+      "fields": [
+        {
+          "source": "id",
+          "target": "id",
+          "sourceType": "bigint unsigned",
+          "nullable": false,
+          "conversion": "checked-int64"
+        },
+        {
+          "source": "created_at",
+          "target": "created_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "updated_at",
+          "target": "updated_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "deleted_at",
+          "target": "deleted_at",
+          "sourceType": "datetime(3)",
+          "nullable": true,
+          "conversion": "bson-date"
+        },
+        {
+          "source": "version_name",
+          "target": "version_name",
+          "sourceType": "varchar(255)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "version_code",
+          "target": "version_code",
+          "sourceType": "varchar(100)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "description",
+          "target": "description",
+          "sourceType": "varchar(500)",
+          "nullable": true,
+          "conversion": "preserve"
+        },
+        {
+          "source": "version_data",
+          "target": "version_data",
+          "sourceType": "text",
+          "nullable": true,
+          "conversion": "preserve"
+        }
+      ]
+    }
+  ],
+  "identifiers": {
+    "internal": "_id:ObjectId",
+    "external": "id:int64",
+    "sequences": "_counters; advance to maximum imported id",
+    "rejectOutOfRange": true
+  },
+  "passwords": "preserve bcrypt hash without rehashing",
+  "softDelete": "deleted_at BSON Date or null",
+  "activation": "freeze source writes; validate counts, uniqueness and references; switch the whole domain"
+}
