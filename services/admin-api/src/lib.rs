@@ -35,6 +35,9 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::header::CONTENT_DISPOSITION,
         ]);
     Router::new()
+        .merge(modules::roles::router::routes())
+        .merge(modules::users::router::routes())
+        .merge(modules::menus::router::routes())
         .nest("/api/v1/auth", modules::auth::router::routes())
         .route("/health/live", get(modules::health::live))
         .route("/health/ready", get(modules::health::ready))

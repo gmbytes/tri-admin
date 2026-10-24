@@ -342,3 +342,58 @@ async fn changing_usernames_does_not_bypass_the_per_ip_login_limit() {
     );
     app.cleanup().await;
 }
+
+#[tokio::test]
+async fn changing_own_password_requires_the_current_password_and_revokes_sessions() {
+    let app = TestApp::new().await;
+    let tokens = app.login().await;
+    let access = tokens["accessToken"].as_str().unwrap();
+    let (status,_)=app.send("POST","/api/v1/auth/password",json!({"currentPassword":"wrong-current-password","newPassword":"NewPersonalPassword-2026"}),Some(access)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        app.send("GET", "/api/v1/auth/me", Value::Null, Some(access))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.send(
+            "POST",
+            "/api/v1/auth/password",
+            json!({"currentPassword":PASSWORD,"newPassword":"NewPersonalPassword-2026"}),
+            Some(access)
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        app.send("GET", "/api/v1/auth/me", Value::Null, Some(access))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.send(
+            "POST",
+            "/api/v1/auth/login",
+            json!({"username":"admin","password":PASSWORD}),
+            None
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.send(
+            "POST",
+            "/api/v1/auth/login",
+            json!({"username":"admin","password":"NewPersonalPassword-2026"}),
+            None
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    app.cleanup().await;
+}

@@ -14,10 +14,11 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
         .collection::<Document>("_schema_migrations")
         .count_documents(doc! {"$or":[
             {"_id":"core","version":1,"bootstrapComplete":true},
-            {"_id":"auth","version":1}
+            {"_id":"auth","version":1},
+            {"_id":"rbac","version":1}
         ]})
         .await?;
-    Ok(count == 2)
+    Ok(count == 3)
 }
 
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
@@ -115,5 +116,6 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
         )
         .await?;
     metadata.update_one(doc!{"_id":"core"},doc!{"$setOnInsert":{"version":1,"checksum":checksum,"createdAt":DateTime::now(),"bootstrapComplete":false}}).upsert(true).await?;
-    super::auth_schema::migrate_auth(database).await
+    super::auth_schema::migrate_auth(database).await?;
+    super::rbac_schema::migrate_rbac(database).await
 }

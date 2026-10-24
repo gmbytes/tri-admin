@@ -13,6 +13,13 @@ pub struct RefreshInput {
     pub refresh_token: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChangePasswordInput {
+    pub current_password: String,
+    pub new_password: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSummary {
@@ -21,6 +28,7 @@ pub struct UserSummary {
     pub display_name: String,
     pub role_ids: Vec<String>,
     pub permissions: Vec<String>,
+    pub data_scope: crate::common::model::DataScope,
 }
 
 #[derive(Serialize)]

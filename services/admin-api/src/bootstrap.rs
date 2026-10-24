@@ -1,12 +1,10 @@
 use crate::{common::error::AppError, storage::schema::migrate_database};
-use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use futures_util::FutureExt;
 use mongodb::{
     Database,
     bson::{DateTime, Document, doc, oid::ObjectId},
     options::ReturnDocument,
 };
-use rand_core::OsRng;
 use serde::Serialize;
 
 pub struct AdminInput {
@@ -25,30 +23,10 @@ pub async fn bootstrap_database(
     database: &Database,
     input: &AdminInput,
 ) -> Result<BootstrapReport, AppError> {
-    if input.username.len() < 3
-        || input.username.len() > 64
-        || !input
-            .username
-            .chars()
-            .all(|c| c.is_alphanumeric() || "_-.".contains(c))
-    {
-        return Err(AppError::Validation(
-            "用户名需为 3–64 字符的字母、数字、下划线、点或短横线".into(),
-        ));
-    }
-    if input.password.chars().count() < 12 || input.password.len() > 1024 {
-        return Err(AppError::Validation("管理员密码需至少 12 个字符".into()));
-    }
+    crate::common::validation::username(&input.username)?;
+    crate::common::validation::password(&input.password)?;
     migrate_database(database).await?;
-    let password = input.password.clone();
-    let hash = tokio::task::spawn_blocking(move || {
-        Argon2::default()
-            .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-            .map(|hash| hash.to_string())
-    })
-    .await
-    .map_err(|_| AppError::Internal)?
-    .map_err(|_| AppError::Internal)?;
+    let hash = crate::common::password::hash(input.password.clone()).await?;
     let mut session = database.client().start_session().await?;
     let result = session.start_transaction().and_run((database.clone(),input.username.clone(),hash),|session,(database,username,hash)| async move {
         let users = database.collection::<Document>("users");
@@ -61,7 +39,7 @@ pub async fn bootstrap_database(
             return Ok(BootstrapReport{admin_created:false,user_id:id.to_hex()});
         }
         let now=DateTime::now();
-        let owner=database.collection::<Document>("roles").find_one_and_update(doc!{"slug":"owner"},doc!{"$setOnInsert":{"name":"系统管理员","slug":"owner","permissions":["*"],"protected":true,"createdAt":now,"updatedAt":now,"version":1}})
+        let owner=database.collection::<Document>("roles").find_one_and_update(doc!{"slug":"owner"},doc!{"$setOnInsert":{"name":"系统管理员","slug":"owner","permissions":["*"],"dataScope":"all","protected":true,"createdAt":now,"updatedAt":now,"version":1}})
             .upsert(true).return_document(ReturnDocument::After).session(&mut *session).await?
             .ok_or_else(||mongodb::error::Error::custom("owner-role-missing"))?;
         let role_id=owner.get_object_id("_id").map_err(mongodb::error::Error::custom)?;

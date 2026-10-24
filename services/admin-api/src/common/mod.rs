@@ -1,3 +1,8 @@
 pub mod error;
+pub mod model;
+pub mod pagination;
 pub mod password;
+pub mod request;
 pub mod response;
+pub mod transaction;
+pub mod validation;

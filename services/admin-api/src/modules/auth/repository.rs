@@ -29,7 +29,13 @@ pub async fn summary(database: &Database, user: &Document) -> Result<UserSummary
         .try_collect::<Vec<_>>()
         .await?;
     let mut permissions = BTreeSet::new();
+    let mut data_scope = crate::common::model::DataScope::Own;
     for role in roles {
+        match role.get_str("dataScope").map_err(|_| AppError::Internal)? {
+            "all" => data_scope = crate::common::model::DataScope::All,
+            "self" => {}
+            _ => return Err(AppError::Internal),
+        }
         if let Ok(values) = role.get_array("permissions") {
             for value in values {
                 if let Bson::String(code) = value {
@@ -50,5 +56,6 @@ pub async fn summary(database: &Database, user: &Document) -> Result<UserSummary
             .into(),
         role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
         permissions: permissions.into_iter().collect(),
+        data_scope,
     })
 }

@@ -21,6 +21,7 @@ pub fn routes() -> Router<AppState> {
         .route("/refresh", post(refresh))
         .route("/logout", post(logout))
         .route("/me", get(me))
+        .route("/password", post(change_password))
 }
 
 async fn login(
@@ -62,4 +63,15 @@ async fn logout(
 
 async fn me(context: AuthContext) -> ApiResponse<UserSummary> {
     ApiResponse::success(context.user)
+}
+
+async fn change_password(
+    State(state): State<AppState>,
+    context: AuthContext,
+    request: Request,
+) -> Result<StatusCode, AppError> {
+    let input =
+        crate::common::request::json::<super::dto::ChangePasswordInput>(request, &state).await?;
+    service::change_password(&state, &context, input).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

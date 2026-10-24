@@ -47,7 +47,7 @@ pub async fn login(
     peer: &str,
 ) -> Result<TokenResponse, AppError> {
     if input.username.trim().is_empty()
-        || input.username.len() > 64
+        || input.username.trim().chars().count() > 64
         || input.password.is_empty()
         || input.password.len() > 1024
     {
@@ -146,6 +146,9 @@ pub async fn authenticate(state: &AppState, raw: &str) -> Result<AuthContext, Ap
     let user_id = ObjectId::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
     let session_id = ObjectId::parse_str(&claims.sid).map_err(|_| AppError::Unauthorized)?;
     let database = state.require_database()?;
+    if !crate::storage::schema::is_initialized(database).await? {
+        return Err(AppError::NotReady);
+    }
     let session=database.collection::<Document>("sessions").find_one(doc!{"_id":session_id,"userId":user_id,"status":"active","revokedAt":null,"expiresAt":{"$gt":DateTime::now()}}).await?;
     if session.is_none() {
         return Err(AppError::Unauthorized);
@@ -240,4 +243,46 @@ pub async fn logout(state: &AppState, context: &AuthContext) -> Result<(), AppEr
         )
         .await?;
     Ok(())
+}
+
+pub async fn change_password(
+    state: &AppState,
+    context: &AuthContext,
+    input: super::dto::ChangePasswordInput,
+) -> Result<(), AppError> {
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Credentials {
+        password_hash: String,
+        version: i64,
+    }
+    crate::common::validation::password(&input.new_password)?;
+    if input.current_password.is_empty() || input.current_password.len() > 1024 {
+        return Err(AppError::Validation("当前密码格式无效".into()));
+    }
+    if input.current_password == input.new_password {
+        return Err(AppError::Validation("新密码不能与当前密码相同".into()));
+    }
+    let database = state.require_database()?;
+    let id = ObjectId::parse_str(&context.user.id).map_err(|_| AppError::Internal)?;
+    enforce_login_rate(database, &format!("password:{id}"), 5).await?;
+    let credentials = database
+        .collection::<Credentials>("users")
+        .find_one(doc! {"_id":id,"status":"active","deletedAt":null})
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if !password::verify(input.current_password, credentials.password_hash).await? {
+        return Err(AppError::InvalidCredentials);
+    }
+    crate::modules::users::service::reset_password(
+        database,
+        crate::modules::rbac::shared::Actor::new(context)?,
+        id,
+        crate::modules::users::dto::PasswordInput {
+            version: credentials.version,
+            password: input.new_password,
+        },
+    )
+    .await
 }

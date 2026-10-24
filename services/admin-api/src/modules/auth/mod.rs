@@ -16,6 +16,22 @@ pub struct AuthContext {
     pub session_id: ObjectId,
 }
 
+impl AuthContext {
+    pub fn can(&self, permission: &str) -> bool {
+        self.user
+            .permissions
+            .iter()
+            .any(|code| code == "*" || code == permission)
+    }
+    pub fn require(&self, permission: &str) -> Result<(), AppError> {
+        if self.can(permission) {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+}
+
 impl FromRequestParts<AppState> for AuthContext {
     type Rejection = AppError;
     async fn from_request_parts(

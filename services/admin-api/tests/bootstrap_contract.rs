@@ -183,24 +183,24 @@ async fn refresh_token_hash_is_unique_and_deleted_menu_routes_can_be_reused() {
     );
     let menus = database.collection::<Document>("menus");
     menus
-        .insert_one(doc! {"path":"/users","deletedAt":null})
+        .insert_one(doc! {"path":"/fixture-users","deletedAt":null})
         .await
         .unwrap();
     assert!(
         menus
-            .insert_one(doc! {"path":"/users","deletedAt":null})
+            .insert_one(doc! {"path":"/fixture-users","deletedAt":null})
             .await
             .is_err()
     );
     menus
         .update_one(
-            doc! {"path":"/users"},
+            doc! {"path":"/fixture-users"},
             doc! {"$set":{"deletedAt":mongodb::bson::DateTime::now()}},
         )
         .await
         .unwrap();
     menus
-        .insert_one(doc! {"path":"/users","deletedAt":null})
+        .insert_one(doc! {"path":"/fixture-users","deletedAt":null})
         .await
         .unwrap();
     database.drop().await.unwrap();

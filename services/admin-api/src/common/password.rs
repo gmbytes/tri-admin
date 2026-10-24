@@ -28,3 +28,18 @@ pub async fn verify(password: String, hash: String) -> Result<bool, AppError> {
     .await
     .map_err(|_| AppError::Internal)
 }
+
+pub async fn hash(password: String) -> Result<String, AppError> {
+    super::validation::password(&password)?;
+    tokio::task::spawn_blocking(move || {
+        Argon2::default()
+            .hash_password(
+                password.as_bytes(),
+                &SaltString::generate(&mut rand_core::OsRng),
+            )
+            .map(|hash| hash.to_string())
+    })
+    .await
+    .map_err(|_| AppError::Internal)?
+    .map_err(|_| AppError::Internal)
+}
