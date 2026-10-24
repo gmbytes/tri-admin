@@ -6,8 +6,6 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "dev:env": "node tools/init-dev-env.mjs",
-    "test": "node --test tools/tests/*.test.mjs",
-    "inventory": "node tools/inventory.mjs",
-    "contracts:check": "node tools/compare-contracts.mjs"
+    "test": "node --test tools/tests/*.test.mjs"
   }
 }

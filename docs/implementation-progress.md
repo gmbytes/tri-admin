@@ -1,36 +1,34 @@
 # tri-admin 实施记录
 
-当前计划：`docs/superpowers/plans/2026-10-24-tri-admin-tauri-rust-tok-mongodb.md`（2026-10-24 用户确认后台也改为 MongoDB）。
+当前规范：[全新实现计划 V3](superpowers/plans/2026-10-24-tri-admin-greenfield.md)。
 
-## 约定与裁定
+## 用户决定与实施裁定
 
-- Ruling: 使用用户指定的新目录 `tri-admin` 作为独立 Git 工程，在 `codex/tauri-rust-migration` 分支实施；来源 `vue-admin` 不修改。原因：目标目录本身已隔离于来源项目。若之后需要合并仓库，需另行处理历史归属。
-- Ruling: 当前由主实现者在本会话逐项推进；最终安排独立代码审查，避免每项任务重复加载上下文。
-- Ruling: Windows 环境中的技能 Bash 辅助脚本若不兼容，使用等价本机脚本保持 ledger、任务 brief、基准提交和验证记录；不跳过验证。
-- Ruling: 用户确认新后台使用 MongoDB，SQLx/MySQL 运行时方案已被 V2 替代。已采集的 MySQL 空表仅保留为导入基线。跨存储按业务域冻结/转换/切换，回退包含数据反向转换，不能继续使用共库切路由假设。
-- Ruling: 主后台锁定本机已有 Rust 1.94.0；tok 要求的 1.99.0 在独立游戏验证工程处理，避免拖动后台工具链。
-- Ruling: 环境文件改用跨平台 Node 生成器，已有文件不覆盖，随机凭据不打印；测试环境与既有服务端口隔离。
-
-## 预检
-
-| 依赖任务 | 接口 | 处理 |
-| --- | --- | --- |
-| 1 → 3/5–9 | 路由清单、来源证据、契约夹具 | 规范化方法/路径，数据类型不自动转换 |
-| 2 → 5–11 | AppState、ApiResponse、AppError、数据库迁移 | 共用基础类型，统一 schema 迁移所有权 |
-| 3 → 4–9 | `/api` 网关、路由所有者 | 仅剥离一次前缀，写请求不回退或双发 |
-| 5 → 6–11 | AuthContext、令牌与撤销 | 先验证跨实现互通，再切换依赖模块 |
-| 10 → 11 | 管理协议、命令状态、deadline | 游戏身份与管理员身份分离，未知执行结果不盲重试 |
+- 新项目直接在指定 tri-admin 目录的 codex/tauri-rust-migration 分支实施，原 vue-admin 与现有数据库不修改。
+- 用户确认后台使用 MongoDB，随后进一步确认重构过程中也不做兼容；V1/V2 共库、旧接口、导入和 Go 过渡方案全部废止。已删除当前树中的兼容工具与旧契约，历史仅保留在 Git。
+- 新 REST API、ObjectId 字符串 ID、camelCase DTO、标准 HTTP 状态、Argon2id 与新权限操作码。
+- Rust 后台固定本机已有 1.94.0；tok 的 1.99.0 在独立游戏验证工程处理。
+- 使用原生 ledger 代替本机无法运行的技能 Bash 辅助脚本，保留任务、失败/通过结果、裁定和提交证据。
+- 开发密钥由跨平台 Node 工具随机生成，已有环境不覆盖，不打印秘密；数据库测试使用独立本机 13317 副本集。
 
 ## 任务状态
 
-Task 1: in progress — 建立接口清单与契约工具。
+| 任务 | 状态 | 当前证据 |
+| --- | --- | --- |
+| 1 新规范与工程清理 | complete | product-spec/API 设计；当前树无 Go/SQLx/旧接口适配，来源工程未变 |
+| 2 Rust/MongoDB 基础 | complete | 11 项 Rust 测试、2 项 Node 测试、Clippy 通过；CLI 隐藏输入初始化；实际 live/ready HTTP 200 |
+| 3 新认证/会话 | in progress | 准备新接口与失效/轮换测试 |
+| 4–12 | pending | 按 V3 继续推进，尚未宣称交付 |
 
-Task 2: in progress — Rust/MongoDB 基础与副本集集成测试。
+## Task 2 验证
 
-Task 3–12: pending。
+- 真实副本集：tri-admin-rs，MongoDB 8.2.1，13317；固定镜像 digest。
+- Red → Green：缺少服务实现的测试先失败；刷新摘要唯一约束测试观察到重复插入成功的失败，再增加唯一索引后通过。
+- 实际事务验证：并发仅创建一个管理员；重复初始化保留 Argon2id 密码摘要；插入校验失败回滚 Owner 角色和初始化标记；禁用用户不被重启初始化重新启用。
+- schema 版本不受支持时拒绝初始化；软删除菜单允许复用路径；准备状态要求事务已提交的初始化。
+- cargo test --workspace：11 passed / 0 failed；npm test：2 passed / 0 failed。
+- cargo clippy --workspace --all-targets -- -D warnings：通过。
+- 真实 CLI bootstrap 创建开发验证管理员，密码只保存在忽略的本地 scratch 文件中，不提交。
+- 真实服务 18088：GET /health/live、GET /health/ready 均 HTTP 200，并有 X-Request-Id。该次验证进程已停止，避免影响后续构建。
 
-## 验证记录
-
-- Node 工具测试 16/16 通过；接口清单 232 项，其中运行时 210、未注册 22。
-- 来源空表结构：36 表、334 字段、84 索引字段，采集于独立 13316 MySQL 容器。
-- Rust 基础测试已观察到缺失实现的编译失败；MongoDB 版本的测试正在按 V2 执行。
+完整目标仍包含认证、权限、桌面界面、其他管理模块、tok 与跨平台发布；当前基础验证不等于整个目标完成。

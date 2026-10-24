@@ -3,7 +3,7 @@ name = "admin-api"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+publish = false
 
 [dependencies]
 axum.workspace = true
@@ -15,7 +15,10 @@ mongodb.workspace = true
 futures-util.workspace = true
 chrono.workspace = true
 uuid.workspace = true
-bcrypt.workspace = true
+argon2.workspace = true
+rand_core.workspace = true
+sha2.workspace = true
+rpassword.workspace = true
 thiserror.workspace = true
 dotenvy.workspace = true
 tracing.workspace = true

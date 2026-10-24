@@ -1,0 +1,163 @@
+# tri-admin 全新实现计划（V3）
+
+> 使用 executing-plans 在当前工程逐项实施；新行为先写测试并观察失败。最终独立审查。当前版本取代 V1/V2 的接口兼容、旧模型、数据导入和双系统切换要求。
+
+**Goal:** 全新实现 Tauri 2 桌面管理客户端、远程 Rust/MongoDB 管理服务及 tok 游戏管理接入。
+
+**Architecture:** Vue 3 提供新界面，Tauri 2 提供桌面能力，Axum/Tokio 提供版本化 REST API，MongoDB 副本集承担持久化和事务。后台通过独立 Protobuf/gRPC 协议管理未来 tok 游戏应用。
+
+**Tech Stack:** Tauri 2、Vue 3、Vite、Pinia、Element Plus、Rust、Axum、MongoDB 官方驱动、Argon2id、JWT、Tonic/Protobuf。
+
+**Spec:** 本文件的“用户决定”和“公共约束”。
+
+## 用户决定
+
+- 新项目：`E:\hygd\work\backend\tri-admin`。
+- 全部使用新实现，**重构及实施过程中都不做兼容**。
+- 旧 `vue-admin` 只用于功能需求调研，不复制旧业务代码，不保留旧 API/Go/Gorm/MySQL 适配或旧数据结构。
+- 新后台统一 MongoDB；未来游戏服框架为 `mogud/tok`。
+- 可以操作电脑进行真实验证。
+- 原项目和已有数据库保持原样。
+
+## 公共约束
+
+- 首发 Windows x64 客户端、Linux x64 服务；客户端只访问远程 HTTPS API。
+- 新接口统一 `/api/v1`，采用标准 HTTP 方法及状态码；不返回旧 `code=0/7` 包装。
+- 成功返回 `{data:...}`，分页附加 `{meta:{page,pageSize,total}}`；错误返回 `{error:{code,message}}`；关联请求通过 `X-Request-Id` 追踪。
+- JSON 字段统一 camelCase，ID 统一 ObjectId 十六进制字符串，时间统一 RFC3339；内部密码摘要、密钥和 BSON Extended JSON 不暴露。
+- 密码采用 Argon2id；访问 JWT 短时有效，刷新会话可撤销并轮换；用户禁用和权限变更立即生效。
+- 权限使用明确的操作码（如 `users.read`、`users.write`），角色聚合权限；接口授权和菜单显示分别控制，前端隐藏不能替代鉴权。
+- MongoDB 通过版本化 schema/索引管理；跨集合修改使用事务，测试必须使用真实副本集。
+- 不提供旧接口别名、旧字段双写、双库运行、旧 Token 解析分支、Gorm 模型映射或 Go 模板。
+- Rust/MongoDB 代码生成、导入导出和多数据源能力按新模型实现，不保留 SQL 模板适配。
+- 真实账号资料、密钥、数据库文件和日志不进入 Git；开发凭据随机生成于忽略的 `.env`。
+- 游戏业务/玩家身份与后台管理员身份独立；tok 管理适配通过公共协议，后台不直接写在线玩家存档。
+
+## 项目结构
+
+```text
+apps/desktop/                 Vue 新界面与 src-tauri 桌面壳
+services/admin-api/           Rust 远程管理服务
+  src/common/                配置、错误、响应与请求上下文
+  src/storage/               MongoDB schema、索引和事务
+  src/modules/<domain>/      dto/router/service/repository
+crates/game-admin-protocol/   自有管理协议
+crates/game-admin-client/     tok 游戏应用管理客户端
+tests/{e2e,native}/           页面和原生窗口验证
+tools/                       开发环境、生成与验证工具
+deploy/                      MongoDB 副本集和服务部署
+docs/                        规范、进度和运维
+```
+
+## Review Focus
+
+1. 并发初始化、事务失败和版本冲突不能产生重复管理员或残缺权限（Task 2、4）。
+2. 刷新轮换、退出、禁用和权限变更必须真实阻断后续请求（Task 3、4）。
+3. 过滤/排序/分页、唯一索引和软删除不能造成数据泄漏、重复和丢失更新（Task 6）。
+4. Windows 安装包中的网络、文件、取消、重启和升级不能只用浏览器结果代替（Task 5、7、12）。
+5. 游戏命令超时/重启/重复提交必须能查询实际结果，不能盲目重试副作用（Task 10、11）。
+
+## Task 1：新领域规范和工程清理
+
+交付 `docs/product-spec.md`、`docs/api-design.md` 与新数据模型。旧代码只提取功能清单；移除重构工程中的兼容工具、旧契约、SQLx/MySQL 运行依赖和双系统部署。记录被替代的计划裁定，保留 Git 历史，不修改来源工程。
+
+验收：当前代码树无 Go 业务代码、旧路径别名、旧 DTO 和双库运行设施；后续功能均能对应新领域清单。
+
+## Task 2：Rust/MongoDB 基础
+
+**Files:** `services/admin-api/src/{lib,main,config,state,bootstrap}.rs`、`common/{error,response}.rs`、`storage/{schema,indexes}.rs`、`modules/health.rs`；相应集成测试、环境生成器与独立副本集。
+
+**Interfaces:** `build_router(AppState)->Router`；`bootstrap_database(&Database,&AdminInput)->Result<BootstrapReport,AppError>`；`BootstrapReport{adminCreated,userId}`。
+
+- [ ] 先测试标准状态码/响应、凭据脱敏、live/ready、重复和并发初始化、版本冲突，再实现。
+- [ ] 建立真实 MongoDB 副本集；只操作独立 13317 测试实例。
+- [ ] 实现配置、日志、请求 ID、schema/索引、事务初始化；新管理员使用 Argon2id，已有账号不被重复初始化覆盖。
+- [ ] 提供服务端 `migrate`、交互密码 `bootstrap` 与 `serve` CLI；初始化不经过普通桌面用户。
+- [ ] 运行全部相关测试、格式与 lint，记录真实结果并提交。
+
+## Task 3：认证和会话
+
+**Files:** `src/modules/auth/`、`tests/auth.rs`、会话索引和客户端认证状态。
+
+- [ ] 先测试正确/错误密码、速率限制、JWT 过期/签名/issuer/audience、刷新轮换、退出与禁用。
+- [ ] 实现 `/api/v1/auth/{login,refresh,logout,me}`；JWT sub 为用户 ID，sid 关联持久会话。
+- [ ] 刷新令牌仅保存摘要，原子轮换；检测复用并撤销对应会话；TTL 索引只做清理，不替代有效期校验。
+- [ ] 会话/权限错误返回明确机器码，日志不记录密码或令牌。
+- [ ] 真实 MongoDB HTTP 测试和桌面登录/注销验证通过。
+
+## Task 4：用户、角色、菜单与权限
+
+**Files:** `src/modules/{users,roles,menus,permissions}/` 与集成测试。
+
+- [ ] 先测试角色授权、接口越权、菜单过滤、状态修改、软删除、并发更新和最后管理员保护。
+- [ ] 新 users/roles/menus/permissions 文档模型；有界关系数组与唯一索引，多集合修改事务化。
+- [ ] 用操作码授权；Owner 角色受保护，不能删除/禁用最后一个有效 Owner。
+- [ ] 角色变更和禁用后立即校验最新状态；菜单由服务端返回可见树。
+- [ ] Owner、Operator、Viewer 三类身份完成真实允许/拒绝流程。
+
+## Task 5：全新 Vue/Tauri 界面
+
+**Files:** `apps/desktop/`、`src-tauri/`、请求/会话/文件平台适配、Vitest/Playwright/native tests。
+
+- [ ] 先测试端点设置、结构化错误、断网、过期、分页与表单验证。
+- [ ] 新建登录、应用布局、工作台、用户/角色/菜单/权限页面，使用新 REST DTO。
+- [ ] 明确开发/生产地址、HTTPS、CORS/CSP 和能力范围，客户端无 DB 密钥。
+- [ ] 服务就绪、登录、列表、编辑、退出、重启在 Windows 原生窗口验证。
+- [ ] 浏览器 Playwright 与 Tauri native 结果分别记录。
+
+## Task 6：常规管理能力
+
+字典/明细、系统参数、API/权限目录、版本、客户示例、登录日志、操作日志、错误日志和配置中心，分别建立新资源 API 与页面。
+
+- [ ] 每模块先写成功/空值/权限/排序分页/软删除/并发测试，再实现。
+- [ ] 字段白名单、索引和一致排序；采用版本字段处理更新冲突。
+- [ ] 日志只读或具备明确清理权限，敏感配置读取时脱敏。
+- [ ] 实际页面流程及查询性能通过后逐模块提交。
+
+## Task 7：文件和导入导出
+
+- [ ] 测试上传/分片/重试/取消/重名/路径边界和下载授权。
+- [ ] 文件元数据 MongoDB，内容使用本地文件或已配置对象存储；按启用驱动逐项实现。
+- [ ] 新建基于资源字段与受控筛选的 CSV/XLSX 导入导出模板，不执行任意 SQL/表达式。
+- [ ] Windows 安装包验证大文件、打开/保存对话框、取消及失败恢复。
+
+## Task 8：API Token 与开放应用
+
+- [ ] 测试 Token 摘要/一次性签发/过期/撤销，应用隔离、Scope 与并发唯一性。
+- [ ] 新 REST API、独立应用/用户身份和刷新策略；管理员 Token 不作为玩家 Token。
+- [ ] 日志、配额、限流、IP/Scope 限制由服务端执行。
+- [ ] 管理页面和真实客户端调用完成允许/拒绝验证。
+
+## Task 9：代码生成、Skills/MCP、AI 和工作流
+
+- [ ] 先按 `docs/product-spec.md` 为每个能力建立可观察测试，禁止空壳接口计为完成。
+- [ ] 仅提供新 Rust/MongoDB/Vue 模板，生成工程必须能构建并通过测试。
+- [ ] Skills/插件安装、MCP 工具及生命周期、AI 上游和工作流持久任务/取消/导出使用新 Rust 实现。
+- [ ] 文件目录、进程和网络能力按功能限定；真实上游测试与协议夹具分开报告。
+
+## Task 10：tok 管理协议与真实验证
+
+固定 tok 参考提交 `4842fd69649fc767aef74d42daa4c280b668e278`。游戏验证工程独立处理 Rust 1.99.0；框架未实现范围不能当作现成功能。
+
+- [ ] 验证固定工具链和版本；失败记录具体兼容性证据，后台继续推进。
+- [ ] 自有 Protobuf 管理协议包含 capabilities/status/players/submit/status，测试版本、身份、区服、deadline、取消和不可用。
+- [ ] fake 链路通过后，在真实 tok 应用公共入口绑定适配器；实际状态/玩家查询有可复现结果。
+- [ ] Windows/Linux 分别记录真实验证，后台不依赖框架内部类型。
+
+## Task 11：可靠游戏管理任务
+
+- [ ] 测试重复、同键异参、超时、重启、越权和部分完成。
+- [ ] MongoDB 持久化 requestId、摘要、审计与状态；同键同请求返回原结果，异参冲突。
+- [ ] 状态 pending/running/succeeded/failed/unknown；只有游戏业务确认才成功，未知结果先查询不盲重发。
+- [ ] 先只读，再按实际能力开放踢人/封禁/公告；发奖扣费另定规则和测试。
+
+## Task 12：发布和完整验收
+
+- [ ] 交付 Linux 服务镜像、认证/TLS 副本集示例、Windows 安装包和 CI。
+- [ ] 实测新装/升级/断网/恢复/停机/数据库备份恢复/文档迁移；使用新系统回滚方案，不依赖旧 Go。
+- [ ] 全套 Rust/Node/前端/HTTP/native 测试、格式/lint 与性能基线，明确实测平台和限制。
+- [ ] 独立代码审查和修复后逐项审计产品功能、交付物、测试及 tok 结果，再判定完整目标完成。
+
+## 完成定义
+
+当前树无兼容层；全部新功能使用新 API/模型；新后台只依赖 Rust/MongoDB；登录权限、常规管理、文件/导出、开放应用、扩展与游戏管理均有真实证据；Windows 客户端和 Linux 服务可运行；备份恢复、升级、故障与幂等通过验证。仅骨架或部分测试不代表目标完成。

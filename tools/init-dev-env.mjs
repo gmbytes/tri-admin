@@ -4,10 +4,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export async function initializeDevelopmentEnv(path = resolve('.env')) {
-  const password = randomBytes(24).toString('hex')
   const values = {
-    TRI_MYSQL_ROOT_PASSWORD: password,
-    TRI_LEGACY_DATABASE_URL: `mysql://root:${password}@127.0.0.1:13316/tri_admin_legacy`,
     TRI_MONGODB_URI: 'mongodb://127.0.0.1:13317/?replicaSet=tri-admin-rs&directConnection=true&serverSelectionTimeoutMS=3000',
     TRI_MONGODB_DATABASE: 'tri_admin_dev',
     TRI_JWT_SIGNING_KEY: randomBytes(32).toString('hex'),
