@@ -17,6 +17,7 @@ impl AppState {
     }
 
     pub async fn from_config(config: Config) -> Result<Self, AppError> {
+        let _ = crate::common::password::dummy_hash()?;
         let database = if let Some(uri) = config.mongodb_uri() {
             let mut options = ClientOptions::parse(uri)
                 .await

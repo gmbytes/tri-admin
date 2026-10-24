@@ -10,6 +10,10 @@ use thiserror::Error;
 pub enum AppError {
     #[error("请先登录")]
     Unauthorized,
+    #[error("账号或密码错误")]
+    InvalidCredentials,
+    #[error("请求过于频繁，请稍后重试")]
+    RateLimited,
     #[error("权限不足")]
     Forbidden,
     #[error("资源不存在")]
@@ -34,6 +38,8 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"),
+            Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"),
+            Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::NotReady => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_NOT_READY"),

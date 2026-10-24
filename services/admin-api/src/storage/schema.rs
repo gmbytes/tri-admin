@@ -9,6 +9,17 @@ use sha2::{Digest, Sha256};
 
 const DESCRIPTOR: &str = "tri-admin/core/v1:users(usernameKey active unique),roles(slug unique),menus(path active unique),sessions(refreshHash unique,expiresAt ttl)";
 
+pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
+    let count = database
+        .collection::<Document>("_schema_migrations")
+        .count_documents(doc! {"$or":[
+            {"_id":"core","version":1,"bootstrapComplete":true},
+            {"_id":"auth","version":1}
+        ]})
+        .await?;
+    Ok(count == 2)
+}
+
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let checksum = format!("{:x}", Sha256::digest(DESCRIPTOR));
@@ -104,5 +115,5 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
         )
         .await?;
     metadata.update_one(doc!{"_id":"core"},doc!{"$setOnInsert":{"version":1,"checksum":checksum,"createdAt":DateTime::now(),"bootstrapComplete":false}}).upsert(true).await?;
-    Ok(())
+    super::auth_schema::migrate_auth(database).await
 }

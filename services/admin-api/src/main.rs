@@ -47,9 +47,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         "serve" => {
             let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
             tracing::info!(address=%listener.local_addr()?,"admin service listening");
-            axum::serve(listener, build_router(state))
-                .with_graceful_shutdown(shutdown())
-                .await?;
+            axum::serve(
+                listener,
+                build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(shutdown())
+            .await?;
         }
         _ => return Err("Usage: admin-api [serve|migrate|bootstrap]".into()),
     }

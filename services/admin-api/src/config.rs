@@ -7,6 +7,7 @@ pub struct Config {
     pub bind: SocketAddr,
     pub database_name: String,
     pub cors_origins: Vec<HeaderValue>,
+    pub login_limit_per_ip: i64,
     mongodb_uri: Option<String>,
     jwt_signing_key: String,
 }
@@ -64,10 +65,18 @@ impl Config {
                 HeaderValue::from_str(origin).map_err(|_| ConfigError("TRI_CORS_ORIGINS 格式无效"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let login_limit_per_ip = lookup("TRI_LOGIN_LIMIT_PER_IP")
+            .unwrap_or_else(|| "100".into())
+            .parse::<i64>()
+            .map_err(|_| ConfigError("TRI_LOGIN_LIMIT_PER_IP 必须为 1–10000"))?;
+        if !(1..=10000).contains(&login_limit_per_ip) {
+            return Err(ConfigError("TRI_LOGIN_LIMIT_PER_IP 必须为 1–10000"));
+        }
         Ok(Self {
             bind,
             database_name,
             cors_origins,
+            login_limit_per_ip,
             mongodb_uri,
             jwt_signing_key,
         })

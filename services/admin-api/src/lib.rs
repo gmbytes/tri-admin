@@ -35,6 +35,7 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::header::CONTENT_DISPOSITION,
         ]);
     Router::new()
+        .nest("/api/v1/auth", modules::auth::router::routes())
         .route("/health/live", get(modules::health::live))
         .route("/health/ready", get(modules::health::ready))
         .fallback(|| async { common::error::AppError::NotFound })
