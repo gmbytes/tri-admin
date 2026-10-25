@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { ApiClient, ApiError } from '../core/client'
+import type { FileContentSpec, FileSink } from '../core/files'
 import { normalizeEndpoint } from '../core/endpoint'
 import type { Envelope, MenuRecord, UserSummary } from '../core/types'
 import { platform, type Settings } from '../platform'
@@ -149,7 +150,7 @@ export const useSession = defineStore('session', () => {
   }
   async function request<T>(
     path: string,
-    options: { method?: string; body?: unknown } = {},
+    options: { method?: string; body?: unknown; signal?: AbortSignal } = {},
   ): Promise<Envelope<T>> {
     if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
     return client.request<T>(path, options)
@@ -161,6 +162,28 @@ export const useSession = defineStore('session', () => {
   async function downloadConfiguration(path: string) {
     if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
     return client.downloadConfiguration(path)
+  }
+  async function putChunk<T>(
+    uploadId: string,
+    index: number,
+    bytes: Blob,
+    sha256: string,
+    options: { signal?: AbortSignal } = {},
+  ) {
+    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    return client.putChunk<T>(uploadId, index, bytes, sha256, options)
+  }
+  async function downloadFile<T>(
+    fileId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ) {
+    if (!client) {
+      await sink.abort().catch(() => undefined)
+      throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    }
+    return client.downloadFile(fileId, expected, sink, options)
   }
   return {
     user,
@@ -181,6 +204,8 @@ export const useSession = defineStore('session', () => {
     changeServer,
     request,
     downloadConfiguration,
+    putChunk,
+    downloadFile,
     syncProfile,
     loadNavigation,
     loadApplication,

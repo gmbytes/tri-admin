@@ -1,6 +1,13 @@
 import { normalizeEndpoint } from './endpoint'
 import type { Envelope, TokenResponse, UserSummary } from './types'
 import { readConfigurationDownload, type ConfigurationDownload } from './configuration'
+import {
+  FileTransferError,
+  readFileContent,
+  validateFileSpec,
+  type FileContentSpec,
+  type FileSink,
+} from './files'
 
 export interface SessionVault {
   load(endpoint: string): Promise<string | null>
@@ -26,6 +33,11 @@ interface Options {
 interface RequestOptions {
   method?: string
   body?: unknown
+  signal?: AbortSignal
+}
+interface TransportOptions extends RequestOptions {
+  chunk?: { body: Blob; sha256: string }
+  timeoutMs?: number
 }
 
 function parseTokens(value: unknown): TokenResponse {
@@ -79,6 +91,7 @@ export class ApiClient {
   private refreshToken: string | null = null
   private currentUser: UserSummary | null = null
   private epoch = 0
+  private sessionAbort = new AbortController()
   private remember = false
   private refreshTask: { epoch: number; promise: Promise<void> } | null = null
   private vaultQueue: Promise<unknown> = Promise.resolve()
@@ -101,6 +114,8 @@ export class ApiClient {
   }
   private invalidate() {
     this.epoch++
+    this.sessionAbort.abort()
+    this.sessionAbort = new AbortController()
     this.access = null
     this.refreshToken = null
     this.publish(null)
@@ -146,9 +161,9 @@ export class ApiClient {
   private async send<T>(
     endpoint: string,
     path: string,
-    options: RequestOptions = {},
+    options: TransportOptions = {},
     access?: string | null,
-    decode?: (response: Response) => Promise<Envelope<T>>,
+    decode?: (response: Response, signal: AbortSignal) => Promise<Envelope<T>>,
   ): Promise<Envelope<T>> {
     if (
       !path.startsWith('/') ||
@@ -158,21 +173,33 @@ export class ApiClient {
     )
       throw new ApiError('INVALID_REQUEST', '请求地址无效')
     let response: Response
+    const signal = AbortSignal.any([
+      AbortSignal.timeout(options.timeoutMs ?? 30_000),
+      ...(options.signal ? [options.signal] : []),
+    ])
     try {
       response = await fetch(`${endpoint}${path}`, {
         method: options.method ?? 'GET',
         headers: {
-          ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(options.chunk
+            ? { 'content-type': 'application/octet-stream', 'x-chunk-sha256': options.chunk.sha256 }
+            : options.body !== undefined
+              ? { 'content-type': 'application/json' }
+              : {}),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
         },
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-        signal: AbortSignal.timeout(30_000),
+        body:
+          options.chunk?.body ??
+          (options.body !== undefined ? JSON.stringify(options.body) : undefined),
+        signal,
         credentials: 'omit',
+        redirect: 'error',
       })
     } catch {
+      if (options.signal?.aborted) throw new ApiError('REQUEST_CANCELLED', '操作已取消')
       throw new ApiError('NETWORK_ERROR', '无法连接服务器，请检查地址和网络')
     }
-    if (response.ok && decode) return decode(response)
+    if (response.ok && decode) return decode(response, signal)
     if (response.status === 204) return { data: undefined as T }
     let value: unknown
     try {
@@ -229,7 +256,8 @@ export class ApiClient {
     if (this.refreshTask?.epoch === epoch) return this.refreshTask.promise
     const task = { epoch, promise: Promise.resolve() }
     const endpoint = this.base,
-      refreshToken = this.refreshToken
+      refreshToken = this.refreshToken,
+      expectedActor = this.currentUser?.id
     task.promise = Promise.resolve()
       .then(async () => {
         this.check(epoch)
@@ -237,6 +265,10 @@ export class ApiClient {
         const tokens = parseTokens(
           await this.send(endpoint, '/auth/refresh', { method: 'POST', body: { refreshToken } }),
         )
+        if (expectedActor && tokens.user.id !== expectedActor) {
+          await this.rollback(tokens, epoch, endpoint)
+          throw new ApiError('INVALID_RESPONSE', '服务器返回的会话身份不一致，请重新登录')
+        }
         try {
           await this.accept(tokens, epoch, endpoint)
         } catch (error) {
@@ -260,23 +292,30 @@ export class ApiClient {
 
   private async authorized<T>(
     path: string,
-    options: RequestOptions,
-    decode?: (response: Response) => Promise<Envelope<T>>,
+    options: TransportOptions,
+    decode?: (response: Response, signal: AbortSignal) => Promise<Envelope<T>>,
   ): Promise<Envelope<T>> {
     const epoch = this.epoch,
       endpoint = this.base,
       originalAccess = this.access
     if (!originalAccess) throw new ApiError('AUTH_REQUIRED', '请先登录')
+    const scoped = {
+      ...options,
+      signal: AbortSignal.any([
+        this.sessionAbort.signal,
+        ...(options.signal ? [options.signal] : []),
+      ]),
+    }
     let result: Envelope<T>
     try {
-      result = await this.send<T>(endpoint, path, options, originalAccess, decode)
+      result = await this.send<T>(endpoint, path, scoped, originalAccess, decode)
     } catch (error) {
       this.check(epoch)
       if (!(error instanceof ApiError) || error.status !== 401 || error.code !== 'UNAUTHENTICATED')
         throw error
       if (this.access === originalAccess) await this.refreshOnce(epoch)
       this.check(epoch)
-      result = await this.send<T>(endpoint, path, options, this.access, decode)
+      result = await this.send<T>(endpoint, path, scoped, this.access, decode)
     }
     this.check(epoch)
     return result
@@ -284,6 +323,31 @@ export class ApiClient {
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
     return this.authorized<T>(path, options)
+  }
+
+  async putChunk<T = unknown>(
+    uploadId: string,
+    index: number,
+    bytes: Blob,
+    sha256: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<Envelope<T>> {
+    if (
+      !/^[a-f0-9]{24}$/.test(uploadId) ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= 1280 ||
+      !(bytes instanceof Blob) ||
+      bytes.size === 0 ||
+      bytes.size > 4 * 1024 * 1024 ||
+      !/^[a-f0-9]{64}$/.test(sha256)
+    )
+      throw new ApiError('INVALID_FILE_CHUNK', '分片标识、索引、长度或摘要无效')
+    return this.authorized<T>(`/uploads/${uploadId}/chunks/${index}`, {
+      method: 'PUT',
+      chunk: { body: bytes, sha256 },
+      signal: options.signal,
+    })
   }
 
   async downloadConfiguration(path: string): Promise<ConfigurationDownload> {
@@ -298,6 +362,48 @@ export class ApiClient {
       }
     })
     return response.data
+  }
+
+  async downloadFile<T>(
+    fileId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ): Promise<T> {
+    let cleanup: Promise<void> | undefined
+    const abort = () =>
+      (cleanup ??= Promise.resolve()
+        .then(() => sink.abort())
+        .catch(() => undefined))
+    const target: FileSink<T> = {
+      write: (bytes) => sink.write(bytes),
+      complete: (value) => sink.complete(value),
+      abort,
+    }
+    try {
+      if (!/^[a-f0-9]{24}$/.test(fileId)) throw new ApiError('INVALID_FILE', '文件标识无效')
+      validateFileSpec(expected)
+      const spec = Object.freeze({ size: expected.size, sha256: expected.sha256 })
+      const result = await this.authorized<T>(
+        `/files/${fileId}/content`,
+        {
+          signal: options.signal,
+          timeoutMs: 30 * 60 * 1000,
+        },
+        async (response, signal) => ({
+          data: await readFileContent(response, spec, target, {
+            signal,
+            onProgress: options.onProgress,
+          }),
+        }),
+      )
+      return result.data
+    } catch (error) {
+      await abort()
+      if (error instanceof ApiError) throw error
+      if (error instanceof FileTransferError) throw new ApiError(error.code, error.message)
+      throw new ApiError('FILE_TRANSFER_FAILED', '文件下载失败，请重试')
+    }
   }
 
   async clearSession(): Promise<void> {
