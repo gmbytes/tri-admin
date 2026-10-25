@@ -1,4 +1,6 @@
 //! Isolated server for UI acceptance tests. Never points at a normal application database.
+#[path = "support/data_tool_fixtures.rs"]
+mod data_tool_fixtures;
 use admin_api::{
     bootstrap::{AdminInput, bootstrap_database},
     build_router,
@@ -27,10 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.require_database()?,
         &AdminInput {
             username: "admin".into(),
-            password,
+            password: password.clone(),
         },
     )
     .await?;
+    data_tool_fixtures::seed(&state, &password).await?;
     // Backdated immutable events exist only in this isolated E2E database.
     let old = DateTime::from_millis(DateTime::now().timestamp_millis() - 3 * 86_400_000);
     state.require_database()?.collection::<Document>("audit_events").insert_many((0..3).map(|_|doc!{"kind":"operation","category":"administration","action":"fixture.old","outcome":"success","createdAt":old})).await?;
@@ -43,14 +46,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Isolated E2E service ready on {}", listener.local_addr()?);
     let database = state.require_database()?.clone();
     let workers = admin_api::modules::files::jobs::start_service(state.clone());
+    let data_workers = admin_api::modules::data_tools::retention::start_service(state.clone());
     let shutdown_state = state.clone();
     let worker_state = state.clone();
     let result=axum::serve(listener,build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async move{
         tokio::select!{_=tokio::signal::ctrl_c()=>{},_=tokio::task::spawn_blocking(||{let mut command=String::new();let _=std::io::stdin().read_line(&mut command);})=>{}}
         admin_api::modules::files::jobs::stop_service(&shutdown_state);
+        admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
     }).await;
     admin_api::modules::files::jobs::stop_service(&worker_state);
+    admin_api::modules::data_tools::retention::stop_service(&worker_state);
     let _ = workers.await;
+    let _ = data_workers.await;
     result?;
     database.drop().await?;
     Ok(())

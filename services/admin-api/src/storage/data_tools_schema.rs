@@ -6,12 +6,12 @@ use mongodb::{
     options::IndexOptions,
 };
 use sha2::{Digest, Sha256};
-pub const VERSION: i32 = 2;
+pub const VERSION: i32 = 3;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let previous = metadata.find_one(doc! {"_id":"data-tools"}).await?;
     if let Some(record) = &previous
-        && !matches!(record.get_i32("version").ok(), Some(1 | VERSION))
+        && !matches!(record.get_i32("version").ok(), Some(1 | 2 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -27,6 +27,14 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
     {
         return Err(error.into());
     }
+    if previous
+        .as_ref()
+        .and_then(|row| row.get_i32("version").ok())
+        .is_some_and(|version| version < VERSION)
+    {
+        let count = |status: &str| doc! {"$size":{"$filter":{"input":"$rows","as":"row","cond":{"$eq":["$$row.status",status]}}}};
+        database.collection::<Document>("data_imports").update_many(doc!{},vec![doc!{"$set":{"rowCount":{"$size":"$rows"},"readyCount":count("ready"),"appliedCount":count("applied"),"expiredCount":count("expired"),"payloadState":"full","redactedAt":null}},doc!{"$set":{"errorCount":{"$subtract":["$rowCount",{"$add":["$readyCount","$appliedCount"]}]}}}]).await?;
+    }
     database
         .collection::<Document>("data_imports")
         .create_index(
@@ -39,6 +47,9 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
     for keys in [
         doc! {"actorId":1,"createdAt":-1,"_id":-1},
         doc! {"actorId":1,"expiresAt":1},
+        doc! {"actorId":1,"resource":1,"createdAt":-1,"_id":-1},
+        doc! {"actorId":1,"readyCount":1,"expiresAt":1},
+        doc! {"payloadState":1,"expiresAt":1,"_id":1},
     ] {
         database
             .collection::<Document>("data_imports")

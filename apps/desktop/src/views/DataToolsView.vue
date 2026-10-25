@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useSession } from '../stores/session'
 import { platform } from '../platform'
 import DataFieldMapping from '../components/DataFieldMapping.vue'
+import ImportHistoryPanel from '../components/ImportHistoryPanel.vue'
 import {
   parseInspection,
   defaultMapping,
@@ -43,9 +44,7 @@ const selected = computed(() => resources.value.find((r) => r.key === resource.v
   sourceHash = ref(''),
   preview = ref<ImportView | null>(null),
   clock = ref(Date.now())
-const history = ref<Array<{ id: string; requestId: string; resource: string; expiresAt: string }>>(
-  [],
-)
+const historyRevision = ref(0)
 const canImport = computed(
   () =>
     selected.value?.importable &&
@@ -94,6 +93,7 @@ const statuses: Record<string, string> = {
   invalid: '无效',
   duplicate: '重复',
   conflict: '冲突',
+  expired: '已过期',
 }
 const problems: Record<string, string> = {
   INVALID_FIELDS: '字段无效',
@@ -101,6 +101,7 @@ const problems: Record<string, string> = {
   KEY_EXISTS: '标识已存在',
   PARENT_NOT_FOUND: '父字典不存在',
   PARENT_CHANGED: '父字典已改变，请重新预览',
+  PREVIEW_EXPIRED: '预览已过期',
 }
 const canPreview = computed(
   () =>
@@ -124,7 +125,6 @@ const mappingMessage = computed(() => {
 })
 let alive = true,
   sequence = 0,
-  historySequence = 0,
   sourceSequence = 0,
   requestId = crypto.randomUUID()
 const controls = new Set<AbortController>(),
@@ -161,11 +161,6 @@ async function run(work: (signal: AbortSignal) => Promise<void>) {
     controls.delete(control)
     if (alive) busy.value = false
   }
-}
-async function refreshHistory(signal?: AbortSignal) {
-  const token = ++historySequence,
-    result = await session.request<typeof history.value>('/data-tools/imports', { signal })
-  if (alive && token === historySequence) history.value = result.data
 }
 async function acceptSource(source: UploadSource | null, signal: AbortSignal) {
   if (!source) return
@@ -247,7 +242,7 @@ async function makePreview() {
       preview.value = parseImportView(result.data)
       page.value = 1
     }
-    await refreshHistory(signal)
+    historyRevision.value++
   })
 }
 async function loadImport(id: string) {
@@ -265,18 +260,22 @@ async function apply() {
     const id = preview.value?.id
     if (!id) return
     ++sequence
-    while (!signal.aborted && alive && preview.value?.id === id) {
-      const rows = preview.value.rows
-        .filter((row) => row.status === 'ready')
-        .slice(0, 100)
-        .map((row) => row.index)
-      if (!rows.length) break
-      const result = await session.request<unknown>(`/data-tools/imports/${id}/apply`, {
-        method: 'POST',
-        body: { rows },
-        signal,
-      })
-      if (!signal.aborted && alive) preview.value = parseImportView(result.data)
+    try {
+      while (!signal.aborted && alive && preview.value?.id === id) {
+        const rows = preview.value.rows
+          .filter((row) => row.status === 'ready')
+          .slice(0, 100)
+          .map((row) => row.index)
+        if (!rows.length) break
+        const result = await session.request<unknown>(`/data-tools/imports/${id}/apply`, {
+          method: 'POST',
+          body: { rows },
+          signal,
+        })
+        if (!signal.aborted && alive) preview.value = parseImportView(result.data)
+      }
+    } finally {
+      historyRevision.value++
     }
     if (alive && !signal.aborted) ElMessage.success('批次已处理，可查询每行结果')
   })
@@ -329,13 +328,11 @@ onMounted(
       if (!resources.value.some((r) => r.key === resource.value))
         resource.value = resources.value[0]?.key ?? ''
       fields.value = [...(selected.value?.fields ?? [])]
-      await refreshHistory(signal)
     }),
 )
 onBeforeUnmount(() => {
   alive = false
   ++sequence
-  ++historySequence
   clearInterval(ticker)
   for (const control of controls) control.abort()
   content.value = ''
@@ -439,9 +436,10 @@ function valueText(value: unknown) {
   <section v-if="preview" class="surface data-options data-import-results">
     <div class="data-result-heading">
       <div>
-        <h2>逐行预览与结果</h2>
+        <h2>{{ previewResource?.label ?? preview.resource }} · 逐行预览与结果</h2>
         <p class="tiny subtle">
-          导入标识 {{ preview.id }} · {{ preview.rows.length }} 行 · {{ ready }} 行可导入
+          导入标识 {{ preview.id }} · {{ preview.rowCount }} 行 · 已创建
+          {{ preview.appliedCount }} · {{ ready }} 行可导入 · 问题 {{ preview.errorCount }}
         </p>
       </div>
       <div class="data-actions">
@@ -461,32 +459,45 @@ function valueText(value: unknown) {
       type="warning"
       :closable="false"
     />
+    <el-alert
+      v-if="preview.payloadState !== 'full'"
+      :title="
+        preview.payloadState === 'redacted'
+          ? '原始内容已清理，创建结果与回执仍可查询。'
+          : '原始内容已过期，不再返回；等待后台清理。'
+      "
+      type="info"
+      :closable="false"
+    />
     <el-table :data="pageRows" row-key="index"
       ><el-table-column type="expand" width="48"
         ><template #default="{ row }"
-          ><dl class="data-row-details">
+          ><dl v-if="row.values" class="data-row-details">
             <template v-for="(value, field) in row.values" :key="field"
               ><dt>{{ labels[String(field)] ?? field }}</dt>
               <dd>
                 {{ typeof value === 'string' ? value : JSON.stringify(value, null, 2) }}
               </dd></template
             >
-          </dl></template
+          </dl>
+          <div v-else class="data-row-details">
+            <span>原始行内容不可用，回执仍保留。</span
+            ><span v-if="row.targetId">目标 ID：{{ row.targetId }}</span>
+          </div></template
         ></el-table-column
       ><el-table-column label="行" width="65"
         ><template #default="{ row }">{{ row.index + 2 }}</template></el-table-column
-      ><el-table-column
-        prop="key"
-        label="资源标识"
-        min-width="160"
-        show-overflow-tooltip
-      /><el-table-column label="名称" min-width="130" show-overflow-tooltip
+      ><el-table-column label="资源标识" min-width="160" show-overflow-tooltip
+        ><template #default="{ row }">{{ row.key ?? '—' }}</template></el-table-column
+      ><el-table-column label="名称" min-width="130" show-overflow-tooltip
         ><template #default="{ row }">{{
-          row.values.name ?? row.values.label
+          row.values?.name ?? row.values?.label ?? '—'
         }}</template></el-table-column
       ><el-table-column label="值" min-width="160" show-overflow-tooltip
         ><template #default="{ row }">{{
-          valueText('value' in row.values ? row.values.value : row.values.enabled)
+          row.values
+            ? valueText('value' in row.values ? row.values.value : row.values.enabled)
+            : '—'
         }}</template></el-table-column
       ><el-table-column label="状态" width="100"
         ><template #default="{ row }"
@@ -510,30 +521,12 @@ function valueText(value: unknown) {
       layout="total, prev, pager, next"
     />
   </section>
-  <section class="surface data-options data-import-history">
-    <h2>我的最近导入</h2>
-    <p class="tiny subtle">
-      重新打开页面后，可从这里查询结果。导入预览 24 小时内可应用，每批最多 100
-      行；已提交行的重试返回同一回执。
-    </p>
-    <el-table :data="history" row-key="id"
-      ><el-table-column label="资源" min-width="110"
-        ><template #default="{ row }">{{
-          resources.find((r) => r.key === row.resource)?.label ?? row.resource
-        }}</template></el-table-column
-      ><el-table-column prop="id" label="导入标识" min-width="210" /><el-table-column
-        prop="requestId"
-        label="请求标识"
-        min-width="280"
-      /><el-table-column label="操作" width="110"
-        ><template #default="{ row }"
-          ><el-button text :disabled="busy" @click="loadImport(row.id)"
-            >查看结果</el-button
-          ></template
-        ></el-table-column
-      ></el-table
-    >
-  </section>
+  <ImportHistoryPanel
+    :resources="resources"
+    :revision="historyRevision"
+    :disabled="busy"
+    @open="loadImport"
+  />
 </template>
 <style scoped>
 .data-options {

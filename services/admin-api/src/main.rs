@@ -64,10 +64,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let report = admin_api::modules::files::jobs::maintenance_once(&state).await?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        "maintain-data-tools" => {
+            let report = admin_api::modules::data_tools::retention::maintenance_once(
+                state.require_database()?,
+            )
+            .await?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         "serve" => {
             let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
             tracing::info!(address=%listener.local_addr()?,"admin service listening");
             let workers = admin_api::modules::files::jobs::start_service(state.clone());
+            let data_workers =
+                admin_api::modules::data_tools::retention::start_service(state.clone());
             let shutdown_state = state.clone();
             let worker_state = state.clone();
             let result = axum::serve(
@@ -77,13 +86,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .with_graceful_shutdown(async move {
                 shutdown().await;
                 admin_api::modules::files::jobs::stop_service(&shutdown_state);
+                admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
             })
             .await;
             admin_api::modules::files::jobs::stop_service(&worker_state);
+            admin_api::modules::data_tools::retention::stop_service(&worker_state);
             let _ = workers.await;
+            let _ = data_workers.await;
             result?;
         }
-        _ => return Err("Usage: admin-api [serve|migrate|bootstrap|maintain-files]".into()),
+        _ => {
+            return Err(
+                "Usage: admin-api [serve|migrate|bootstrap|maintain-files|maintain-data-tools]"
+                    .into(),
+            );
+        }
     }
     Ok(())
 }

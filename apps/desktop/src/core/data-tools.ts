@@ -26,17 +26,28 @@ export interface DataDownload {
 }
 export interface ImportRow {
   index: number
-  key: string
-  status: 'ready' | 'invalid' | 'duplicate' | 'conflict' | 'applied'
+  key: string | null
+  status: 'ready' | 'invalid' | 'duplicate' | 'conflict' | 'applied' | 'expired'
   error: string | null
   targetId: string | null
-  values: Record<string, unknown>
+  values: Record<string, unknown> | null
 }
-export interface ImportView {
+export interface ImportSummary {
   id: string
   requestId: string
   resource: string
   expiresAt: string
+  createdAt: string
+  rowCount: number
+  readyCount: number
+  appliedCount: number
+  errorCount: number
+  expiredCount: number
+  status: 'pending' | 'completed' | 'partial' | 'failed' | 'expired'
+  payloadState: 'full' | 'expired' | 'redacted'
+  redactedAt: string | null
+}
+export interface ImportView extends ImportSummary {
   rows: ImportRow[]
 }
 function invalid() {
@@ -167,22 +178,77 @@ function safe(value: unknown, depth = 0): boolean {
     return Object.values(value).every((v) => safe(v, depth + 1))
   return true
 }
-export function parseImportView(value: unknown): ImportView {
-  const data = value as ImportView
+function timestamp(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString() === value
+  )
+}
+export function parseImportSummary(value: unknown): ImportSummary {
+  const data = value as ImportSummary
   if (
     !data ||
     typeof data !== 'object' ||
+    Object.keys(data).sort().join(',') !==
+      'appliedCount,createdAt,errorCount,expiredCount,expiresAt,id,payloadState,readyCount,redactedAt,requestId,resource,rowCount,status' ||
+    typeof data.id !== 'string' ||
     !/^[a-f0-9]{24}$/.test(data.id) ||
     typeof data.requestId !== 'string' ||
     !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(data.requestId) ||
     !['parameters', 'dictionaries', 'dictionaryItems'].includes(data.resource) ||
-    typeof data.expiresAt !== 'string' ||
-    !Number.isFinite(Date.parse(data.expiresAt)) ||
-    new Date(data.expiresAt).toISOString() !== data.expiresAt ||
-    !Array.isArray(data.rows) ||
-    data.rows.length > 2000
+    !timestamp(data.createdAt) ||
+    !timestamp(data.expiresAt) ||
+    !['full', 'expired', 'redacted'].includes(data.payloadState) ||
+    ![data.rowCount, data.readyCount, data.appliedCount, data.errorCount, data.expiredCount].every(
+      (v) => Number.isSafeInteger(v) && v >= 0 && v <= 2000,
+    ) ||
+    data.readyCount + data.appliedCount + data.errorCount !== data.rowCount ||
+    data.expiredCount > data.errorCount ||
+    (data.payloadState !== 'full' && data.readyCount !== 0) ||
+    (data.payloadState === 'redacted' ? !timestamp(data.redactedAt) : data.redactedAt !== null)
   )
     throw invalid()
+  const status =
+    data.readyCount > 0
+      ? 'pending'
+      : data.expiredCount > 0 && data.appliedCount === 0
+        ? 'expired'
+        : data.errorCount > 0
+          ? data.appliedCount > 0
+            ? 'partial'
+            : 'failed'
+          : 'completed'
+  if (data.status !== status) throw invalid()
+  return data
+}
+export function parseHistoryPage(
+  value: unknown,
+  expected: { page: number; pageSize: number },
+): { rows: ImportSummary[]; total: number } {
+  const response = value as {
+    data: unknown[]
+    meta: { page: number; pageSize: number; total: number }
+  }
+  if (
+    !response ||
+    !Array.isArray(response.data) ||
+    !response.meta ||
+    response.meta.page !== expected.page ||
+    response.meta.pageSize !== expected.pageSize ||
+    !Number.isSafeInteger(response.meta.total) ||
+    response.meta.total < response.data.length ||
+    response.data.length > expected.pageSize
+  )
+    throw invalid()
+  return { rows: response.data.map(parseImportSummary), total: response.meta.total }
+}
+export function parseImportView(value: unknown): ImportView {
+  if (!value || typeof value !== 'object') throw invalid()
+  const data = value as ImportView,
+    { rows, ...metadata } = data
+  const summary = parseImportSummary(metadata)
+  if (!Array.isArray(rows) || rows.length !== summary.rowCount) throw invalid()
   const shape =
     data.resource === 'parameters'
       ? {
@@ -195,28 +261,53 @@ export function parseImportView(value: unknown): ImportView {
             keys: 'dictionaryKey,enabled,label,sort,value',
             strings: ['dictionaryKey', 'label', 'value'],
           }
-  for (const [index, row] of data.rows.entries()) {
+  let ready = 0,
+    applied = 0,
+    errors = 0,
+    expired = 0
+  for (const [index, row] of rows.entries()) {
     if (
       !row ||
       row.index !== index ||
-      typeof row.key !== 'string' ||
-      row.key.length > 32772 ||
-      !['ready', 'invalid', 'duplicate', 'conflict', 'applied'].includes(row.status) ||
-      (row.error !== null && typeof row.error !== 'string') ||
+      !['ready', 'invalid', 'duplicate', 'conflict', 'applied', 'expired'].includes(row.status) ||
+      (row.error !== null && (typeof row.error !== 'string' || row.error.length > 128)) ||
       (row.targetId !== null &&
         (typeof row.targetId !== 'string' || !/^[a-f0-9]{24}$/.test(row.targetId))) ||
-      !row.values ||
-      typeof row.values !== 'object' ||
-      Array.isArray(row.values) ||
-      Object.keys(row.values).sort().join(',') !== shape.keys ||
-      !shape.strings.every((k) => typeof row.values[k] === 'string') ||
-      !(data.resource === 'parameters' ? safe(row.values.value) : safe(row.values)) ||
-      (data.resource !== 'parameters' &&
-        !['boolean', 'string'].includes(typeof row.values.enabled)) ||
-      (data.resource === 'dictionaryItems' &&
-        !['number', 'string'].includes(typeof row.values.sort))
+      (row.status === 'applied'
+        ? row.targetId === null || row.error !== null
+        : row.targetId !== null)
     )
       throw invalid()
+    if (summary.payloadState === 'full') {
+      if (
+        typeof row.key !== 'string' ||
+        row.key.length > 32772 ||
+        !row.values ||
+        typeof row.values !== 'object' ||
+        Array.isArray(row.values) ||
+        Object.keys(row.values).sort().join(',') !== shape.keys ||
+        !shape.strings.every((k) => typeof row.values![k] === 'string') ||
+        !(data.resource === 'parameters' ? safe(row.values.value) : safe(row.values)) ||
+        (data.resource !== 'parameters' &&
+          !['boolean', 'string'].includes(typeof row.values.enabled)) ||
+        (data.resource === 'dictionaryItems' &&
+          !['number', 'string'].includes(typeof row.values.sort))
+      )
+        throw invalid()
+    } else if (row.key !== null || row.values !== null || row.status === 'ready') throw invalid()
+    if (row.status === 'ready') ready++
+    else if (row.status === 'applied') applied++
+    else {
+      errors++
+      if (row.status === 'expired') expired++
+    }
   }
+  if (
+    ready !== summary.readyCount ||
+    applied !== summary.appliedCount ||
+    errors !== summary.errorCount ||
+    expired !== summary.expiredCount
+  )
+    throw invalid()
   return data
 }

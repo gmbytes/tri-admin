@@ -1,4 +1,17 @@
 import { expect, it, vi } from 'vitest'
+function metadata(count = 1) {
+  return {
+    createdAt: new Date(0).toISOString(),
+    rowCount: count,
+    readyCount: count,
+    appliedCount: 0,
+    errorCount: 0,
+    expiredCount: 0,
+    status: count ? 'pending' : 'completed',
+    payloadState: 'full',
+    redactedAt: null,
+  }
+}
 import { hashBrowserFile, type UploadSource } from '../src/core/files'
 import {
   dataSourceBase64,
@@ -90,6 +103,7 @@ it('requires bounded owner-safe import result shape and known row states', () =>
     },
   }
   const view = {
+    ...metadata(),
     id: '1'.repeat(24),
     requestId: crypto.randomUUID(),
     resource: 'parameters',
@@ -139,13 +153,14 @@ it('accepts the domain JSON depth boundary without counting the preview wrapper'
     },
   }
   const view = {
+    ...metadata(),
     id: '1'.repeat(24),
     requestId: crypto.randomUUID(),
     resource: 'parameters',
     expiresAt: new Date(Date.now() + 3600000).toISOString(),
     rows: [row],
   }
-  expect(parseImportView(view).rows[0].values.value).toEqual(value)
+  expect(parseImportView(view).rows[0].values!.value).toEqual(value)
   expect(() =>
     parseImportView({ ...view, rows: [{ ...row, values: { ...row.values, value: [value] } }] }),
   ).toThrow()
@@ -162,6 +177,7 @@ it('validates dictionary and item results without accepting extra credential fie
     },
   })) {
     const view = {
+      ...metadata(),
       id: '1'.repeat(24),
       requestId: crypto.randomUUID(),
       resource,
@@ -191,6 +207,7 @@ it('validates dictionary and item results without accepting extra credential fie
 })
 it('uses canonical RFC3339 expiry text for the public import contract', () => {
   const value = {
+    ...metadata(0),
     id: '1'.repeat(24),
     requestId: crypto.randomUUID(),
     resource: 'parameters',

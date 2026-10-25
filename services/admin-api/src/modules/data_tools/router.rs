@@ -5,8 +5,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    extract::{Path, Request, State},
-    http::StatusCode,
+    extract::{Path, Query, Request, State, rejection::QueryRejection},
+    http::{HeaderValue, StatusCode, header},
 };
 
 crate::api_routes! {
@@ -21,7 +21,16 @@ crate::api_routes! {
     post "/api/v1/data-tools/imports/{id}/apply" => apply, "dataTools.import.apply", "dataTools", "应用导入批次", Permission, &["exports.write"], "最多100行，每行数据与回执原子提交；仅原操作者并重新检查资源权限";
 }
 pub fn configured_routes() -> axum::Router<AppState> {
-    routes().layer(axum::extract::DefaultBodyLimit::max(9 * 1024 * 1024))
+    routes()
+        .layer(axum::extract::DefaultBodyLimit::max(9 * 1024 * 1024))
+        .layer(axum::middleware::map_response(private_response))
+}
+async fn private_response(mut response: axum::response::Response) -> axum::response::Response {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
 }
 async fn resources(
     actor: AuthContext,
@@ -150,11 +159,11 @@ async fn read(
 async fn list(
     State(state): State<AppState>,
     actor: AuthContext,
-) -> Result<ApiResponse<Vec<serde_json::Value>>, AppError> {
+    query: Result<Query<super::history::HistoryQuery>, QueryRejection>,
+) -> Result<crate::common::pagination::Page<ImportSummary>, AppError> {
     actor.require("exports.read")?;
-    Ok(ApiResponse::success(
-        imports::list(state.require_database()?, &Actor::new(&actor)?).await?,
-    ))
+    let Query(input) = query.map_err(|_| AppError::Validation("导入历史查询参数无效".into()))?;
+    super::history::list(state.require_database()?, &Actor::new(&actor)?, input).await
 }
 async fn apply(
     State(state): State<AppState>,

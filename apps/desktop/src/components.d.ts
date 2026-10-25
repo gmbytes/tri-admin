@@ -52,6 +52,7 @@ declare module 'vue' {
     FileListPanel: typeof import('./components/FileListPanel.vue')['default']
     FileStorageSelect: typeof import('./components/FileStorageSelect.vue')['default']
     FileUploadsPanel: typeof import('./components/FileUploadsPanel.vue')['default']
+    ImportHistoryPanel: typeof import('./components/ImportHistoryPanel.vue')['default']
     IntegrationBindingSelect: typeof import('./components/IntegrationBindingSelect.vue')['default']
     IntegrationEditor: typeof import('./components/IntegrationEditor.vue')['default']
     IntegrationProfilesPanel: typeof import('./components/IntegrationProfilesPanel.vue')['default']

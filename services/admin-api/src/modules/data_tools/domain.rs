@@ -178,7 +178,7 @@ pub fn rows(
                 Some("INVALID_FIELDS".into())
             },
             target_id: None,
-            values_json,
+            values_json: Some(values_json),
             parent_id: None,
         });
     }
@@ -191,7 +191,12 @@ pub fn rows(
     Ok(output)
 }
 fn fields(row: &ImportRow) -> mongodb::error::Result<Value> {
-    serde_json::from_str(&row.values_json).map_err(|_| fail(Failure::NotReady))
+    serde_json::from_str(
+        row.values_json
+            .as_deref()
+            .ok_or_else(|| fail(Failure::NotReady))?,
+    )
+    .map_err(|_| fail(Failure::NotReady))
 }
 fn row_error(row: &mut ImportRow, status: &str, error: &str) {
     row.status = status.into();
@@ -323,18 +328,30 @@ pub async fn apply_row(
                 return Ok(());
             }
             if resource == "parameters" {
-                let input: CreateParameter =
-                    serde_json::from_str(&row.values_json).map_err(|_| fail(Failure::NotReady))?;
+                let input: CreateParameter = serde_json::from_str(
+                    row.values_json
+                        .as_deref()
+                        .ok_or_else(|| fail(Failure::NotReady))?,
+                )
+                .map_err(|_| fail(Failure::NotReady))?;
                 parameters::create_in(database, actor, &input, target, session).await?;
             } else {
-                let input: CreateDictionary =
-                    serde_json::from_str(&row.values_json).map_err(|_| fail(Failure::NotReady))?;
+                let input: CreateDictionary = serde_json::from_str(
+                    row.values_json
+                        .as_deref()
+                        .ok_or_else(|| fail(Failure::NotReady))?,
+                )
+                .map_err(|_| fail(Failure::NotReady))?;
                 dictionaries::create_in(database, actor, &input, target, session).await?;
             }
         }
         "dictionaryItems" => {
-            let input: ItemInput =
-                serde_json::from_str(&row.values_json).map_err(|_| fail(Failure::NotReady))?;
+            let input: ItemInput = serde_json::from_str(
+                row.values_json
+                    .as_deref()
+                    .ok_or_else(|| fail(Failure::NotReady))?,
+            )
+            .map_err(|_| fail(Failure::NotReady))?;
             let parent = row.parent_id.ok_or_else(|| fail(Failure::NotReady))?;
             if database
                 .collection::<Document>("dictionaries")

@@ -67,7 +67,7 @@
 - `GET /api/v1/data-tools/resources` 返回当前可读资源的字段白名单；`POST /template` 和 `POST /export` 接收 `{resource,format,fields?,search?}`。格式为 `csv` 或 `xlsx`，只支持标识前缀筛选；用户导出在 all/self/roles 范围过滤后限制到 2000 行，禁止静默截断。当前参数可导入/导出，用户资料仅导出安全字段。
 - 下载响应仍使用 `{data}`，包含 `name,mimeType,size,sha256,contentBase64,rowCount`。客户端先验证大小及 SHA-256，再通过已实现的原生目标文件端口或浏览器 Blob 保存真实 CSV/XLSX。
 - `POST /api/v1/data-tools/imports` 接收 `{requestId,resource,format,contentBase64,mapping}`。同一操作者的 UUID 请求标识绑定内容摘要和字段映射；重复内容返回原预览，不同内容冲突。JSON 请求最多 9 MiB，文件最多 6 MiB；解析在持有全局两个计算名额的阻塞任务里执行，取消 HTTP 请求不会提前释放仍在运行的计算名额。
-- `GET /imports` 返回操作者最近 20 次导入摘要；`GET /imports/{id}` 查询逐行值、状态及回执。其他操作者即使具备全范围权限也得到 404。预览保留在私有 MongoDB 记录中，原始值不进入审计或错误日志。
+- `GET /imports` 分页返回操作者导入摘要；`GET /imports/{id}` 查询逐行状态及回执。其他操作者即使具备全范围权限也得到 404。预览保留在私有 MongoDB 记录中，原始值不进入审计或错误日志。
 - `POST /imports/{id}/apply` 接收 `{rows:[0,1,...]}`，行号从零开始，每批 1–100 个且不能重复。每行创建、参数审计与 `applied/targetId` 回执在同一事务提交。预览后出现的唯一键冲突只影响对应行；应用响应丢失后可查询或重放，不会重复创建。24 小时后禁止新的行创建，已提交行的回执仍可查询。
 - 权限为 `exports.read`（目录/模板/查询）、`exports.write`（导出/预览/应用），并同时要求资源读取权限；导入另需资源写入权限。预览后权限撤销会阻止应用。当前不接受密码、角色授权或密钥列。
 
@@ -80,3 +80,9 @@
 导入响应和历史摘要的 `expiresAt` 使用标准 RFC3339 UTC 毫秒字符串，与全项目公共时间约定一致；内部仍用 MongoDB DateTime 比较到期时间。
 
 `POST /api/v1/data-tools/inspect` 接收 `{resource,format,contentBase64}`，需要 `exports.write` 和所选资源的读写权限；返回 `{resource,format,sha256,headers,rowCount}`，不创建预览记录或业务数据。客户端以原始文件摘要核对结果后构造字段映射；真正创建预览时仍提交原内容及明确映射，由服务器重新验证。
+
+导入历史使用 `GET /api/v1/data-tools/imports?page=1&pageSize=20&resource=parameters&status=pending`，pageSize 为 1–100，resource/status 可省略。状态为 pending/completed/partial/failed/expired；权限与操作者过滤在分页前执行，总数和当前页在同一快照读取。返回 `{data:[summary],meta:{page,pageSize,total}}`，摘要包含 id/requestId/resource/createdAt/expiresAt、rowCount/readyCount/appliedCount/errorCount/expiredCount、status、payloadState 和 redactedAt，不包含行值。
+
+完整结果沿用 `GET /imports/{id}`，增加相同汇总。payloadState 为 full 时才返回行标识和值；到期后为 expired（等待后台清理），清理完成后为 redacted，行 key/values 均为 null，保留行号、结果、错误码和目标 ID。32 项配额只计未到期且存在待处理行的预览；完成、全部验证失败和原请求重放不占新名额。服务启动及约每 10 秒逐项事务清理最多 100 项到期内容，数据、回执、计数和审计保持一致；原业务资源不被清理。
+
+数据工具响应设置 `Cache-Control: private, no-store`，避免私有行结果被 HTTP 缓存再次使用；这不替代每次请求的鉴权或服务器到期判断。

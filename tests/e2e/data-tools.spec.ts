@@ -18,17 +18,26 @@ async function login(page: Page) {
     ).status(),
   ).toBe(201)
   await page.addInitScript((endpoint) => localStorage.setItem('tri-admin.server', endpoint), api)
-  await signIn(page, username, secret)
-  return { api, username, secret }
+  const auth = await signIn(page, username, secret)
+  return { api, username, secret, accessToken: auth.accessToken }
 }
 async function signIn(page: Page, username: string, secret: string) {
   await page.goto('/#/login')
   await page.getByRole('textbox', { name: '账号', exact: true }).fill(username)
   await page.getByLabel('密码', { exact: true }).fill(secret)
+  const response = page.waitForResponse(
+    (reply) =>
+      reply.url() === process.env.TRI_E2E_API! + '/auth/login' &&
+      reply.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: '登录', exact: true }).click()
+  const reply = await response
+  expect(reply.status()).toBe(200)
+  const auth = (await reply.json()).data as { accessToken: string }
   await expect(page.locator('.sidebar')).toBeVisible()
   await page.locator('nav').getByRole('button', { name: '数据工具', exact: true }).click()
   await expect(page.getByRole('heading', { name: '数据工具', exact: true })).toBeVisible()
+  return auth
 }
 async function mapColumn(page: Page, field: string, header: string) {
   const control = page.getByRole('combobox', { name: field + ' 来源列', exact: true })
@@ -405,4 +414,134 @@ test('cancelled inspection results cannot replace a newly selected file', async 
     release()
     await page.unroute('**/data-tools/inspect')
   }
+})
+
+test('history paging finds older pending work while a stale refresh is cancelled', async ({
+  page,
+}) => {
+  test.setTimeout(60000)
+  const { api, accessToken } = await login(page),
+    headers = { authorization: `Bearer ${accessToken}` },
+    suffix = Date.now().toString(36)
+  async function createJob(resource: string, text: string) {
+    const reply = await page.request.post(api + '/data-tools/imports', {
+      headers,
+      data: {
+        requestId: crypto.randomUUID(),
+        resource,
+        format: 'csv',
+        contentBase64: Buffer.from(text).toString('base64'),
+      },
+    })
+    expect(reply.status()).toBe(201)
+    return (await reply.json()).data
+  }
+  const old = await createJob(
+    'parameters',
+    `name,key,valueType,value\nOld,history.old.${suffix},string,value\n`,
+  )
+  for (let i = 0; i < 22; i++) {
+    const job = await createJob(
+      'parameters',
+      `name,key,valueType,value\nDone,history.done.${suffix}.${i},string,value\n`,
+    )
+    expect(
+      (
+        await page.request.post(`${api}/data-tools/imports/${job.id}/apply`, {
+          headers,
+          data: { rows: [0] },
+        })
+      ).status(),
+    ).toBe(200)
+  }
+  await createJob('dictionaries', `name,key\nPending,history.dict.${suffix}\n`)
+  await createJob(
+    'parameters',
+    `name,key,valueType,value\nInvalid,history.invalid.${suffix},boolean,maybe\n`,
+  )
+  const panel = page.locator('.data-import-history')
+  await panel.getByRole('button', { name: '刷新历史', exact: true }).click()
+  await expect(panel.getByText('25 条记录', { exact: true })).toBeVisible()
+  let release!: () => void,
+    completed!: () => void,
+    held = false
+  const gate = new Promise<void>((resolve) => (release = resolve)),
+    done = new Promise<void>((resolve) => (completed = resolve))
+  await page.route('**/data-tools/imports?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('page') !== '1' || held) {
+      await route.continue()
+      return
+    }
+    held = true
+    const response = await route.fetch()
+    await gate
+    try {
+      await route.fulfill({ response })
+    } catch {
+      /* Cancelled stale request. */
+    } finally {
+      completed()
+    }
+  })
+  try {
+    await panel.getByRole('button', { name: '刷新历史', exact: true }).click()
+    await expect.poll(() => held).toBe(true)
+    const second = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname.endsWith('/data-tools/imports') &&
+        new URL(request.url()).searchParams.get('page') === '2',
+    )
+    await panel.locator('.btn-next').click()
+    await second
+    await expect(panel.getByText(old.id, { exact: true })).toBeVisible()
+    release()
+    await done
+    await expect(panel.getByText(old.id, { exact: true })).toBeVisible()
+    await panel.screenshot({
+      path: '.superpowers/sdd/2026-10-24-tri-admin-greenfield/data-import-history.png',
+      animations: 'disabled',
+    })
+  } finally {
+    release()
+    await page.unroute('**/data-tools/imports?*')
+  }
+  async function select(name: string, value: string) {
+    const control = page.getByRole('combobox', { name, exact: true })
+    await panel
+      .locator('.el-select')
+      .filter({ has: control })
+      .locator('.el-select__wrapper')
+      .click()
+    const id = await control.getAttribute('aria-controls')
+    await page.locator(`[id="${id}"]`).getByRole('option', { name: value, exact: true }).click()
+  }
+  await select('历史状态', '待处理')
+  await expect(panel.getByText('2 条记录', { exact: true })).toBeVisible()
+  await select('历史资源', '系统参数')
+  await expect(panel.getByText('1 条记录', { exact: true })).toBeVisible()
+  await expect(panel.getByText(old.id, { exact: true })).toBeVisible()
+})
+
+test('redacted history shows retained outcomes without exposing original row values', async ({
+  page,
+}) => {
+  const api = process.env.TRI_E2E_API!,
+    secret = await readFile(process.env.TRI_E2E_PASSWORD_FILE!, 'utf8')
+  await page.addInitScript((endpoint) => localStorage.setItem('tri-admin.server', endpoint), api)
+  await signIn(page, 'retained-history-fixture', secret)
+  const history = page.locator('.data-import-history')
+  await expect(history.getByText('部分完成', { exact: true })).toBeVisible()
+  await expect(history.getByText('内容已清理', { exact: true })).toBeVisible()
+  await history.getByRole('button', { name: '查看结果', exact: true }).click()
+  const result = page.locator('.data-import-results')
+  await expect(result).toContainText('原始内容已清理')
+  await expect(result.getByText('已创建', { exact: true })).toBeVisible()
+  await expect(result.getByText('已过期', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '应用可导入行', exact: true })).toBeDisabled()
+  expect(await result.textContent()).not.toContain('PRIVATE_RETAINED_SENTINEL')
+  expect(await result.textContent()).not.toContain('fixture.retained.first')
+  await result.screenshot({
+    path: '.superpowers/sdd/2026-10-24-tri-admin-greenfield/data-import-receipt.png',
+    animations: 'disabled',
+  })
 })

@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use futures_util::{FutureExt, TryStreamExt};
+use futures_util::FutureExt;
 use mongodb::{
     Database,
     bson::{self, DateTime, Document, doc, oid::ObjectId},
@@ -146,7 +146,7 @@ fn rows(table: Table, mapping: &BTreeMap<String, String>) -> Result<Vec<ImportRo
                 Some("INVALID_FIELDS".into())
             },
             target_id: None,
-            values_json,
+            values_json: Some(values_json),
             parent_id: None,
         });
     }
@@ -188,15 +188,17 @@ pub async fn create(
                 }
                 shared::lock(database, "data-tools", session).await?;
                 let now = DateTime::now();
-                if records
-                    .count_documents(doc! {"actorId":actor.id,"expiresAt":{"$gt":now}})
+                let mut candidate=rows.clone();
+                domain::annotate(database,&input.resource,&mut candidate,session).await?;
+                let counts=ImportCounts::from_rows(&candidate).map_err(|_|fail(Failure::NotReady))?;
+                if counts.ready_count>0 && records
+                    .count_documents(doc! {"actorId":actor.id,"expiresAt":{"$gt":now},"readyCount":{"$gt":0},"payloadState":"full"})
                     .session(&mut *session)
                     .await?
                     >= 32
                 {
                     return Err(fail(Failure::RateLimited));
                 }
-                domain::annotate(database, &input.resource, rows, session).await?;
                 let record = ImportRecord {
                     id,
                     actor_id: actor.id,
@@ -205,7 +207,7 @@ pub async fn create(
                     resource: input.resource.clone(),
                     created_at: now,
                     expires_at: DateTime::from_millis(now.timestamp_millis() + 86_400_000),
-                    rows: rows.clone(),
+                    rows:candidate,counts,payload_state:"full".into(),redacted_at:None,
                 };
                 records.insert_one(&record).session(&mut *session).await?;
                 shared::audit(database, actor, "dataTools.import.preview", id, session).await?;
@@ -244,23 +246,6 @@ pub async fn get(
     registry::resource(&record.resource, actor, false)?;
     Ok(record)
 }
-pub async fn list(database: &Database, actor: &Actor) -> Result<Vec<serde_json::Value>, AppError> {
-    let resources = registry::RESOURCES
-        .iter()
-        .filter(|r| r.importable && actor.can(r.read_permission))
-        .map(|r| r.key)
-        .collect::<Vec<_>>();
-    let records = database
-        .collection::<Document>("data_imports")
-        .find(doc! {"actorId":actor.id,"resource":{"$in":resources}})
-        .projection(doc! {"requestId":1,"resource":1,"createdAt":1,"expiresAt":1})
-        .sort(doc! {"createdAt":-1,"_id":-1})
-        .limit(20)
-        .await?
-        .try_collect::<Vec<_>>()
-        .await?;
-    records.into_iter().map(|d|Ok(serde_json::json!({"id":d.get_object_id("_id").map_err(|_|AppError::Internal)?.to_hex(),"requestId":d.get_str("requestId").map_err(|_|AppError::Internal)?,"resource":d.get_str("resource").map_err(|_|AppError::Internal)?,"expiresAt":public_time(*d.get_datetime("expiresAt").map_err(|_|AppError::Internal)?)?}))).collect()
-}
 pub async fn apply(
     database: &Database,
     actor: Actor,
@@ -289,7 +274,7 @@ pub async fn apply(
                         let record = database
                             .collection::<ApplyRecord>("data_imports")
                             .find_one(doc! {"_id":id,"actorId":actor.id})
-                            .projection(doc!{"resource":1,"expiresAt":1,"rows":{"$slice":[index as i32,1]}})
+                            .projection(doc!{"resource":1,"expiresAt":1,"payloadState":1,"rows":{"$slice":[index as i32,1]}})
                             .session(&mut *session)
                             .await?
                             .ok_or_else(|| fail(Failure::NotFound))?;
@@ -305,17 +290,21 @@ pub async fn apply(
                         if record.expires_at <= DateTime::now() {
                             return Err(fail(Failure::Conflict("预览已过期，请重新导入")));
                         }
+                        if record.payload_state!="full"{return Err(fail(Failure::NotReady));}
                         domain::apply_row(database,actor,&record.resource,&mut row,target,session).await?;
                         let mut set = doc! {};
                         set.insert(
                             format!("rows.{index}"),
                             bson::serialize_to_bson(&row).map_err(|_| fail(Failure::NotReady))?,
                         );
-                        database
+                        let mut increments=doc!{"readyCount":-1i64};
+                        increments.insert(if row.status=="applied"{"appliedCount"}else{"errorCount"},1i64);
+                        let result=database
                             .collection::<Document>("data_imports")
-                            .update_one(doc! {"_id":id}, doc! {"$set":set})
+                            .update_one(doc! {"_id":id,"readyCount":{"$gt":0},"payloadState":"full","expiresAt":{"$gt":DateTime::now()}}, doc! {"$set":set,"$inc":increments})
                             .session(session)
                             .await?;
+                        if result.matched_count!=1{return Err(fail(Failure::Conflict("预览已过期或状态已改变，请重新查询")));}
                         Ok(())
                     }
                     .boxed()
@@ -342,4 +331,5 @@ struct ApplyRecord {
     resource: String,
     expires_at: DateTime,
     rows: Vec<ImportRow>,
+    payload_state: String,
 }
