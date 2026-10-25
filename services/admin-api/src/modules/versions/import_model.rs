@@ -23,6 +23,32 @@ pub struct PreviewInput {
     #[serde(default)]
     pub strategy: Strategy,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApplyInput {
+    pub checksum: String,
+}
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyView {
+    pub preview_id: String,
+    pub version_id: String,
+    pub checksum: String,
+    pub applied_at: String,
+    pub counts: ImportCounts,
+    pub version_reused: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewRecord {
+    pub checksum: String,
+    pub baseline_hash: String,
+    pub bundle_json: Option<String>,
+    pub strategy: Strategy,
+    pub status: String,
+    pub expires_at: mongodb::bson::DateTime,
+    pub result_json: Option<String>,
+}
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Changes {

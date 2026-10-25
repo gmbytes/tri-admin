@@ -1,4 +1,4 @@
-use super::{capture, dto::CaptureInput, models::*};
+use super::{capture, dto::CaptureInput, models::*, store};
 use crate::{
     common::{
         canonical,
@@ -21,48 +21,63 @@ pub async fn create(
 ) -> Result<MetaView, AppError> {
     let selection = capture::prepare(&actor, &input)?;
     let id = ObjectId::new();
-    let record = transaction::run_snapshot(database, (database.clone(), actor, input, selection), |session, (database, actor, input, selection)| {
-        async move {
-            shared::lock(database, "versions", session).await?;
-            if database.collection::<Document>("versions")
-                .find_one(doc! {"codeKey":input.code.to_ascii_lowercase()})
-                .session(&mut *session).await?.is_some() {
-                return Err(fail(Failure::Conflict("版本编号已存在，历史编号不能复用")));
+    let record = transaction::run_snapshot(
+        database,
+        (database.clone(), actor, input, selection),
+        |session, (database, actor, input, selection)| {
+            async move {
+                shared::lock(database, "versions", session).await?;
+                if database
+                    .collection::<Document>("versions")
+                    .find_one(doc! {"codeKey":input.code.to_ascii_lowercase()})
+                    .session(&mut *session)
+                    .await?
+                    .is_some()
+                {
+                    return Err(fail(Failure::Conflict("版本编号已存在，历史编号不能复用")));
+                }
+                let now = DateTime::now();
+                let (resources, counts) = capture::resources(database, selection, session).await?;
+                let bundle = Bundle {
+                    format: "tri-admin/config-bundle".into(),
+                    schema_version: 1,
+                    release: Release {
+                        name: input.name.clone(),
+                        code: input.code.clone(),
+                        description: input.description.clone(),
+                        captured_at: time(now)
+                            .map_err(|_| fail(Failure::Validation("时间无法编码")))?,
+                    },
+                    resources,
+                    required_apis: selection.apis.clone(),
+                };
+                let json = canonical::json(&bundle)
+                    .map_err(|_| fail(Failure::Validation("配置包无法编码")))?;
+                if json.len() > MAX_PACKAGE_BYTES {
+                    return Err(fail(Failure::PayloadTooLarge));
+                }
+                let checksum = canonical::checksum(json.as_bytes());
+                let record = store::insert(
+                    database,
+                    actor,
+                    store::Package {
+                        id,
+                        bundle: &bundle,
+                        json: &json,
+                        checksum: &checksum,
+                        counts: &counts,
+                        reads: &selection.read_permissions,
+                        origin: "capture",
+                    },
+                    session,
+                )
+                .await?;
+                shared::audit(database, actor, "versions.create", id, session).await?;
+                Ok(record)
             }
-            let now = DateTime::now();
-            let (resources, counts) = capture::resources(database, selection, session).await?;
-            let bundle = Bundle {
-                format: "tri-admin/config-bundle".into(), schema_version: 1,
-                release: Release {
-                    name: input.name.clone(), code: input.code.clone(), description: input.description.clone(),
-                    captured_at: time(now).map_err(|_| fail(Failure::Validation("时间无法编码")))?,
-                },
-                resources, required_apis: selection.apis.clone(),
-            };
-            let json = canonical::json(&bundle).map_err(|_| fail(Failure::Validation("配置包无法编码")))?;
-            if json.len() > MAX_PACKAGE_BYTES { return Err(fail(Failure::PayloadTooLarge)); }
-            let checksum = canonical::checksum(json.as_bytes());
-            let creator = database.collection::<Document>("users")
-                .find_one(doc! {"_id":actor.id}).session(&mut *session).await?
-                .ok_or_else(|| fail(Failure::Forbidden))?;
-            let name = creator.get_str("displayName").map_err(|_| fail(Failure::NotReady))?;
-            let document = doc! {
-                "_id":id, "name":&input.name, "code":&input.code, "codeKey":input.code.to_ascii_lowercase(),
-                "description":&input.description, "checksum":checksum, "byteLength":json.len() as i64,
-                "counts":{"menus":counts.menus,"ancestors":counts.ancestors,"dictionaries":counts.dictionaries,
-                    "dictionaryItems":counts.dictionary_items,"parameters":counts.parameters,"apis":counts.apis},
-                "readPermissions":&selection.read_permissions, "createdById":actor.id, "createdByName":name,
-                "origin":"capture", "version":1i64, "createdAt":now, "updatedAt":now, "deletedAt":null
-            };
-            database.collection::<Document>("versions").insert_one(document).session(&mut *session).await?;
-            database.collection::<Document>("version_packages")
-                .insert_one(doc! {"_id":id,"packageJson":json}).session(&mut *session).await?;
-            shared::audit(database, actor, "versions.create", id, session).await?;
-            database.collection::<MetaRecord>("versions").find_one(doc! {"_id":id})
-                .session(session).await?.ok_or_else(|| fail(Failure::NotFound))
-        }
-        .boxed()
-    })
+            .boxed()
+        },
+    )
     .await?;
     record.view()
 }

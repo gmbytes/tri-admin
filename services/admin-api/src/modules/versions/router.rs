@@ -26,12 +26,31 @@ crate::api_routes! {
     get "/api/v1/versions" => list, "versions.list", "versions", "配置版本列表", Permission, &["versions.read"];
     post "/api/v1/versions" => create, "versions.create", "versions", "捕获配置快照", Permission, &["versions.write"], "所选配置及接口依赖还需各自读取权限";
     post "/api/v1/versions/import-previews" => import_preview, "versions.import.preview", "versions", "预览配置包导入", Permission, &["versions.write"], "所选配置及接口依赖还需各自读取权限；预览不修改配置";
+    post "/api/v1/versions/import-previews/{id}/apply" => import_apply, "versions.import.apply", "versions", "应用配置包导入", Permission, &["versions.write"], "首次应用还需各类资源的读取和写入权限；校验预览操作者、校验和、有效期与目标指纹";
     get "/api/v1/versions/{id}" => read, "versions.get", "versions", "版本摘要", Permission, &["versions.read"];
     delete "/api/v1/versions/{id}" => delete, "versions.delete", "versions", "删除版本记录", Permission, &["versions.write"];
     get "/api/v1/versions/{id}/download" => download, "versions.download", "versions", "下载配置发版包", Permission, &["versions.read"], "还需包中各类资源的读取权限";
 }
 pub fn configured_routes() -> axum::Router<AppState> {
     routes().layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
+}
+async fn import_apply(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<ApiResponse<super::import_model::ApplyView>, AppError> {
+    actor.require("versions.write")?;
+    let input = request::json::<super::import_model::ApplyInput>(body, &state).await?;
+    Ok(ApiResponse::success(
+        super::apply::apply(
+            state.require_database()?,
+            Actor::new(&actor)?,
+            validation::object_id(&id)?,
+            input,
+        )
+        .await?,
+    ))
 }
 async fn import_preview(
     State(state): State<AppState>,
