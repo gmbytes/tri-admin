@@ -17,10 +17,11 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
             {"_id":"auth","version":1},
             {"_id":"rbac","version":2},
             {"_id":"dictionaries","version":1},
-            {"_id":"parameters","version":1}
+            {"_id":"parameters","version":1},
+            {"_id":"customers","version":1}
         ]})
         .await?;
-    Ok(count == 5)
+    Ok(count == 6)
 }
 
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
@@ -121,5 +122,6 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
     super::auth_schema::migrate_auth(database).await?;
     super::rbac_schema::migrate_rbac(database).await?;
     super::dictionary_schema::migrate_dictionaries(database).await?;
-    super::parameter_schema::migrate_parameters(database).await
+    super::parameter_schema::migrate_parameters(database).await?;
+    super::customer_schema::migrate_customers(database).await
 }

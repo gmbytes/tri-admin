@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod customers;
 pub mod dictionaries;
 pub mod health;
 pub mod menus;

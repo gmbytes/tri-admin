@@ -33,3 +33,4 @@
 - `/dictionaries` GET/POST；`/dictionaries/{id}` GET/PATCH/DELETE；`/dictionaries/{id}/items` GET/POST；`/dictionaries/{id}/items/{itemId}` PATCH/DELETE。字段和删除约束见 [字典设计](design-dictionaries.md)。
 - `/parameters` GET/POST；`/parameters/{id}` GET/PATCH/DELETE。支持有类型的业务配置，字段、空值和数值边界见 [参数设计](design-parameters.md)。
 - 角色 `dataScope` 支持 all/self/roles，`dataScopeRoleIds` 为显式选择，`dataScopeRoles` 返回可读标签。当前用户摘要的 `dataScopeRoleIds` 是有效范围并集；all/self 模式为空。授权、成员资格及范围边界见 [客户与范围设计](design-customer-scope.md)。
+- `/customers` GET/POST；`/customers/{id}` GET/PATCH/DELETE；`/customers/owners` GET 最小归属人选项。查询支持 status=active/archived、名称/编号前缀及白名单排序；范围外客户返回 404，转移到范围外归属人返回 403。有未删除客户的用户不能删除。
