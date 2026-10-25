@@ -45,6 +45,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health/live", get(modules::health::live))
         .route("/health/ready", get(modules::health::ready))
         .fallback(|| async { common::error::AppError::NotFound })
+        .method_not_allowed_fallback(|| async { common::error::AppError::MethodNotAllowed })
         .with_state(state)
         .layer(cors)
         .layer(PropagateRequestIdLayer::x_request_id())

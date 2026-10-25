@@ -8,6 +8,14 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("请求 JSON 格式无效")]
+    BadRequest,
+    #[error("请求方法不受支持")]
+    MethodNotAllowed,
+    #[error("请求内容过大")]
+    PayloadTooLarge,
+    #[error("请求数据格式不受支持")]
+    UnsupportedMediaType,
     #[error("请先登录")]
     Unauthorized,
     #[error("账号或密码错误")]
@@ -37,6 +45,12 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
+            Self::BadRequest => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
+            Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED"),
+            Self::PayloadTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE"),
+            Self::UnsupportedMediaType => {
+                (StatusCode::UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE")
+            }
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"),
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),

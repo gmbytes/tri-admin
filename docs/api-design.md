@@ -2,7 +2,7 @@
 
 - 基址 `/api/v1`；资源名复数，HTTP 方法表达操作。
 - 成功 `{data:...}`；列表 `{data:[...],meta:{page,pageSize,total}}`。
-- 错误 `{error:{code,message}}`：400 格式错误、401 未登录、403 权限不足、404 不存在、409 冲突、422 参数错误、429 限流、503 依赖不可用。
+- 错误 `{error:{code,message}}`：400 JSON 语法错误、401 未登录、403 权限不足、404 不存在、405 方法不支持、409 冲突、413 内容超限、415 内容类型不支持、422 字段/参数错误、429 限流、503 依赖不可用。
 - `X-Request-Id` 用于请求追踪；JSON camelCase，ID 为字符串，时间 RFC3339。
 - `/health/live` 表达进程存活；`/health/ready` 表达数据库、模型和初始化就绪。
 - 认证 `/auth/login`、`/auth/refresh`、`/auth/logout`、`/auth/me`；访问凭据通过 Bearer JWT。
@@ -10,6 +10,7 @@
 - 分页默认 page=1/pageSize=20，上限 100；筛选与排序字段按资源白名单。
 - 更新支持 version 乐观并发检查，冲突返回 409；接口服务端依据权限操作码鉴权。
 - 本规范没有旧接口别名或旧字段转换。
+- JSON 入口接受 application/json 及 application/*+json，默认请求体上限 2 MiB；先完整验证语法，再解析字段，错误不回显请求值。方法错误保留 Allow 和 X-Request-Id，未知路径继续返回 404。
 
 ## 已实现的认证协议
 

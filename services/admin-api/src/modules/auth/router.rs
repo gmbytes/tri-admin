@@ -8,8 +8,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Json, Router,
-    extract::{ConnectInfo, FromRequest, Request, State},
+    Router,
+    extract::{ConnectInfo, Request, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -33,9 +33,7 @@ async fn login(
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0.ip().to_string())
         .unwrap_or_else(|| "unknown".into());
-    let Json(input) = Json::<LoginInput>::from_request(request, &state)
-        .await
-        .map_err(|_| AppError::Validation("请求 JSON 格式或字段无效".into()))?;
+    let input = crate::common::request::json::<LoginInput>(request, &state).await?;
     Ok(ApiResponse::success(
         service::login(&state, input, &peer).await?,
     ))
@@ -45,9 +43,7 @@ async fn refresh(
     State(state): State<AppState>,
     request: Request,
 ) -> Result<ApiResponse<TokenResponse>, AppError> {
-    let Json(input) = Json::<RefreshInput>::from_request(request, &state)
-        .await
-        .map_err(|_| AppError::Validation("请求 JSON 格式或字段无效".into()))?;
+    let input = crate::common::request::json::<RefreshInput>(request, &state).await?;
     Ok(ApiResponse::success(
         service::refresh(&state, input.refresh_token).await?,
     ))
