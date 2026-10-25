@@ -4,6 +4,7 @@ mod journal;
 pub mod maintenance;
 pub mod models;
 mod query;
+mod retry;
 pub mod router;
 pub mod service;
 pub mod worker;

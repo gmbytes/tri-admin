@@ -28,6 +28,7 @@ pub struct Attempt {
     pub sha256: Option<String>,
     pub row_count: u32,
     pub write_started: bool,
+    pub retry_requested: bool,
     pub blob_known: bool,
     pub workspace_cleaned: bool,
     pub cleanup_token: Option<String>,
@@ -67,7 +68,7 @@ pub async fn claim(
         let attempt=if fresh {
             let Some(workspace)=workspace.as_ref() else{return Ok(None)};
             job.generation+=1;job.meta.row_count=0;job.meta.output=None;job.meta.started_at=Some(now);job.meta.last_error=None;job.meta.state=JobState::Running;job.candidate_id=Some(attempt_id);
-            let attempt=Attempt{id:attempt_id,job_id:id,generation:job.generation,workspace_id:workspace.clone(),blob_id:blob,storage_profile_id:job.storage_profile_id,state:"generating".into(),size:None,sha256:None,row_count:0,write_started:false,blob_known:false,workspace_cleaned:false,cleanup_token:None,cleanup_expires_at:None,next_run_at:now,created_at:now,updated_at:now};
+            let attempt=Attempt{id:attempt_id,job_id:id,generation:job.generation,workspace_id:workspace.clone(),blob_id:blob,storage_profile_id:job.storage_profile_id,state:"generating".into(),size:None,sha256:None,row_count:0,write_started:false,retry_requested:false,blob_known:false,workspace_cleaned:false,cleanup_token:None,cleanup_expires_at:None,next_run_at:now,created_at:now,updated_at:now};
             database.collection::<Attempt>("data_export_attempts").insert_one(&attempt).session(&mut *session).await?;attempt
         } else {
             let attempt=database.collection::<Attempt>("data_export_attempts").find_one(doc!{"_id":job.candidate_id.ok_or_else(||fail(Failure::NotReady))?}).session(&mut *session).await?.ok_or_else(||fail(Failure::NotReady))?;
@@ -155,6 +156,14 @@ pub async fn current(database: &Database, claim: &Claim) -> Result<JobRecord, Ap
         .find_one(doc! {"_id":claim.job.meta.id})
         .await?
         .ok_or(AppError::NotFound)
+}
+pub async fn supersede(database: &Database, claim: &Claim) -> Result<(), AppError> {
+    transaction::run(database,(database.clone(),claim.clone()),|session,(database,claim)|async move{
+        shared::lock(database,"data-exports",session).await?;
+        let candidate=database.collection::<Attempt>("data_export_attempts").find_one(doc!{"_id":claim.attempt.id,"retryRequested":true,"state":{"$ne":"cleaned"}}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("重试意图已改变")))?;
+        if database.collection::<Document>("data_exports").update_one(lease(claim),doc!{"$set":{"state":"queued","candidateId":null,"rowCount":0i64,"output":null,"leaseToken":null,"leaseExpiresAt":null,"nextRunAt":DateTime::now(),"cleanupPending":true,"lastError":null},"$inc":{"version":1i64}}).session(&mut *session).await?.matched_count!=1{return Err(fail(Failure::Conflict("LEASE_LOST")));}
+        database.collection::<Document>("data_export_attempts").update_one(doc!{"_id":candidate.id},doc!{"$set":{"state":"orphaned","retryRequested":false,"nextRunAt":DateTime::now()}}).session(session).await?;Ok(())
+    }.boxed()).await
 }
 pub async fn attempt(database: &Database, id: ObjectId) -> Result<Attempt, AppError> {
     database

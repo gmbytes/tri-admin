@@ -187,6 +187,18 @@ export const useSession = defineStore('session', () => {
     }
     return client.downloadFile(fileId, expected, sink, options)
   }
+  async function downloadExport<T>(
+    jobId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ) {
+    if (!client) {
+      await sink.abort().catch(() => undefined)
+      throw new ApiError('UNCONFIGURED', '请先配置服务器')
+    }
+    return client.downloadExport(jobId, expected, sink, options)
+  }
   return {
     user,
     navigation,
@@ -208,6 +220,7 @@ export const useSession = defineStore('session', () => {
     downloadConfiguration,
     putChunk,
     downloadFile,
+    downloadExport,
     syncProfile,
     loadNavigation,
     loadApplication,

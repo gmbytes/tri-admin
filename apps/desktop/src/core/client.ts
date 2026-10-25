@@ -370,6 +370,23 @@ export class ApiClient {
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
   ): Promise<T> {
+    return this.downloadContent('file', fileId, expected, sink, options)
+  }
+  async downloadExport<T>(
+    jobId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ): Promise<T> {
+    return this.downloadContent('export', jobId, expected, sink, options)
+  }
+  private async downloadContent<T>(
+    kind: 'file' | 'export',
+    fileId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void },
+  ): Promise<T> {
     let cleanup: Promise<void> | undefined
     const abort = () =>
       (cleanup ??= Promise.resolve()
@@ -385,7 +402,7 @@ export class ApiClient {
       validateFileSpec(expected)
       const spec = Object.freeze({ size: expected.size, sha256: expected.sha256 })
       const result = await this.authorized<T>(
-        `/files/${fileId}/content`,
+        kind === 'export' ? `/data-tools/exports/${fileId}/content` : `/files/${fileId}/content`,
         {
           signal: options.signal,
           timeoutMs: 30 * 60 * 1000,

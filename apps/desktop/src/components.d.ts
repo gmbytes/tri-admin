@@ -48,6 +48,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
+    ExportJobsPanel: typeof import('./components/ExportJobsPanel.vue')['default']
     ExportTemplatesPanel: typeof import('./components/ExportTemplatesPanel.vue')['default']
     FileCategoriesPanel: typeof import('./components/FileCategoriesPanel.vue')['default']
     FileCategorySelect: typeof import('./components/FileCategorySelect.vue')['default']

@@ -328,4 +328,56 @@ describe('authenticated binary file requests', () => {
     expect(await pending).toMatchObject({ code: 'SESSION_CHANGED' })
     expect(writes).toBe(1)
   })
+
+  it('downloads private export content through the same refresh and never substitutes the ordinary file route', async () => {
+    const bytes = Buffer.from('private export'),
+      spec = { size: bytes.length, sha256: digest(bytes) }
+    let refreshes = 0,
+      exportReads = 0,
+      fileReads = 0
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url?.endsWith('/refresh')) {
+        refreshes++
+        return send(res, 200, tokens('new-access'))
+      }
+      if (req.headers.authorization === 'Bearer old-access')
+        return send(res, 401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } })
+      if (req.url?.endsWith(`/data-tools/exports/${id}/content`)) {
+        exportReads++
+        res.writeHead(200, {
+          'content-type': 'application/octet-stream',
+          'content-length': bytes.length,
+          'content-disposition': 'attachment; filename="export.csv"',
+          etag: `"${spec.sha256}"`,
+        })
+        res.end(bytes)
+        return
+      }
+      if (req.url?.includes('/files/')) fileReads++
+      send(res, 200, { data: 'ok' })
+    })
+    const client = new ApiClient({ endpoint, vault })
+    await client.login('operator', 'fixture', false)
+    const [blob] = await Promise.all([
+      client.downloadExport(id, spec, createBrowserFileSink(spec)),
+      client.request('/users'),
+    ])
+    expect(await blob.text()).toBe('private export')
+    expect(refreshes).toBe(1)
+    expect(exportReads).toBe(1)
+    expect(fileReads).toBe(0)
+    let aborted = false
+    await expect(
+      client.downloadExport('../outside', spec, {
+        write: async () => {},
+        complete: async () => null,
+        abort: async () => {
+          aborted = true
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_FILE' })
+    expect(aborted).toBe(true)
+    expect(exportReads).toBe(1)
+  })
 })

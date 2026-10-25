@@ -10,6 +10,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         "data_exports",
         "data_export_attempts",
         "data_export_manifest",
+        "data_export_actions",
     ] {
         if let Err(error) = database.create_collection(name).await
             && !matches!(&*error.kind,ErrorKind::Command(command)if command.code==48)
@@ -80,6 +81,15 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .create_index(
             IndexModel::builder()
                 .keys(doc! {"jobId":1,"generation":1,"rowIds":1})
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        )
+        .await?;
+    database
+        .collection::<mongodb::bson::Document>("data_export_actions")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! {"jobId":1,"actorId":1,"requestId":1})
                 .options(IndexOptions::builder().unique(true).build())
                 .build(),
         )

@@ -6,6 +6,8 @@ import { platform } from '../platform'
 import DataFieldMapping from '../components/DataFieldMapping.vue'
 import ImportHistoryPanel from '../components/ImportHistoryPanel.vue'
 import ExportTemplatesPanel from '../components/ExportTemplatesPanel.vue'
+import ExportJobsPanel from '../components/ExportJobsPanel.vue'
+import type { ExportSource } from '../core/export-jobs'
 import { templateMapping, type ExportTemplate } from '../core/export-templates'
 import {
   parseInspection,
@@ -49,6 +51,20 @@ const selected = computed(() => resources.value.find((r) => r.key === resource.v
 const historyRevision = ref(0)
 const activeTemplate = ref<ExportTemplate | null>(null),
   lastPreviewRequest = ref('')
+const exportSource = computed<ExportSource | null>(() =>
+  !selected.value || !fields.value.length
+    ? null
+    : activeTemplate.value
+      ? { kind: 'template', id: activeTemplate.value.id, version: activeTemplate.value.version }
+      : {
+          kind: 'resource',
+          resource: resource.value,
+          columns: fields.value.map((field) => ({ field, header: field })),
+          search: search.value,
+          filters: [],
+          sort: null,
+        },
+)
 const mappingResource = computed(() =>
   selected.value && activeTemplate.value
     ? { ...selected.value, fields: activeTemplate.value.columns.map((column) => column.field) }
@@ -457,6 +473,12 @@ function valueText(value: unknown) {
       字符串保留原文。
     </p>
   </section>
+  <ExportJobsPanel
+    :resources="resources"
+    :source="exportSource"
+    :format="format"
+    :disabled="busy"
+  />
   <section v-if="canImport" class="surface data-options">
     <h2>导入{{ selected?.label }}</h2>
     <p class="subtle">

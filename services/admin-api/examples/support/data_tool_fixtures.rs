@@ -55,5 +55,27 @@ pub async fn seed(state: &AppState, password: &str) -> Result<(), Box<dyn std::e
     let now = DateTime::now().timestamp_millis();
     database.collection::<Document>("data_imports").update_one(doc!{"_id":job},doc!{"$set":{"createdAt":DateTime::from_millis(now-2*86_400_000),"expiresAt":DateTime::from_millis(now-86_400_000)}}).await?;
     retention::maintenance_once(database).await?;
+    // A queued operation with a future scheduler timestamp gives the browser a
+    // deterministic real cancellation target. This fixture is unreachable from
+    // the production executable and is restricted to tri_admin_e2e_ databases.
+    let controls=users::create(database,actor(owner),serde_json::from_value(json!({"username":"export-controls-fixture","displayName":"导出取消验证","password":password,"roleIds":[role.to_hex()]}))?).await?;
+    let controls_id = ObjectId::parse_str(&controls.id)?;
+    let input = serde_json::from_value(
+        json!({"requestId":uuid::Uuid::new_v4().to_string(),"format":"csv","source":{"kind":"resource","resource":"parameters","columns":[{"field":"key","header":"key"}],"search":"fixture.controls.empty."}}),
+    )?;
+    let (_, job) = admin_api::modules::data_tools::export_jobs::service::create(
+        database,
+        &state.config,
+        actor(controls_id),
+        input,
+    )
+    .await?;
+    database
+        .collection::<Document>("data_exports")
+        .update_one(
+            doc! {"_id":ObjectId::parse_str(&job.id)?},
+            doc! {"$set":{"nextRunAt":DateTime::from_millis(now+3600000)}},
+        )
+        .await?;
     Ok(())
 }

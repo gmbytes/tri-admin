@@ -732,7 +732,7 @@ async fn own_v4_migration_adds_durable_jobs_and_repeating_it_preserves_receipts(
             .unwrap()
             .get_i32("version")
             .unwrap(),
-        5
+        6
     );
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();

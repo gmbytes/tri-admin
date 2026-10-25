@@ -8,7 +8,7 @@ use super::{
 use crate::{
     common::error::AppError,
     modules::{
-        files::storage::{BlobId, BlobSpec, BlobStore, VerifiedSource},
+        files::storage::{BlobId, BlobSpec, BlobStore, StorageError, VerifiedSource},
         rbac::shared::Actor,
     },
     state::AppState,
@@ -189,7 +189,9 @@ async fn execute(
         authorization::execution_actor(database, claim.job.actor_id, &claim.job.meta.resource)
             .await?;
     let current = journal::current(database, claim).await?;
-    authorization::verify_user_manifest(database, &current, &actor).await?;
+    if !attempt.write_started {
+        authorization::verify_user_manifest(database, &current, &actor).await?;
+    }
     let spec = BlobSpec::new(
         attempt.size.ok_or(AppError::NotReady)? as u64,
         attempt.sha256.as_deref().ok_or(AppError::NotReady)?,
@@ -200,6 +202,7 @@ async fn execute(
         .await
         .map_err(|_| AppError::FileStorageUnavailable)?;
     if attempt.write_started {
+        let mut missing = false;
         let observed = match store.read(blob, spec.clone(), cancel.clone()).await {
             Ok(mut stream) => {
                 let mut valid = true;
@@ -215,9 +218,17 @@ async fn execute(
                 }
                 valid
             }
+            Err(StorageError::NotFound) => {
+                missing = true;
+                false
+            }
             Err(_) => false,
         };
         if !observed {
+            if missing && attempt.retry_requested {
+                journal::supersede(database, claim).await?;
+                return Ok(());
+            }
             journal::unknown(database, claim, "PUBLICATION_PENDING").await?;
             return Ok(());
         }
@@ -228,6 +239,13 @@ async fn execute(
                 doc! {"$set":{"blobKnown":true,"state":"stored"}},
             )
             .await?;
+        if let Err(error) = authorization::verify_user_manifest(database, &current, &actor).await {
+            if attempt.retry_requested && matches!(error, AppError::Conflict(_)) {
+                journal::supersede(database, claim).await?;
+                return Ok(());
+            }
+            return Err(error);
+        }
     } else {
         let file = workspace
             .as_ref()
