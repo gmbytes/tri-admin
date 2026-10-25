@@ -23,7 +23,7 @@ impl ValueType {
 fn general() -> String {
     "general".into()
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateParameter {
     pub name: String,

@@ -1,5 +1,6 @@
 pub mod api_catalog;
 pub mod auth;
+pub mod data_tools;
 pub mod dictionaries;
 pub mod files;
 pub mod health;
@@ -74,6 +75,11 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
             prefix: files::router::API_PREFIX,
             endpoints: files::router::API_ENDPOINTS,
             routes: files::router::routes,
+        },
+        ApiModule {
+            prefix: data_tools::router::API_PREFIX,
+            endpoints: data_tools::router::API_ENDPOINTS,
+            routes: data_tools::router::configured_routes,
         },
     ]
 }

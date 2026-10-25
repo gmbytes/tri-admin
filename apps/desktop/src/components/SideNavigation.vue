@@ -9,6 +9,7 @@ import {
   Menu,
   Lock,
   FolderOpened,
+  Sort,
 } from '@element-plus/icons-vue'
 import type { MenuRecord } from '../core/types'
 defineOptions({ name: 'SideNavigation' })
@@ -28,6 +29,7 @@ const icons: Record<string, unknown> = {
   menus: Menu,
   permissions: Lock,
   files: FolderOpened,
+  exports: Sort,
 }
 </script>
 <template>

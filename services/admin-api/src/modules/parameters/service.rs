@@ -13,7 +13,7 @@ use crate::{
 };
 use futures_util::{FutureExt, TryStreamExt};
 use mongodb::{
-    Database,
+    ClientSession, Database,
     bson::{DateTime, Document, doc, oid::ObjectId},
 };
 use serde_json::Value;
@@ -141,7 +141,7 @@ pub async fn create(
     actor: Actor,
     input: CreateParameter,
 ) -> Result<ParameterView, AppError> {
-    let serialized = validate(
+    validate(
         &input.name,
         &input.key,
         &input.group,
@@ -152,34 +152,43 @@ pub async fn create(
     let id = ObjectId::new();
     transaction::run(
         database,
-        (database.clone(), actor, input, serialized),
-        |session, (database, actor, input, serialized)| {
-            async move {
-                let now = DateTime::now();
-                let record = doc! {
-                    "_id":id, "name":&input.name, "key":&input.key,
-                    "group":&input.group, "description":&input.description,
-                    "valueType":input.value_type.as_str(), "valueJson":&*serialized,
-                    "version":1i64, "createdAt":now, "updatedAt":now, "deletedAt":null
-                };
-                database
-                    .collection::<Document>("parameters")
-                    .insert_one(record)
-                    .session(&mut *session)
-                    .await?;
-                shared::audit(database, actor, "parameters.create", id, session).await?;
-                database
-                    .collection::<ParameterRecord>("parameters")
-                    .find_one(doc! {"_id":id})
-                    .session(session)
-                    .await?
-                    .ok_or_else(|| fail(Failure::NotFound))
-            }
-            .boxed()
+        (database.clone(), actor, input),
+        |session, (database, actor, input)| {
+            async move { create_in(database, actor, input, id, session).await }.boxed()
         },
     )
     .await?
     .view()
+}
+
+pub(crate) async fn create_in(
+    database: &Database,
+    actor: &Actor,
+    input: &CreateParameter,
+    id: ObjectId,
+    session: &mut ClientSession,
+) -> mongodb::error::Result<ParameterRecord> {
+    let serialized = validate(
+        &input.name,
+        &input.key,
+        &input.group,
+        &input.description,
+        input.value_type,
+        &input.value,
+    )
+    .map_err(|_| fail(Failure::Validation("参数字段无效")))?;
+    let now = DateTime::now();
+    database.collection::<Document>("parameters").insert_one(doc! {
+        "_id":id,"name":&input.name,"key":&input.key,"group":&input.group,"description":&input.description,
+        "valueType":input.value_type.as_str(),"valueJson":serialized,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null
+    }).session(&mut *session).await?;
+    shared::audit(database, actor, "parameters.create", id, session).await?;
+    database
+        .collection::<ParameterRecord>("parameters")
+        .find_one(doc! {"_id":id})
+        .session(session)
+        .await?
+        .ok_or_else(|| fail(Failure::NotFound))
 }
 pub async fn patch(
     database: &Database,
