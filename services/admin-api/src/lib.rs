@@ -7,7 +7,7 @@ pub mod modules;
 pub mod state;
 pub mod storage;
 
-use axum::{Router, routing::get};
+use axum::Router;
 use state::AppState;
 use tower_http::{
     cors::CorsLayer,
@@ -34,16 +34,16 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::HeaderName::from_static("x-request-id"),
             axum::http::header::CONTENT_DISPOSITION,
         ]);
-    Router::new()
-        .merge(modules::roles::router::routes())
-        .merge(modules::users::router::routes())
-        .merge(modules::menus::router::routes())
-        .merge(modules::dictionaries::router::routes())
-        .merge(modules::parameters::router::routes())
-        .merge(modules::customers::router::routes())
-        .nest("/api/v1/auth", modules::auth::router::routes())
-        .route("/health/live", get(modules::health::live))
-        .route("/health/ready", get(modules::health::ready))
+    let mut router = Router::new();
+    for module in modules::registry() {
+        let routes = (module.routes)();
+        router = if module.prefix.is_empty() {
+            router.merge(routes)
+        } else {
+            router.nest(module.prefix, routes)
+        };
+    }
+    router
         .fallback(|| async { common::error::AppError::NotFound })
         .method_not_allowed_fallback(|| async { common::error::AppError::MethodNotAllowed })
         .with_state(state)

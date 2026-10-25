@@ -15,10 +15,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::{get, patch},
 };
 use serde::Deserialize;
 #[derive(Deserialize)]
@@ -26,12 +24,14 @@ use serde::Deserialize;
 pub struct DeleteQuery {
     pub version: i64,
 }
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/menus", get(list).post(create))
-        .route("/api/v1/menus/{id}", patch(update).delete(delete))
-        .route("/api/v1/navigation", get(navigation))
-        .route("/api/v1/permissions", get(permissions))
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/menus" => list, "menus.list", "menus", "菜单列表", Permission, &["menus.read"];
+    post "/api/v1/menus" => create, "menus.create", "menus", "创建菜单", Permission, &["menus.write"];
+    patch "/api/v1/menus/{id}" => update, "menus.update", "menus", "修改菜单", Permission, &["menus.write"];
+    delete "/api/v1/menus/{id}" => delete, "menus.delete", "menus", "删除菜单", Permission, &["menus.write"];
+    get "/api/v1/navigation" => navigation, "navigation.get", "menus", "当前导航", Authenticated, &[];
+    get "/api/v1/permissions" => permissions, "permissions.list", "permissions", "权限操作目录", Permission, &["permissions.read"];
 }
 async fn list(
     State(state): State<AppState>,

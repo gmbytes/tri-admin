@@ -15,10 +15,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::get,
 };
 use serde::Deserialize;
 #[derive(Deserialize)]
@@ -27,13 +25,13 @@ struct DeleteQuery {
     version: i64,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/parameters", get(list).post(create))
-        .route(
-            "/api/v1/parameters/{id}",
-            get(read).patch(update).delete(delete),
-        )
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/parameters" => list, "parameters.list", "parameters", "参数列表", Permission, &["parameters.read"];
+    post "/api/v1/parameters" => create, "parameters.create", "parameters", "创建参数", Permission, &["parameters.write"];
+    get "/api/v1/parameters/{id}" => read, "parameters.get", "parameters", "参数资料", Permission, &["parameters.read"];
+    patch "/api/v1/parameters/{id}" => update, "parameters.update", "parameters", "修改参数", Permission, &["parameters.write"];
+    delete "/api/v1/parameters/{id}" => delete, "parameters.delete", "parameters", "删除参数", Permission, &["parameters.write"];
 }
 async fn list(
     State(state): State<AppState>,

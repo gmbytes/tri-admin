@@ -15,10 +15,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::{get, patch},
 };
 use serde::Deserialize;
 
@@ -28,21 +26,17 @@ struct DeleteQuery {
     version: i64,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/dictionaries", get(list).post(create))
-        .route(
-            "/api/v1/dictionaries/{id}",
-            get(read).patch(update).delete(delete),
-        )
-        .route(
-            "/api/v1/dictionaries/{id}/items",
-            get(list_items).post(create_item),
-        )
-        .route(
-            "/api/v1/dictionaries/{id}/items/{item_id}",
-            patch(update_item).delete(delete_item),
-        )
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/dictionaries" => list, "dictionaries.list", "dictionaries", "字典列表", Permission, &["dictionaries.read"];
+    post "/api/v1/dictionaries" => create, "dictionaries.create", "dictionaries", "创建字典", Permission, &["dictionaries.write"];
+    get "/api/v1/dictionaries/{id}" => read, "dictionaries.get", "dictionaries", "字典资料", Permission, &["dictionaries.read"];
+    patch "/api/v1/dictionaries/{id}" => update, "dictionaries.update", "dictionaries", "修改字典", Permission, &["dictionaries.write"];
+    delete "/api/v1/dictionaries/{id}" => delete, "dictionaries.delete", "dictionaries", "删除字典", Permission, &["dictionaries.write"];
+    get "/api/v1/dictionaries/{id}/items" => list_items, "dictionaries.items.list", "dictionaries", "字典明细列表", Permission, &["dictionaries.read"];
+    post "/api/v1/dictionaries/{id}/items" => create_item, "dictionaries.items.create", "dictionaries", "创建字典明细", Permission, &["dictionaries.write"];
+    patch "/api/v1/dictionaries/{id}/items/{item_id}" => update_item, "dictionaries.items.update", "dictionaries", "修改字典明细", Permission, &["dictionaries.write"];
+    delete "/api/v1/dictionaries/{id}/items/{item_id}" => delete_item, "dictionaries.items.delete", "dictionaries", "删除字典明细", Permission, &["dictionaries.write"];
 }
 async fn list(
     State(state): State<AppState>,

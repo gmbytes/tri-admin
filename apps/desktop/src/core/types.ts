@@ -65,6 +65,21 @@ export interface Permission {
   label: string
   group: string
 }
+export interface ApiEndpoint {
+  operationId: string
+  method: string
+  path: string
+  group: string
+  label: string
+  access: 'public' | 'authenticated' | 'refreshCredential' | 'permission'
+  requiredPermissions: string[]
+  notes: string
+}
+export interface ApiCatalog {
+  schemaVersion: number
+  checksum: string
+  endpoints: ApiEndpoint[]
+}
 export interface DictionaryRecord {
   id: string
   name: string

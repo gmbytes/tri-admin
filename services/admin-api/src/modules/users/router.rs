@@ -17,10 +17,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::{get, post},
 };
 use serde::Deserialize;
 #[derive(Deserialize)]
@@ -28,14 +26,14 @@ use serde::Deserialize;
 pub struct DeleteQuery {
     pub version: i64,
 }
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/users", get(list).post(create))
-        .route(
-            "/api/v1/users/{id}",
-            get(detail).patch(update).delete(delete),
-        )
-        .route("/api/v1/users/{id}/password", post(reset_password))
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/users" => list, "users.list", "users", "用户列表", Permission, &["users.read"];
+    post "/api/v1/users" => create, "users.create", "users", "创建用户", Permission, &["roles.assign", "users.write"], "新成员须在可管理范围内";
+    get "/api/v1/users/{id}" => detail, "users.get", "users", "用户资料", Permission, &["users.read"];
+    patch "/api/v1/users/{id}" => update, "users.update", "users", "修改用户", Permission, &["users.write"], "修改角色时还需 roles.assign，授权不得超出当前权限及数据范围";
+    delete "/api/v1/users/{id}" => delete, "users.delete", "users", "删除用户", Permission, &["users.write"];
+    post "/api/v1/users/{id}/password" => reset_password, "users.resetPassword", "users", "重置用户密码", Permission, &["users.resetPassword"];
 }
 async fn list(
     State(state): State<AppState>,

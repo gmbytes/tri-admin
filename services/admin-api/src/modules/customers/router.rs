@@ -15,10 +15,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::get,
 };
 use serde::Deserialize;
 #[derive(Deserialize)]
@@ -27,14 +25,14 @@ struct DeleteQuery {
     version: i64,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/customers", get(list).post(create))
-        .route("/api/v1/customers/owners", get(owners))
-        .route(
-            "/api/v1/customers/{id}",
-            get(read).patch(update).delete(delete),
-        )
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/customers" => list, "customers.list", "customers", "客户列表", Permission, &["customers.read"];
+    post "/api/v1/customers" => create, "customers.create", "customers", "创建客户", Permission, &["customers.write"];
+    get "/api/v1/customers/{id}" => read, "customers.get", "customers", "客户资料", Permission, &["customers.read"];
+    patch "/api/v1/customers/{id}" => update, "customers.update", "customers", "修改客户归属或资料", Permission, &["customers.write"];
+    delete "/api/v1/customers/{id}" => delete, "customers.delete", "customers", "删除客户", Permission, &["customers.write"];
+    get "/api/v1/customers/owners" => owners, "customers.owners", "customers", "可选择归属人", Permission, &["customers.write"];
 }
 async fn list(
     State(state): State<AppState>,

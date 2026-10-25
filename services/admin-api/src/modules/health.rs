@@ -6,6 +6,12 @@ use axum::{Json, extract::State};
 use mongodb::bson::doc;
 use serde_json::{Value, json};
 
+crate::api_routes! {
+    prefix "";
+    get "/health/live" => live, "health.live", "health", "进程存活", Public, &[];
+    get "/health/ready" => ready, "health.ready", "health", "服务就绪", Public, &[];
+}
+
 pub async fn live() -> ApiResponse<Value> {
     ApiResponse::success(json!({"status":"ok"}))
 }

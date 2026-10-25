@@ -8,20 +8,18 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{ConnectInfo, Request, State},
     http::StatusCode,
-    routing::{get, post},
 };
 use std::net::SocketAddr;
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/login", post(login))
-        .route("/refresh", post(refresh))
-        .route("/logout", post(logout))
-        .route("/me", get(me))
-        .route("/password", post(change_password))
+crate::api_routes! {
+    prefix "/api/v1/auth";
+    post "/login" => login, "auth.login", "auth", "登录", Public, &[];
+    post "/refresh" => refresh, "auth.refresh", "auth", "刷新会话", RefreshCredential, &[];
+    post "/logout" => logout, "auth.logout", "auth", "注销会话", RefreshCredential, &[];
+    get "/me" => me, "auth.me", "auth", "当前用户", Authenticated, &[];
+    post "/password" => change_password, "auth.changePassword", "auth", "修改本人密码", Authenticated, &[];
 }
 
 async fn login(

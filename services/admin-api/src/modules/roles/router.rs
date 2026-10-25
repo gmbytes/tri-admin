@@ -17,10 +17,8 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, Query, Request, State, rejection::QueryRejection},
     http::StatusCode,
-    routing::{get, patch},
 };
 use serde::Deserialize;
 
@@ -29,11 +27,13 @@ use serde::Deserialize;
 pub struct DeleteQuery {
     pub version: i64,
 }
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/api/v1/roles", get(list).post(create))
-        .route("/api/v1/roles/assignable", get(assignable))
-        .route("/api/v1/roles/{id}", patch(update).delete(delete))
+crate::api_routes! {
+    prefix "";
+    get "/api/v1/roles" => list, "roles.list", "roles", "角色列表", Permission, &["roles.read"];
+    post "/api/v1/roles" => create, "roles.create", "roles", "创建角色", Permission, &["roles.write"];
+    patch "/api/v1/roles/{id}" => update, "roles.update", "roles", "修改角色", Permission, &["roles.write"];
+    delete "/api/v1/roles/{id}" => delete, "roles.delete", "roles", "删除角色", Permission, &["roles.write"];
+    get "/api/v1/roles/assignable" => assignable, "roles.assignable", "roles", "可分配角色", Permission, &["roles.assign"];
 }
 async fn assignable(
     State(state): State<AppState>,
