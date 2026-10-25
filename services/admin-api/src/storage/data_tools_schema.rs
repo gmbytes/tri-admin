@@ -6,12 +6,12 @@ use mongodb::{
     options::IndexOptions,
 };
 use sha2::{Digest, Sha256};
-pub const VERSION: i32 = 3;
+pub const VERSION: i32 = 4;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let previous = metadata.find_one(doc! {"_id":"data-tools"}).await?;
     if let Some(record) = &previous
-        && !matches!(record.get_i32("version").ok(), Some(1 | 2 | VERSION))
+        && !matches!(record.get_i32("version").ok(), Some(1 | 2 | 3 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -30,7 +30,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
     if previous
         .as_ref()
         .and_then(|row| row.get_i32("version").ok())
-        .is_some_and(|version| version < VERSION)
+        .is_some_and(|version| version < 3)
     {
         let count = |status: &str| doc! {"$size":{"$filter":{"input":"$rows","as":"row","cond":{"$eq":["$$row.status",status]}}}};
         database.collection::<Document>("data_imports").update_many(doc!{},vec![doc!{"$set":{"rowCount":{"$size":"$rows"},"readyCount":count("ready"),"appliedCount":count("applied"),"expiredCount":count("expired"),"payloadState":"full","redactedAt":null}},doc!{"$set":{"errorCount":{"$subtract":["$rowCount",{"$add":["$readyCount","$appliedCount"]}]}}}]).await?;
@@ -44,6 +44,52 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
                 .build(),
         )
         .await?;
+    if previous
+        .as_ref()
+        .and_then(|row| row.get_i32("version").ok())
+        .is_some_and(|version| version < 4)
+    {
+        database
+            .collection::<Document>("data_imports")
+            .update_many(
+                doc! {},
+                vec![doc! {"$set":{"template":{"$ifNull":["$template",null]}}}],
+            )
+            .await?;
+    }
+    if let Err(error) = database.create_collection("export_templates").await
+        && !matches!(&*error.kind,ErrorKind::Command(command) if command.code==48)
+    {
+        return Err(error.into());
+    }
+    database
+        .collection::<Document>("export_templates")
+        .create_index(
+            IndexModel::builder()
+                .keys(doc! {"code":1})
+                .options(
+                    IndexOptions::builder()
+                        .unique(true)
+                        .partial_filter_expression(doc! {"deletedAt":null})
+                        .build(),
+                )
+                .build(),
+        )
+        .await?;
+    for field in ["createdAt", "name", "code"] {
+        for scoped in [false, true] {
+            let mut keys = doc! {"deletedAt":1};
+            if scoped {
+                keys.insert("resource", 1);
+            }
+            keys.insert(field, 1);
+            keys.insert("_id", 1);
+            database
+                .collection::<Document>("export_templates")
+                .create_index(IndexModel::builder().keys(keys).build())
+                .await?;
+        }
+    }
     for keys in [
         doc! {"actorId":1,"createdAt":-1,"_id":-1},
         doc! {"actorId":1,"expiresAt":1},

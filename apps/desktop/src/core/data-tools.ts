@@ -46,6 +46,7 @@ export interface ImportSummary {
   status: 'pending' | 'completed' | 'partial' | 'failed' | 'expired'
   payloadState: 'full' | 'expired' | 'redacted'
   redactedAt: string | null
+  template: { id: string; name: string; code: string; version: number } | null
 }
 export interface ImportView extends ImportSummary {
   rows: ImportRow[]
@@ -191,7 +192,7 @@ export function parseImportSummary(value: unknown): ImportSummary {
     !data ||
     typeof data !== 'object' ||
     Object.keys(data).sort().join(',') !==
-      'appliedCount,createdAt,errorCount,expiredCount,expiresAt,id,payloadState,readyCount,redactedAt,requestId,resource,rowCount,status' ||
+      'appliedCount,createdAt,errorCount,expiredCount,expiresAt,id,payloadState,readyCount,redactedAt,requestId,resource,rowCount,status,template' ||
     typeof data.id !== 'string' ||
     !/^[a-f0-9]{24}$/.test(data.id) ||
     typeof data.requestId !== 'string' ||
@@ -207,6 +208,20 @@ export function parseImportSummary(value: unknown): ImportSummary {
     data.expiredCount > data.errorCount ||
     (data.payloadState !== 'full' && data.readyCount !== 0) ||
     (data.payloadState === 'redacted' ? !timestamp(data.redactedAt) : data.redactedAt !== null)
+  )
+    throw invalid()
+  if (
+    data.template !== null &&
+    (!data.template ||
+      Object.keys(data.template).sort().join(',') !== 'code,id,name,version' ||
+      typeof data.template.id !== 'string' ||
+      !/^[a-f0-9]{24}$/.test(data.template.id) ||
+      typeof data.template.name !== 'string' ||
+      Array.from(data.template.name).length > 80 ||
+      typeof data.template.code !== 'string' ||
+      !/^[a-z][a-z0-9._-]{0,63}$/.test(data.template.code) ||
+      !Number.isSafeInteger(data.template.version) ||
+      data.template.version < 1)
   )
     throw invalid()
   const status =

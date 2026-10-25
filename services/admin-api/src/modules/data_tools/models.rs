@@ -38,6 +38,9 @@ pub struct ExportInput {
     pub fields: Vec<String>,
     #[serde(default)]
     pub search: String,
+    #[serde(default)]
+    pub filters: Vec<super::query::DataFilter>,
+    pub sort: Option<super::query::DataSort>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -72,6 +75,15 @@ pub struct ImportRecord {
     pub counts: ImportCounts,
     pub payload_state: String,
     pub redacted_at: Option<DateTime>,
+    pub template: Option<TemplateOrigin>,
+}
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateOrigin {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub version: i64,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +148,7 @@ pub struct ImportMeta {
     pub counts: ImportCounts,
     pub payload_state: String,
     pub redacted_at: Option<DateTime>,
+    pub template: Option<TemplateOrigin>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +163,7 @@ pub struct ImportSummary {
     pub status: String,
     pub payload_state: String,
     pub redacted_at: Option<String>,
+    pub template: Option<TemplateOrigin>,
 }
 impl ImportMeta {
     pub fn summary(self, now: DateTime) -> Result<ImportSummary, crate::common::error::AppError> {
@@ -193,6 +207,7 @@ impl ImportMeta {
             status: status.into(),
             payload_state: payload_state.into(),
             redacted_at: self.redacted_at.map(public_time).transpose()?,
+            template: self.template,
         })
     }
 }
@@ -225,6 +240,7 @@ impl ImportRecord {
             counts: self.counts,
             payload_state: self.payload_state,
             redacted_at: self.redacted_at,
+            template: self.template,
         }
         .summary(now)?;
         let available = summary.payload_state == "full";

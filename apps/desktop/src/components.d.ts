@@ -19,6 +19,7 @@ declare module 'vue' {
     ElCollapse: typeof import('element-plus/es')['ElCollapse']
     ElCollapseItem: typeof import('element-plus/es')['ElCollapseItem']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
+    ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
     ElDescriptions: typeof import('element-plus/es')['ElDescriptions']
     ElDescriptionsItem: typeof import('element-plus/es')['ElDescriptionsItem']
     ElDialog: typeof import('element-plus/es')['ElDialog']
@@ -47,6 +48,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
+    ExportTemplatesPanel: typeof import('./components/ExportTemplatesPanel.vue')['default']
     FileCategoriesPanel: typeof import('./components/FileCategoriesPanel.vue')['default']
     FileCategorySelect: typeof import('./components/FileCategorySelect.vue')['default']
     FileListPanel: typeof import('./components/FileListPanel.vue')['default']
@@ -63,6 +65,7 @@ declare module 'vue' {
     ServerDialog: typeof import('./components/ServerDialog.vue')['default']
     ServiceSettingsPanel: typeof import('./components/ServiceSettingsPanel.vue')['default']
     SideNavigation: typeof import('./components/SideNavigation.vue')['default']
+    TemplateFilterEditor: typeof import('./components/TemplateFilterEditor.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

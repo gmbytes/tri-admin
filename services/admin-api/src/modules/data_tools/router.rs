@@ -1,3 +1,4 @@
+use super::template_routes::*;
 use super::{exports, formats, imports, models::*, registry};
 use crate::{
     common::{error::AppError, request, response::ApiResponse, validation},
@@ -12,12 +13,23 @@ use axum::{
 crate::api_routes! {
     prefix "";
     get "/api/v1/data-tools/resources" => resources, "dataTools.resources", "dataTools", "数据工具资源模板", Permission, &["exports.read"], "仅显示具备资源读取权限的字段白名单";
+    get "/api/v1/data-tools/resources/{resource}/query-schema" => query_schema, "dataTools.querySchema", "dataTools", "资源受控筛选定义", Permission, &["exports.read"];
+    get "/api/v1/export-templates" => template_list, "exportTemplates.list", "dataTools", "命名模板列表", Permission, &["exports.read"];
+    post "/api/v1/export-templates" => template_create, "exportTemplates.create", "dataTools", "创建命名模板", Permission, &["exports.write"];
+    get "/api/v1/export-templates/{id}" => template_get, "exportTemplates.get", "dataTools", "模板配置", Permission, &["exports.read"];
+    patch "/api/v1/export-templates/{id}" => template_patch, "exportTemplates.update", "dataTools", "修改命名模板", Permission, &["exports.write"];
+    delete "/api/v1/export-templates/{id}" => template_delete, "exportTemplates.delete", "dataTools", "删除命名模板", Permission, &["exports.write"];
+    post "/api/v1/export-templates/{id}/copy" => template_copy, "exportTemplates.copy", "dataTools", "复制命名模板", Permission, &["exports.write"];
+    post "/api/v1/export-templates/{id}/download" => template_download, "exportTemplates.download", "dataTools", "下载模板空文件", Permission, &["exports.read"];
+    post "/api/v1/export-templates/{id}/export" => template_export, "exportTemplates.export", "dataTools", "使用模板导出数据", Permission, &["exports.write"], "需要资源读取权限；始终按当前数据范围筛选";
+    post "/api/v1/export-templates/{id}/import-previews" => template_import, "exportTemplates.import", "dataTools", "使用模板预览导入", Permission, &["exports.write"], "需要资源读写权限；保存模板版本摘要，领域校验和事务规则不变";
     post "/api/v1/data-tools/template" => template, "dataTools.template", "dataTools", "下载新资源表格模板", Permission, &["exports.read"];
     post "/api/v1/data-tools/inspect" => inspect, "dataTools.inspect", "dataTools", "读取导入文件表头", Permission, &["exports.write"], "还需资源读取和写入权限；只返回表头、行数和原始内容摘要，不创建导入记录";
     post "/api/v1/data-tools/export" => export, "dataTools.export", "dataTools", "导出资源表格", Permission, &["exports.write"], "还需资源读取权限；用户数据范围在限制行数前过滤";
     get "/api/v1/data-tools/imports" => list, "dataTools.import.list", "dataTools", "我的最近导入", Permission, &["exports.read"];
     post "/api/v1/data-tools/imports" => preview, "dataTools.import.preview", "dataTools", "预览表格导入", Permission, &["exports.write"], "还需资源读取和写入权限；UUID 请求标识绑定内容与映射";
     get "/api/v1/data-tools/imports/{id}" => read, "dataTools.import.get", "dataTools", "查询导入逐行结果", Permission, &["exports.read"], "仅原操作者可读，还需资源读取权限";
+    get "/api/v1/data-tools/imports/by-request/{request}" => import_by_request, "dataTools.import.byRequest", "dataTools", "按请求标识查询预览结果", Permission, &["exports.read"], "仅原操作者可读；用于确认丢失的创建响应";
     post "/api/v1/data-tools/imports/{id}/apply" => apply, "dataTools.import.apply", "dataTools", "应用导入批次", Permission, &["exports.write"], "最多100行，每行数据与回执原子提交；仅原操作者并重新检查资源权限";
 }
 pub fn configured_routes() -> axum::Router<AppState> {
@@ -137,7 +149,15 @@ async fn preview(
     })
     .await
     .map_err(|_| AppError::Internal)??;
-    let view = imports::create(state.require_database()?, actor, input, fingerprint, rows).await?;
+    let view = imports::create(
+        state.require_database()?,
+        actor,
+        input,
+        fingerprint,
+        rows,
+        None,
+    )
+    .await?;
     Ok((StatusCode::CREATED, ApiResponse::success(view)))
 }
 async fn read(

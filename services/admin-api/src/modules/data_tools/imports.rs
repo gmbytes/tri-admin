@@ -165,15 +165,27 @@ pub async fn create(
     input: PreviewInput,
     fingerprint: String,
     rows: Vec<ImportRow>,
+    template: Option<TemplateOrigin>,
 ) -> Result<ImportView, AppError> {
     registry::resource(&input.resource, &actor, true)?;
     let id = ObjectId::new();
     let actor_id = actor.id;
     let request_id = input.request_id.clone();
+    let fingerprint = if let Some(origin) = &template {
+        format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&("template", &origin.id, origin.version, &fingerprint))
+                    .map_err(|_| AppError::Internal)?
+            )
+        )
+    } else {
+        fingerprint
+    };
     let result = transaction::run(
         database,
-        (database.clone(), actor, input, fingerprint.clone(), rows),
-        |session, (database, actor, input, fingerprint, rows)| {
+        (database.clone(), actor, input, fingerprint.clone(), rows,template),
+        |session, (database, actor, input, fingerprint, rows,template)| {
             async move {
                 let records = database.collection::<ImportRecord>("data_imports");
                 if let Some(existing) = records
@@ -207,7 +219,7 @@ pub async fn create(
                     resource: input.resource.clone(),
                     created_at: now,
                     expires_at: DateTime::from_millis(now.timestamp_millis() + 86_400_000),
-                    rows:candidate,counts,payload_state:"full".into(),redacted_at:None,
+                    rows:candidate,counts,payload_state:"full".into(),redacted_at:None,template:template.clone(),
                 };
                 records.insert_one(&record).session(&mut *session).await?;
                 shared::audit(database, actor, "dataTools.import.preview", id, session).await?;
@@ -241,6 +253,25 @@ pub async fn get(
     let record = database
         .collection::<ImportRecord>("data_imports")
         .find_one(doc! {"_id":id,"actorId":actor.id})
+        .await?
+        .ok_or(AppError::NotFound)?;
+    registry::resource(&record.resource, actor, false)?;
+    Ok(record)
+}
+pub async fn by_request(
+    database: &Database,
+    actor: &Actor,
+    request: &str,
+) -> Result<ImportRecord, AppError> {
+    if uuid::Uuid::parse_str(request)
+        .ok()
+        .is_none_or(|id| id.to_string() != request)
+    {
+        return Err(AppError::Validation("请求标识无效".into()));
+    }
+    let record = database
+        .collection::<ImportRecord>("data_imports")
+        .find_one(doc! {"actorId":actor.id,"requestId":request})
         .await?
         .ok_or(AppError::NotFound)?;
     registry::resource(&record.resource, actor, false)?;

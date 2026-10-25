@@ -86,3 +86,14 @@
 完整结果沿用 `GET /imports/{id}`，增加相同汇总。payloadState 为 full 时才返回行标识和值；到期后为 expired（等待后台清理），清理完成后为 redacted，行 key/values 均为 null，保留行号、结果、错误码和目标 ID。32 项配额只计未到期且存在待处理行的预览；完成、全部验证失败和原请求重放不占新名额。服务启动及约每 10 秒逐项事务清理最多 100 项到期内容，数据、回执、计数和审计保持一致；原业务资源不被清理。
 
 数据工具响应设置 `Cache-Control: private, no-store`，避免私有行结果被 HTTP 缓存再次使用；这不替代每次请求的鉴权或服务器到期判断。
+
+## 命名资源模板
+
+- `GET/POST /api/v1/export-templates` 分页查询/创建共享模板，按当前资源读取权限先过滤。配置为 name/code/resource、按顺序排列的 columns（field/header）、导出 search/filters/sort/maxRows、allowImport/enabled。code/resource 创建后不变，maxRows 目前为 1–2000，表头唯一且拒绝控制字符、首尾空格和公式前缀。
+- `GET/PATCH/DELETE /export-templates/{id}` 读取、版本化修改和软删除；修改体或删除查询需 version。`POST /{id}/copy` 接收 version/name/code，创建独立 ID 和版本1。失效版本返回409；软删除标识可被新模板复用，但旧 ID 不重定向。
+- `GET /api/v1/data-tools/resources/{resource}/query-schema` 提供字段、类型、允许操作、枚举值及排序字段。filters 最多8项，支持登记字段的 eq/prefix/gt/gte/lt/lte/in，in 最多32个类型一致的值；所有条件取 AND。用户范围另外取 AND，模板条件不能覆盖范围。拒绝 MongoDB 操作符、表达式、私有字段及不匹配类型。
+- `POST /export-templates/{id}/download` 与 `/export` 接收 version/format，分别生成保存表头的空文件及实际数据文件。导出使用保存的列顺序、表头、条件、排序和行数上限；超限报错，不静默截断。共享配置需要 exports.read/write 和资源读取权限，实际数据仍按当前账号范围读取。
+- `POST /export-templates/{id}/import-previews` 接收 version/requestId/format/contentBase64/mapping；模板须启用且允许导入，mapping 只能使用模板列，资源必填字段必须存在。需要 exports.write 和资源读写权限，仍进入同一领域校验、父级绑定及事务回执流程；导出条件不限制导入数据。
+- 导入摘要增加可空 template（id/code/name/version）。自身 schema v4 为原记录补 null，保留计数、已清理内容状态及回执；模板版本与有效输入一起绑定请求指纹，配置删除不改变已建立的导入。`GET /data-tools/imports/by-request/{request}` 仅按原操作者与规范 UUID 查询，创建响应丢失或配置删除后仍可确认已有结果，不产生新写入。
+
+大批量持久导出任务继续实施；同步行数保护不代表最终批量能力已经完成。

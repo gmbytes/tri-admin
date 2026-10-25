@@ -90,7 +90,7 @@ pub async fn list(
     let limit = page.page_size as i64;
     let (total,records)=crate::common::transaction::run_snapshot(database,(database.clone(),filter),|session,(database,filter)|async move{
         let total=database.collection::<Document>("data_imports").count_documents(filter.clone()).session(&mut *session).await?;
-        let mut cursor=database.collection::<ImportMeta>("data_imports").find(filter.clone()).projection(doc!{"requestId":1,"resource":1,"createdAt":1,"expiresAt":1,"payloadState":1,"redactedAt":1,"rowCount":1,"readyCount":1,"appliedCount":1,"errorCount":1,"expiredCount":1}).sort(doc!{"createdAt":-1,"_id":-1}).skip(skip).limit(limit).session(&mut *session).await?;
+        let mut cursor=database.collection::<ImportMeta>("data_imports").find(filter.clone()).projection(doc!{"requestId":1,"resource":1,"createdAt":1,"expiresAt":1,"payloadState":1,"redactedAt":1,"rowCount":1,"readyCount":1,"appliedCount":1,"errorCount":1,"expiredCount":1,"template":1}).sort(doc!{"createdAt":-1,"_id":-1}).skip(skip).limit(limit).session(&mut *session).await?;
         let records=cursor.stream(session).try_collect::<Vec<_>>().await?;
         Ok((total,records))
     }.boxed()).await?;

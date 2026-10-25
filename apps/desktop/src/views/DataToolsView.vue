@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useSession } from '../stores/session'
 import { platform } from '../platform'
 import DataFieldMapping from '../components/DataFieldMapping.vue'
 import ImportHistoryPanel from '../components/ImportHistoryPanel.vue'
+import ExportTemplatesPanel from '../components/ExportTemplatesPanel.vue'
+import { templateMapping, type ExportTemplate } from '../core/export-templates'
 import {
   parseInspection,
   defaultMapping,
@@ -45,9 +47,17 @@ const selected = computed(() => resources.value.find((r) => r.key === resource.v
   preview = ref<ImportView | null>(null),
   clock = ref(Date.now())
 const historyRevision = ref(0)
+const activeTemplate = ref<ExportTemplate | null>(null),
+  lastPreviewRequest = ref('')
+const mappingResource = computed(() =>
+  selected.value && activeTemplate.value
+    ? { ...selected.value, fields: activeTemplate.value.columns.map((column) => column.field) }
+    : selected.value,
+)
 const canImport = computed(
   () =>
     selected.value?.importable &&
+    (!activeTemplate.value || activeTemplate.value.allowImport) &&
     session.can('exports.write') &&
     !!selected.value.writePermission &&
     session.can(selected.value.writePermission),
@@ -106,13 +116,13 @@ const problems: Record<string, string> = {
 const canPreview = computed(
   () =>
     !!content.value &&
-    !!selected.value &&
+    !!mappingResource.value &&
     !!inspection.value &&
-    mappingProblem(selected.value, mapping.value, inspection.value.headers) === null,
+    mappingProblem(mappingResource.value, mapping.value, inspection.value.headers) === null,
 )
 const mappingMessage = computed(() => {
-  if (!selected.value || !inspection.value) return ''
-  const issue = mappingProblem(selected.value, mapping.value, inspection.value.headers)
+  if (!mappingResource.value || !inspection.value) return ''
+  const issue = mappingProblem(mappingResource.value, mapping.value, inspection.value.headers)
   if (!issue) return ''
   const names = issue.fields.map((field) => labels[field] ?? field).join('、')
   return issue.code === 'MISSING_REQUIRED'
@@ -130,9 +140,27 @@ let alive = true,
 const controls = new Set<AbortController>(),
   ticker = setInterval(() => (clock.value = Date.now()), 1000)
 watch(resource, () => {
+  activeTemplate.value = null
   fields.value = [...(selected.value?.fields ?? [])]
   clearSource()
 })
+async function useTemplate(template: ExportTemplate) {
+  if (busy.value) return
+  resource.value = template.resource
+  await nextTick()
+  activeTemplate.value = template
+  fields.value = template.columns.map((column) => column.field)
+  search.value = template.search
+  clearSource()
+}
+function leaveTemplate() {
+  activeTemplate.value = null
+  fields.value = [...(selected.value?.fields ?? [])]
+  clearSource()
+}
+function removedTemplate(id: string) {
+  if (activeTemplate.value?.id === id) leaveTemplate()
+}
 function clearSource() {
   sourceSequence++
   preview.value = null
@@ -200,7 +228,9 @@ async function inspectCurrent(signal: AbortSignal) {
   if (!alive || signal.aborted || attempt !== sourceSequence) return
   const checked = parseInspection(result.data, expected)
   inspection.value = checked
-  mapping.value = defaultMapping(selected.value, checked.headers)
+  mapping.value = activeTemplate.value
+    ? templateMapping(activeTemplate.value, checked.headers)
+    : defaultMapping(selected.value, checked.headers)
 }
 function retryInspection() {
   void run(inspectCurrent)
@@ -223,21 +253,26 @@ async function browserSelected(event: Event) {
 }
 async function makePreview() {
   await run(async (signal) => {
-    if (!selected.value || !inspection.value || !content.value)
+    if (!mappingResource.value || !inspection.value || !content.value)
       throw new Error('请先读取文件表头并选择字段映射')
-    const columns = effectiveMapping(selected.value, mapping.value, inspection.value.headers)
+    const columns = effectiveMapping(mappingResource.value, mapping.value, inspection.value.headers)
+    const template = activeTemplate.value
+    lastPreviewRequest.value = requestId
     const token = ++sequence,
-      result = await session.request<unknown>('/data-tools/imports', {
-        method: 'POST',
-        signal,
-        body: {
-          requestId,
-          resource: resource.value,
-          format: importFormat.value,
-          contentBase64: content.value,
-          mapping: columns,
+      result = await session.request<unknown>(
+        template ? `/export-templates/${template.id}/import-previews` : '/data-tools/imports',
+        {
+          method: 'POST',
+          signal,
+          body: {
+            requestId,
+            ...(template ? { version: template.version } : { resource: resource.value }),
+            format: importFormat.value,
+            contentBase64: content.value,
+            mapping: columns,
+          },
         },
-      })
+      )
     if (alive && token === sequence) {
       preview.value = parseImportView(result.data)
       page.value = 1
@@ -252,6 +287,20 @@ async function loadImport(id: string) {
     if (alive && token === sequence) {
       preview.value = parseImportView(result.data)
       page.value = 1
+    }
+  })
+}
+async function queryPreviewRequest() {
+  if (!lastPreviewRequest.value) return
+  await run(async (signal) => {
+    const result = await session.request<unknown>(
+      `/data-tools/imports/by-request/${lastPreviewRequest.value}`,
+      { signal },
+    )
+    if (alive && !signal.aborted) {
+      preview.value = parseImportView(result.data)
+      page.value = 1
+      historyRevision.value++
     }
   })
 }
@@ -286,17 +335,24 @@ function cancel() {
 }
 async function download(template: boolean) {
   await run(async (signal) => {
+    const savedTemplate = activeTemplate.value
     const result = await session.request<unknown>(
-      template ? '/data-tools/template' : '/data-tools/export',
+      savedTemplate
+        ? `/export-templates/${savedTemplate.id}/${template ? 'download' : 'export'}`
+        : template
+          ? '/data-tools/template'
+          : '/data-tools/export',
       {
         method: 'POST',
         signal,
-        body: {
-          resource: resource.value,
-          format: format.value,
-          fields: fields.value,
-          search: search.value,
-        },
+        body: savedTemplate
+          ? { version: savedTemplate.version, format: format.value }
+          : {
+              resource: resource.value,
+              format: format.value,
+              fields: fields.value,
+              search: search.value,
+            },
       },
     )
     const file = parseDataDownload(result.data)
@@ -352,10 +408,15 @@ function valueText(value: unknown) {
     <el-button v-if="busy" @click="cancel">停止当前操作</el-button>
   </div>
   <el-alert v-if="error" :title="error" type="error" :closable="false" class="data-alert" />
+  <div v-if="activeTemplate" class="surface data-options active-export-template">
+    <strong>正在使用：{{ activeTemplate.name }} · v{{ activeTemplate.version }}</strong>
+    <p class="tiny subtle">导出使用模板保存的列与条件；导入来源列可按当前文件调整。</p>
+    <el-button :disabled="busy" @click="leaveTemplate">取消使用模板</el-button>
+  </div>
   <section class="surface data-options">
     <el-form label-position="top" class="data-grid">
       <el-form-item label="数据资源"
-        ><el-select v-model="resource" aria-label="数据资源" :disabled="busy"
+        ><el-select v-model="resource" aria-label="数据资源" :disabled="busy || !!activeTemplate"
           ><el-option
             v-for="item in resources"
             :key="item.key"
@@ -371,12 +432,12 @@ function valueText(value: unknown) {
           v-model="search"
           placeholder="按资源标识前缀筛选"
           maxlength="100"
-          :disabled="busy"
+          :disabled="busy || !!activeTemplate"
           clearable
       /></el-form-item>
     </el-form>
     <div class="data-field-label">导出字段</div>
-    <el-checkbox-group v-model="fields" :disabled="busy"
+    <el-checkbox-group v-model="fields" :disabled="busy || !!activeTemplate"
       ><el-checkbox v-for="field in selected?.fields ?? []" :key="field" :value="field"
         >{{ labels[field] ?? field }} <span class="subtle">{{ field }}</span></el-checkbox
       ></el-checkbox-group
@@ -410,14 +471,14 @@ function valueText(value: unknown) {
     <el-button v-if="content && !inspection" :disabled="busy" @click="retryInspection"
       >重试读取表头</el-button
     >
-    <template v-if="inspection && selected"
+    <template v-if="inspection && mappingResource"
       ><p class="tiny subtle">
         已识别 {{ inspection.rowCount }} 行数据、{{ inspection.headers.length }} 列 ·
         {{ importFormat.toUpperCase() }}
       </p>
       <DataFieldMapping
         v-model="mapping"
-        :resource="selected"
+        :resource="mappingResource"
         :headers="inspection.headers"
         :labels="labels"
         :disabled="busy" /><el-alert
@@ -432,11 +493,17 @@ function valueText(value: unknown) {
     <el-button type="primary" :disabled="busy || !canPreview" @click="makePreview"
       >生成导入预览</el-button
     >
+    <el-button v-if="lastPreviewRequest && !preview" :disabled="busy" @click="queryPreviewRequest"
+      >查询上次预览请求</el-button
+    >
   </section>
   <section v-if="preview" class="surface data-options data-import-results">
     <div class="data-result-heading">
       <div>
         <h2>{{ previewResource?.label ?? preview.resource }} · 逐行预览与结果</h2>
+        <p v-if="preview.template" class="tiny subtle">
+          {{ preview.template.name }} · v{{ preview.template.version }}
+        </p>
         <p class="tiny subtle">
           导入标识 {{ preview.id }} · {{ preview.rowCount }} 行 · 已创建
           {{ preview.appliedCount }} · {{ ready }} 行可导入 · 问题 {{ preview.errorCount }}
@@ -526,6 +593,12 @@ function valueText(value: unknown) {
     :revision="historyRevision"
     :disabled="busy"
     @open="loadImport"
+  />
+  <ExportTemplatesPanel
+    :resources="resources"
+    :disabled="busy"
+    @select="useTemplate"
+    @removed="removedTemplate"
   />
 </template>
 <style scoped>

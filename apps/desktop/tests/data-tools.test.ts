@@ -10,6 +10,7 @@ function metadata(count = 1) {
     status: count ? 'pending' : 'completed',
     payloadState: 'full',
     redactedAt: null,
+    template: null,
   }
 }
 import { hashBrowserFile, type UploadSource } from '../src/core/files'

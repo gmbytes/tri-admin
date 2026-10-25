@@ -15,6 +15,7 @@ function summary() {
     status: 'partial',
     payloadState: 'redacted',
     redactedAt: new Date().toISOString(),
+    template: null,
   }
 }
 it('validates paged receipt summaries without accepting inconsistent counters or hidden row values', () => {

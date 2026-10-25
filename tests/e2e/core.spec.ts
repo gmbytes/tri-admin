@@ -503,18 +503,22 @@ test('selected-role editor grants a bounded team scope that changes without a ne
   }
 })
 
-test('removed customer management has no navigation or API entries', async ({ page }) => {
+test('removed customer and client management has no navigation or API entries', async ({
+  page,
+}) => {
   await login(page)
-  await expect(
-    page.locator('nav').getByRole('button', { name: '客户管理', exact: true }),
-  ).toHaveCount(0)
+  for (const name of ['客户管理', '客户端管理']) {
+    await expect(page.locator('nav').getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
   await navigate(page, '权限目录')
   await page.getByRole('tab', { name: 'API 接口', exact: true }).click()
-  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('customers')
-  await expect(
-    page.locator('.api-catalog-table').getByRole('row').filter({ hasText: 'customers' }),
-  ).toHaveCount(0)
-  await expect(page.getByText('0 个接口', { exact: true })).toBeVisible()
+  for (const resource of ['customers', 'clients']) {
+    await page.getByPlaceholder('搜索操作标识、路径或权限').fill(resource)
+    await expect(
+      page.locator('.api-catalog-table').getByRole('row').filter({ hasText: resource }),
+    ).toHaveCount(0)
+    await expect(page.getByText('0 个接口', { exact: true })).toBeVisible()
+  }
 })
 
 test('configuration versions capture download preview conflicts and apply without overwriting stale targets', async ({

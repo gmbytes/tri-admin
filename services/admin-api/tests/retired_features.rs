@@ -6,19 +6,23 @@ use support::{PASSWORD, TestApp};
 
 fn contains_retired_menu(rows: &Value) -> bool {
     rows.as_array().is_some_and(|rows| {
-        rows.iter()
-            .any(|row| row["viewKey"] == "customers" || contains_retired_menu(&row["children"]))
+        rows.iter().any(|row| {
+            matches!(row["viewKey"].as_str(), Some("customers" | "clients"))
+                || contains_retired_menu(&row["children"])
+        })
     })
 }
 
 #[tokio::test]
-async fn customer_feature_has_no_routes_permissions_schema_or_seeded_navigation() {
+async fn customer_and_client_features_have_no_routes_permissions_schema_or_seeded_navigation() {
     let app = TestApp::new().await;
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
     for (method, path) in [
         ("GET", "/api/v1/customers"),
         ("POST", "/api/v1/customers"),
+        ("GET", "/api/v1/clients"),
+        ("POST", "/api/v1/clients"),
         ("GET", "/api/v1/customers/owners"),
         ("PATCH", "/api/v1/customers/000000000000000000000000"),
         (
@@ -40,46 +44,43 @@ async fn customer_feature_has_no_routes_permissions_schema_or_seeded_navigation(
             .as_array()
             .unwrap()
             .iter()
-            .all(|row| !row["operationId"]
-                .as_str()
-                .unwrap()
-                .starts_with("customers.")
-                && !row["path"]
+            .all(|row| ["customers", "clients"].iter().all(|resource| {
+                !row["operationId"]
                     .as_str()
                     .unwrap()
-                    .starts_with("/api/v1/customers"))
+                    .starts_with(&format!("{resource}."))
+                    && !row["path"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with(&format!("/api/v1/{resource}"))
+            }))
     );
     let (_, permissions) = app
         .send("GET", "/api/v1/permissions", Value::Null, Some(token))
         .await;
-    assert!(
-        permissions["data"]
-            .as_array()
-            .unwrap()
+    assert!(permissions["data"].as_array().unwrap().iter().all(|row| {
+        ["customers.", "clients."]
             .iter()
-            .all(|row| !row["code"].as_str().unwrap().starts_with("customers."))
-    );
+            .all(|prefix| !row["code"].as_str().unwrap().starts_with(prefix))
+    }));
     assert!(!contains_retired_menu(
         &app.send("GET", "/api/v1/navigation", Value::Null, Some(token))
             .await
             .1["data"]
     ));
-    assert!(
-        !app.database
-            .list_collection_names()
-            .await
-            .unwrap()
-            .contains(&"customers".to_owned())
-    );
-    assert_eq!(
-        app.database
-            .collection::<Document>("_schema_migrations")
-            .count_documents(doc! {"_id":"customers"})
-            .await
-            .unwrap(),
-        0
-    );
-    assert_eq!(app.send("POST","/api/v1/roles",json!({"name":"retired","slug":"retired","permissions":["customers.read"],"dataScope":"self"}),Some(token)).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+    let collections = app.database.list_collection_names().await.unwrap();
+    for resource in ["customers", "clients"] {
+        assert!(!collections.iter().any(|name| name == resource));
+        assert_eq!(
+            app.database
+                .collection::<Document>("_schema_migrations")
+                .count_documents(doc! {"_id":resource})
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(app.send("POST","/api/v1/roles",json!({"name":"retired","slug":"retired","permissions":[format!("{resource}.read")],"dataScope":"self"}),Some(token)).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+    }
     app.cleanup().await;
 }
 

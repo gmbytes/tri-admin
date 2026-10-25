@@ -1,7 +1,7 @@
 use super::{
     formats::{self, Cell, Format, Table},
     models::ExportInput,
-    registry,
+    query, registry,
 };
 use crate::{common::error::AppError, modules::rbac::shared::Actor};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -47,38 +47,33 @@ pub async fn export(
     actor: &Actor,
     input: &ExportInput,
 ) -> Result<Table, AppError> {
+    export_limited(database, actor, input, formats::MAX_ROWS).await
+}
+pub async fn export_limited(
+    database: &Database,
+    actor: &Actor,
+    input: &ExportInput,
+    limit: usize,
+) -> Result<Table, AppError> {
+    if !(1..=formats::MAX_ROWS).contains(&limit) {
+        return Err(AppError::Validation("同步导出行数上限无效".into()));
+    }
     let resource = registry::resource(&input.resource, actor, false)?;
     let fields = registry::fields(&input.fields, resource)?;
-    if input.search.chars().count() > 100 {
-        return Err(AppError::Validation("筛选前缀最多 100 个字符".into()));
-    }
+    let plan = query::plan(
+        &input.resource,
+        &input.search,
+        &input.filters,
+        input.sort.as_ref(),
+    )?;
     if resource.key == "dictionaryItems" {
-        return item_export(database, fields, &input.search).await;
+        return item_export(database, fields, plan, limit).await;
     }
-    let mut filter = doc! {"deletedAt":null};
-    if resource.key == "users" {
-        filter.extend(actor.user_filter());
-    }
-    let key = if resource.key == "users" {
-        "usernameKey"
+    let filter = if resource.key == "users" {
+        doc! {"$and":[plan.rows,actor.user_filter()]}
     } else {
-        "key"
+        plan.rows
     };
-    let search = if resource.key == "users" {
-        input.search.trim().to_lowercase()
-    } else {
-        input.search.trim().to_owned()
-    };
-    if !search.is_empty() {
-        let mut prefix = String::from("^");
-        for c in search.chars() {
-            if ".+*?^${}()|[]\\".contains(c) {
-                prefix.push('\\');
-            }
-            prefix.push(c);
-        }
-        filter.insert(key, doc! {"$regex":prefix});
-    }
     // Explicit projection: credentials are never read into an export buffer.
     let projection = if resource.key == "users" {
         doc! {"username":1,"displayName":1,"status":1,"version":1}
@@ -87,21 +82,18 @@ pub async fn export(
     } else {
         doc! {"name":1,"key":1,"group":1,"description":1,"valueType":1,"valueJson":1}
     };
-    let mut sort = doc! {};
-    sort.insert(key, 1);
-    sort.insert("_id", 1);
     let records = database
         .collection::<Document>(resource.key)
         .find(filter)
         .projection(projection)
-        .sort(sort)
-        .limit((formats::MAX_ROWS + 1) as i64)
+        .sort(plan.sort)
+        .limit((limit + 1) as i64)
         .await?
         .try_collect::<Vec<_>>()
         .await?;
-    if records.len() > formats::MAX_ROWS {
+    if records.len() > limit {
         return Err(AppError::Validation(
-            "导出超过 2000 行，请缩小前缀筛选".into(),
+            "导出超过本次行数上限，请缩小筛选".into(),
         ));
     }
     let rows = records
@@ -163,29 +155,32 @@ pub async fn export(
 async fn item_export(
     database: &Database,
     fields: Vec<String>,
-    search: &str,
+    plan: query::QueryPlan,
+    limit: usize,
 ) -> Result<Table, AppError> {
-    let mut filter = doc! {"deletedAt":null};
-    if !search.trim().is_empty() {
-        let mut prefix = String::from("^");
-        for c in search.trim().chars() {
-            if ".+*?^${}()|[]\\".contains(c) {
-                prefix.push('\\');
-            }
-            prefix.push(c);
-        }
-        filter.insert("key", doc! {"$regex":prefix});
-    }
     // Start with the indexed parent key. Each lookup is bounded before unwind,
     // so one dictionary cannot materialize an unbounded BSON array.
-    let pipeline = vec![
-        doc! {"$match":filter},
-        doc! {"$sort":{"key":1,"_id":1}},
-        doc! {"$lookup":{"from":"dictionary_items","localField":"_id","foreignField":"dictionaryId","pipeline":[{"$match":{"deletedAt":null}},{"$sort":{"value":1,"_id":1}},{"$limit":(formats::MAX_ROWS+1) as i64}],"as":"items"}},
+    let parent_sort = if plan.parent_sort {
+        plan.sort.clone()
+    } else {
+        doc! {"key":1,"_id":1}
+    };
+    let row_sort = if plan.parent_sort {
+        doc! {"value":1,"_id":1}
+    } else {
+        plan.sort.clone()
+    };
+    let mut pipeline = vec![
+        doc! {"$match":plan.parent},
+        doc! {"$sort":parent_sort},
+        doc! {"$lookup":{"from":"dictionary_items","localField":"_id","foreignField":"dictionaryId","pipeline":[{"$match":plan.rows},{"$sort":row_sort},{"$limit":(limit+1) as i64}],"as":"items"}},
         doc! {"$unwind":"$items"},
-        doc! {"$project":{"_id":"$items._id","dictionaryKey":"$key","label":"$items.label","value":"$items.value","sort":"$items.sort","enabled":"$items.enabled"}},
-        doc! {"$limit":(formats::MAX_ROWS+1) as i64},
+        doc! {"$project":{"_id":"$items._id","dictionaryKey":"$key","label":"$items.label","value":"$items.value","sort":"$items.sort","enabled":"$items.enabled","createdAt":"$items.createdAt","version":"$items.version"}},
     ];
+    if !plan.parent_sort {
+        pipeline.push(doc! {"$sort":plan.sort});
+    }
+    pipeline.push(doc! {"$limit":(limit+1) as i64});
     let records = database
         .collection::<Document>("dictionaries")
         .aggregate(pipeline)
@@ -193,9 +188,9 @@ async fn item_export(
         .await?
         .try_collect::<Vec<_>>()
         .await?;
-    if records.len() > formats::MAX_ROWS {
+    if records.len() > limit {
         return Err(AppError::Validation(
-            "导出超过 2000 行，请缩小字典标识前缀筛选".into(),
+            "导出超过本次行数上限，请缩小字典筛选".into(),
         ));
     }
     let rows = records

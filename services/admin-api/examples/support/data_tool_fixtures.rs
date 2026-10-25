@@ -43,7 +43,7 @@ pub async fn seed(state: &AppState, password: &str) -> Result<(), Box<dyn std::e
         json!({"requestId":uuid::Uuid::new_v4().to_string(),"resource":"parameters","format":"csv","contentBase64":STANDARD.encode("name,key,valueType,value\nRetained,fixture.retained.first,string,PRIVATE_RETAINED_SENTINEL\nExpired,fixture.retained.second,string,PRIVATE_RETAINED_SENTINEL\n")}),
     )?;
     let (fingerprint, rows) = imports::prepare(&input)?;
-    let preview = imports::create(database, actor(id), input, fingerprint, rows).await?;
+    let preview = imports::create(database, actor(id), input, fingerprint, rows, None).await?;
     let job = ObjectId::parse_str(&preview.summary.id)?;
     imports::apply(
         database,
