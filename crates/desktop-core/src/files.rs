@@ -1,8 +1,10 @@
 //! Disk I/O for paths already selected by the user. Paths are never serialized to the webview.
 mod handles;
+mod recovery;
 use crate::{DesktopError, error};
-use cap_std::fs::{Dir, OpenOptions};
+use cap_std::fs::Dir;
 pub use handles::{FileHandles, FileJobKind};
+pub use recovery::{NativeFileJournal, NativeRecoveryReport};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -217,7 +219,7 @@ pub struct SaveReceipt {
     pub cleanup_pending: bool,
 }
 pub struct NativeWriter {
-    directory: Dir,
+    directory: Arc<Dir>,
     target: OsString,
     temporary: String,
     file: Option<File>,
@@ -227,6 +229,7 @@ pub struct NativeWriter {
     failed: bool,
     mode: SaveMode,
     cancel: FileCancel,
+    recovery: recovery::NativePartLease,
 }
 impl NativeWriter {
     pub fn prepare(
@@ -234,6 +237,7 @@ impl NativeWriter {
         spec: FileSpec,
         mode: SaveMode,
         cancel: &FileCancel,
+        journal: &NativeFileJournal,
     ) -> Result<Self, DesktopError> {
         spec.validate()?;
         cancel.check()?;
@@ -247,8 +251,10 @@ impl NativeWriter {
             .file_name()
             .ok_or_else(|| error("FILE_DESTINATION_INVALID", "请选择有效文件名"))?
             .to_os_string();
-        let directory =
-            Dir::open_ambient_dir(parent, cap_std::ambient_authority()).map_err(|_| io_error())?;
+        let parent = parent.canonicalize().map_err(|_| io_error())?;
+        let directory = Arc::new(
+            Dir::open_ambient_dir(&parent, cap_std::ambient_authority()).map_err(|_| io_error())?,
+        );
         match directory.symlink_metadata(&target) {
             Ok(metadata) => {
                 if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -261,14 +267,8 @@ impl NativeWriter {
             Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return Err(io_error()),
         }
-        let temporary = format!(".tri-admin-download-{}.part", uuid::Uuid::new_v4());
-        let file = directory
-            .open_with(
-                &temporary,
-                OpenOptions::new().write(true).read(true).create_new(true),
-            )
-            .map_err(|_| io_error())?
-            .into_std();
+        let (recovery, file) = journal.allocate(parent, directory.clone(), &target)?;
+        let temporary = recovery.part_name().to_owned();
         Ok(Self {
             directory,
             target,
@@ -280,6 +280,7 @@ impl NativeWriter {
             failed: false,
             mode,
             cancel: cancel.clone(),
+            recovery,
         })
     }
     pub fn write(&mut self, bytes: &[u8]) -> Result<(), DesktopError> {
@@ -323,8 +324,34 @@ impl NativeWriter {
         let mut file = self.file.take().ok_or_else(io_error)?;
         file.flush().map_err(|_| io_error())?;
         file.sync_all().map_err(|_| io_error())?;
+        let initial = fingerprint(&file).map_err(|_| integrity())?;
+        file.rewind().map_err(|_| io_error())?;
+        let mut disk_hash = Sha256::new();
+        let mut disk_bytes = 0u64;
+        let mut buffer = [0u8; WRITE_BLOCK];
+        loop {
+            self.cancel.check()?;
+            let length = file.read(&mut buffer).map_err(|_| io_error())?;
+            if length == 0 {
+                break;
+            }
+            disk_bytes = disk_bytes
+                .checked_add(length as u64)
+                .ok_or_else(integrity)?;
+            if disk_bytes > self.spec.size {
+                return Err(integrity());
+            }
+            disk_hash.update(&buffer[..length]);
+        }
+        if disk_bytes != self.spec.size
+            || format!("{:x}", disk_hash.finalize()) != self.spec.sha256
+            || fingerprint(&file).map_err(|_| integrity())? != initial
+        {
+            return Err(integrity());
+        }
         drop(file);
         self.cancel.publish(|| {
+            self.recovery.verify().map_err(|_| integrity())?;
             match self.mode {
                 SaveMode::New => {
                     self.directory
@@ -357,10 +384,7 @@ impl NativeWriter {
             .map_err(|_| error("FILE_CLEANUP_PENDING", "临时文件清理待重试"))
     }
     fn remove_temp(&self) -> std::io::Result<()> {
-        match self.directory.remove_file(&self.temporary) {
-            Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            result => result,
-        }
+        self.recovery.cleanup()
     }
 }
 impl Drop for NativeWriter {

@@ -12,6 +12,7 @@ sha2.workspace = true
 url = "2"
 uuid.workspace = true
 cap-std.workspace = true
+cap-fs-ext.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

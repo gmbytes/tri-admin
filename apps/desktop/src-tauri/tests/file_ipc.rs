@@ -44,7 +44,8 @@ fn request(command: &str, body: InvokeBody, handle: Option<&str>) -> InvokeReque
 }
 #[test]
 fn mock_ipc_accepts_a_bounded_batch_and_keeps_block_order() {
-    let files = Arc::new(FileHandles::default());
+    let files_state = tempfile::tempdir().unwrap();
+    let files = Arc::new(FileHandles::open(files_state.path()).unwrap());
     let (_app, window) = fixture(files.clone());
     let directory = tempfile::tempdir().unwrap();
     let data = vec![41u8; WRITE_BLOCK * 2 + 17];
@@ -83,7 +84,8 @@ fn mock_ipc_accepts_a_bounded_batch_and_keeps_block_order() {
 }
 #[test]
 fn mock_ipc_transfers_raw_source_and_download_bytes_without_opening_a_window() {
-    let files = Arc::new(FileHandles::default());
+    let files_state = tempfile::tempdir().unwrap();
+    let files = Arc::new(FileHandles::open(files_state.path()).unwrap());
     let (_app, window) = fixture(files.clone());
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.bin");
@@ -169,7 +171,8 @@ fn mock_ipc_transfers_raw_source_and_download_bytes_without_opening_a_window() {
 }
 #[test]
 fn mock_ipc_rejects_non_binary_or_oversized_writes_and_redacts_disk_errors() {
-    let files = Arc::new(FileHandles::default());
+    let files_state = tempfile::tempdir().unwrap();
+    let files = Arc::new(FileHandles::open(files_state.path()).unwrap());
     let (_app, window) = fixture(files.clone());
     let directory = tempfile::tempdir().unwrap();
     let target = directory.path().join("unchanged.bin");

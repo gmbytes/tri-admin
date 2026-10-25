@@ -7,7 +7,8 @@ fn spec(bytes: &[u8]) -> FileSpec {
 
 #[test]
 fn reserved_handles_are_bounded_and_cancel_all_releases_the_capacity() {
-    let handles = FileHandles::default();
+    let handles_state = tempfile::tempdir().unwrap();
+    let handles = FileHandles::open(handles_state.path()).unwrap();
     let mut ids = Vec::new();
     for _ in 0..32 {
         ids.push(handles.reserve(FileJobKind::Source).unwrap())
@@ -31,7 +32,8 @@ fn source_handles_expose_metadata_and_bytes_but_do_not_change_kind() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("source.bin");
     std::fs::write(&path, b"data").unwrap();
-    let handles = FileHandles::default();
+    let handles_state = tempfile::tempdir().unwrap();
+    let handles = FileHandles::open(handles_state.path()).unwrap();
     let id = handles.reserve(FileJobKind::Source).unwrap();
     assert_eq!(handles.read_chunk(&id, 0).unwrap_err().code, "FILE_STATE");
     let info = handles
@@ -60,7 +62,8 @@ fn source_handles_expose_metadata_and_bytes_but_do_not_change_kind() {
 
 #[test]
 fn picker_cancellation_and_cancellation_while_hashing_do_not_leave_live_handles() {
-    let handles = Arc::new(FileHandles::default());
+    let handles_state = tempfile::tempdir().unwrap();
+    let handles = Arc::new(FileHandles::open(handles_state.path()).unwrap());
     let id = handles.reserve(FileJobKind::Source).unwrap();
     assert!(
         handles
@@ -87,7 +90,8 @@ fn picker_cancellation_and_cancellation_while_hashing_do_not_leave_live_handles(
 
 #[test]
 fn a_pending_picker_cannot_install_a_source_after_cancel_all() {
-    let handles = Arc::new(FileHandles::default());
+    let handles_state = tempfile::tempdir().unwrap();
+    let handles = Arc::new(FileHandles::open(handles_state.path()).unwrap());
     let id = handles.reserve(FileJobKind::Source).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("source.bin");
@@ -111,7 +115,8 @@ fn a_pending_picker_cannot_install_a_source_after_cancel_all() {
 #[test]
 fn download_handles_commit_once_and_cancel_all_prevents_a_late_commit() {
     let directory = tempfile::tempdir().unwrap();
-    let handles = FileHandles::default();
+    let handles_state = tempfile::tempdir().unwrap();
+    let handles = FileHandles::open(handles_state.path()).unwrap();
     let target = directory.path().join("saved.bin");
     let id = handles.reserve(FileJobKind::Download).unwrap();
     assert!(

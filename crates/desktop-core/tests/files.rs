@@ -1,6 +1,6 @@
 use desktop_core::files::{
-    CHUNK_SIZE, FileCancel, FileSpec, MAX_FILE_SIZE, NativeSource, NativeWriter, SaveMode,
-    WRITE_BLOCK,
+    CHUNK_SIZE, FileCancel, FileSpec, MAX_FILE_SIZE, NativeFileJournal, NativeSource, NativeWriter,
+    SaveMode, WRITE_BLOCK,
 };
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -64,6 +64,9 @@ fn source_changes_and_cancellation_during_hashing_are_detected() {
 
 #[test]
 fn verified_download_is_published_only_after_complete_and_leaves_no_temporary_file() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("download.bin");
     let data = vec![93u8; WRITE_BLOCK * 3 + 17];
@@ -73,6 +76,7 @@ fn verified_download_is_published_only_after_complete_and_leaves_no_temporary_fi
         expected.clone(),
         SaveMode::New,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap();
     write_all(&mut writer, &data);
@@ -87,6 +91,9 @@ fn verified_download_is_published_only_after_complete_and_leaves_no_temporary_fi
 
 #[test]
 fn cancelled_or_corrupt_download_does_not_replace_the_existing_file() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("preserve.bin");
     std::fs::write(&path, b"original").unwrap();
@@ -96,20 +103,33 @@ fn cancelled_or_corrupt_download_does_not_replace_the_existing_file() {
         expected.clone(),
         SaveMode::Replace,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap();
     writer.write(b"corruptions").unwrap();
     assert_eq!(writer.complete().unwrap_err().code, "FILE_INTEGRITY");
     assert_eq!(std::fs::read(&path).unwrap(), b"original");
     let cancel = FileCancel::default();
-    let mut writer =
-        NativeWriter::prepare(&path, expected.clone(), SaveMode::Replace, &cancel).unwrap();
+    let mut writer = NativeWriter::prepare(
+        &path,
+        expected.clone(),
+        SaveMode::Replace,
+        &cancel,
+        &journal,
+    )
+    .unwrap();
     writer.write(b"replacement").unwrap();
     cancel.cancel();
     assert_eq!(writer.complete().unwrap_err().code, "REQUEST_CANCELLED");
     assert_eq!(std::fs::read(&path).unwrap(), b"original");
-    let mut writer =
-        NativeWriter::prepare(&path, expected, SaveMode::Replace, &FileCancel::default()).unwrap();
+    let mut writer = NativeWriter::prepare(
+        &path,
+        expected,
+        SaveMode::Replace,
+        &FileCancel::default(),
+        &journal,
+    )
+    .unwrap();
     writer.write(b"replacement").unwrap();
     writer.complete().unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
@@ -118,17 +138,32 @@ fn cancelled_or_corrupt_download_does_not_replace_the_existing_file() {
 
 #[test]
 fn new_file_publish_never_overwrites_a_competing_file_and_abort_removes_only_its_own_temp() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("new.bin");
-    let mut writer =
-        NativeWriter::prepare(&path, spec(b"data"), SaveMode::New, &FileCancel::default()).unwrap();
+    let mut writer = NativeWriter::prepare(
+        &path,
+        spec(b"data"),
+        SaveMode::New,
+        &FileCancel::default(),
+        &journal,
+    )
+    .unwrap();
     writer.write(b"data").unwrap();
     std::fs::write(&path, b"competitor").unwrap();
     assert_eq!(writer.complete().unwrap_err().code, "FILE_EXISTS");
     assert_eq!(std::fs::read(&path).unwrap(), b"competitor");
     let next = directory.path().join("abort.bin");
-    let mut writer =
-        NativeWriter::prepare(&next, spec(b"data"), SaveMode::New, &FileCancel::default()).unwrap();
+    let mut writer = NativeWriter::prepare(
+        &next,
+        spec(b"data"),
+        SaveMode::New,
+        &FileCancel::default(),
+        &journal,
+    )
+    .unwrap();
     writer.write(b"da").unwrap();
     writer.abort().unwrap();
     assert!(!next.exists());
@@ -137,6 +172,9 @@ fn new_file_publish_never_overwrites_a_competing_file_and_abort_removes_only_its
 
 #[test]
 fn lengths_hashes_blocks_and_non_file_sources_are_rejected() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     assert!(FileSpec::new(MAX_FILE_SIZE + 1, "0".repeat(64)).is_err());
     assert!(FileSpec::new(1, "bad").is_err());
     let directory = tempfile::tempdir().unwrap();
@@ -146,6 +184,7 @@ fn lengths_hashes_blocks_and_non_file_sources_are_rejected() {
         spec(b"a"),
         SaveMode::New,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap();
     assert_eq!(
@@ -158,6 +197,7 @@ fn lengths_hashes_blocks_and_non_file_sources_are_rejected() {
         spec(b"ab"),
         SaveMode::New,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap();
     assert_eq!(writer.complete().unwrap_err().code, "FILE_INTEGRITY");
@@ -169,6 +209,9 @@ fn lengths_hashes_blocks_and_non_file_sources_are_rejected() {
 
 #[test]
 fn empty_files_and_invalid_deserialized_specs_follow_the_same_contract() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("empty.bin");
     std::fs::write(&source, []).unwrap();
@@ -181,6 +224,7 @@ fn empty_files_and_invalid_deserialized_specs_follow_the_same_contract() {
         spec(b""),
         SaveMode::New,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap()
     .complete()
@@ -193,7 +237,8 @@ fn empty_files_and_invalid_deserialized_specs_follow_the_same_contract() {
             &directory.path().join("invalid.bin"),
             invalid,
             SaveMode::New,
-            &FileCancel::default()
+            &FileCancel::default(),
+            &journal
         )
         .is_err()
     );
@@ -208,6 +253,9 @@ fn empty_files_and_invalid_deserialized_specs_follow_the_same_contract() {
 #[test]
 #[ignore = "writes and verifies two 5 GiB files; run the explicit native disk gate after checking free space"]
 fn native_large_disk_streams_five_gib() {
+    let journal_state = tempfile::tempdir().unwrap();
+    let journal = NativeFileJournal::open(journal_state.path()).unwrap();
+
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -245,6 +293,7 @@ fn native_large_disk_streams_five_gib() {
         FileSpec::new(MAX_FILE_SIZE, &expected).unwrap(),
         SaveMode::New,
         &FileCancel::default(),
+        &journal,
     )
     .unwrap();
     let mut largest = 0;

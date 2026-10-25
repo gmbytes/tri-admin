@@ -1,9 +1,12 @@
-use super::{FileCancel, FileSpec, NativeSource, NativeWriter, SaveMode, SaveReceipt, SourceInfo};
+use super::{
+    FileCancel, FileSpec, NativeFileJournal, NativeRecoveryReport, NativeSource, NativeWriter,
+    SaveMode, SaveReceipt, SourceInfo,
+};
 use crate::{DesktopError, error};
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -23,14 +26,23 @@ struct Job {
     cancel: FileCancel,
     state: Mutex<State>,
 }
-#[derive(Default)]
 pub struct FileHandles {
     jobs: Mutex<HashMap<String, Arc<Job>>>,
+    journal: NativeFileJournal,
 }
 fn unavailable() -> DesktopError {
     error("FILE_STATE", "文件操作状态无效，请重新选择")
 }
 impl FileHandles {
+    pub fn open(root: &Path) -> Result<Self, DesktopError> {
+        Ok(Self {
+            jobs: Mutex::new(HashMap::new()),
+            journal: NativeFileJournal::open(root)?,
+        })
+    }
+    pub fn recover(&self) -> Result<NativeRecoveryReport, DesktopError> {
+        self.journal.recover()
+    }
     pub fn reserve(&self, kind: FileJobKind) -> Result<String, DesktopError> {
         let mut jobs = self.jobs.lock().map_err(|_| unavailable())?;
         if jobs.len() >= 32 {
@@ -114,7 +126,7 @@ impl FileHandles {
                 return Ok(false);
             };
             job.cancel.check()?;
-            let writer = NativeWriter::prepare(&path, spec, mode, &job.cancel)?;
+            let writer = NativeWriter::prepare(&path, spec, mode, &job.cancel, &self.journal)?;
             job.cancel.publish(|| {
                 let mut state = job.state.lock().map_err(|_| unavailable())?;
                 if !matches!(*state, State::Busy) {

@@ -132,7 +132,29 @@ pub fn run() {
             };
             let manager = SessionManager::open(path, NativeVault, defaults)?;
             app.manage(Arc::new(Mutex::new(manager)));
-            app.manage(Arc::new(desktop_core::files::FileHandles::default()));
+            let files_root = app.path().app_local_data_dir()?.join("file-recovery");
+            let files = Arc::new(desktop_core::files::FileHandles::open(&files_root)?);
+            let files_weak = Arc::downgrade(&files);
+            app.manage(files);
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let Some(files) = files_weak.upgrade() else {
+                        break;
+                    };
+                    match tauri::async_runtime::spawn_blocking(move || files.recover()).await {
+                        Ok(Ok(report)) => {
+                            if report.pending > 0 || report.invalid > 0 {
+                                eprintln!(
+                                    "本机临时文件维护待处理：pending={}, invalid={}",
+                                    report.pending, report.invalid
+                                )
+                            }
+                        }
+                        _ => eprintln!("本机临时文件维护暂缓"),
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

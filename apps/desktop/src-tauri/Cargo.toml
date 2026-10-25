@@ -19,6 +19,7 @@ desktop-core = { path = "../../../crates/desktop-core" }
 keyring = "4.2"
 serde = { version = "1", features = ["derive"] }
 tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["time"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -143,7 +143,7 @@ async function download(row: StoredFile) {
       link.click()
       link.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } else if (result.cleanupPending) ElMessage.warning('文件已保存，临时清理待完成')
+    } else if (result.cleanupPending) ElMessage.warning('文件已保存，临时清理将自动重试')
     else ElMessage.success('文件已保存')
   } catch (error) {
     if (!(
