@@ -1,15 +1,17 @@
 use crate::common::error::AppError;
 use mongodb::{
     Database, IndexModel,
-    bson::{DateTime, Document, doc},
+    bson::{DateTime, Document, doc, oid::ObjectId},
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 3;
+use sha2::{Digest, Sha256};
+pub const VERSION: i32 = 4;
 pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
-    if let Some(row) = metadata.find_one(doc! {"_id":"files"}).await?
-        && !matches!(row.get_i32("version").ok(), Some(1 | 2 | VERSION))
+    let previous = metadata.find_one(doc! {"_id":"files"}).await?;
+    if let Some(row) = &previous
+        && !matches!(row.get_i32("version").ok(), Some(1 | 2 | 3 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -194,6 +196,25 @@ pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
             doc! {"$set":{"retryRequested":false}},
         )
         .await?;
+    if previous
+        .as_ref()
+        .and_then(|row| row.get_i32("version").ok())
+        != Some(VERSION)
+    {
+        let path = "/files";
+        let digest = Sha256::digest(format!("tri-admin:menu:{path}"));
+        let mut bytes = [0u8; 12];
+        bytes.copy_from_slice(&digest[..12]);
+        if database
+            .collection::<Document>("menus")
+            .find_one(doc! {"path":path,"deletedAt":null})
+            .await?
+            .is_none()
+        {
+            let now = DateTime::now();
+            database.collection::<Document>("menus").update_one(doc!{"_id":ObjectId::from_bytes(bytes)},doc!{"$setOnInsert":{"label":"文件管理","path":path,"viewKey":"files","permission":"files.read","icon":null,"parentId":null,"sort":100,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).await?;
+        }
+    }
     metadata
         .update_one(
             doc! {"_id":"files"},

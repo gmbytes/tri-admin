@@ -26,6 +26,7 @@ const form = reactive({
 const views = [
   { value: 'dashboard', label: '工作台' },
   { value: 'settings', label: '配置中心' },
+  { value: 'files', label: '文件管理' },
   { value: 'users', label: '用户管理' },
   { value: 'roles', label: '角色管理' },
   { value: 'menus', label: '菜单管理' },

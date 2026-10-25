@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Grid, User, UserFilled, Menu, Lock } from '@element-plus/icons-vue'
+import {
+  ArrowDown,
+  Grid,
+  User,
+  UserFilled,
+  Menu,
+  Lock,
+  FolderOpened,
+} from '@element-plus/icons-vue'
 import type { MenuRecord } from '../core/types'
 defineOptions({ name: 'SideNavigation' })
 const props = withDefaults(defineProps<{ nodes: MenuRecord[]; depth?: number }>(), { depth: 0 })
@@ -19,6 +27,7 @@ const icons: Record<string, unknown> = {
   roles: UserFilled,
   menus: Menu,
   permissions: Lock,
+  files: FolderOpened,
 }
 </script>
 <template>
