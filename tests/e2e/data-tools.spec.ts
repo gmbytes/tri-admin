@@ -30,6 +30,16 @@ async function signIn(page: Page, username: string, secret: string) {
   await page.locator('nav').getByRole('button', { name: '数据工具', exact: true }).click()
   await expect(page.getByRole('heading', { name: '数据工具', exact: true })).toBeVisible()
 }
+async function mapColumn(page: Page, field: string, header: string) {
+  const control = page.getByRole('combobox', { name: field + ' 来源列', exact: true })
+  const row = page
+    .locator('.data-field-mapping-row')
+    .filter({ has: page.getByRole('combobox', { name: field + ' 来源列', exact: true }) })
+  await row.locator('.el-select__wrapper').click()
+  const listbox = await control.getAttribute('aria-controls')
+  if (!listbox) throw new Error('Missing mapping listbox')
+  await page.locator(`[id="${listbox}"]`).getByRole('option', { name: header, exact: true }).click()
+}
 test('real CSV mapping preview applies valid rows once and XLSX exports can be reimported', async ({
   page,
 }) => {
@@ -44,9 +54,19 @@ test('real CSV mapping preview applies valid rows once and XLSX exports can be r
       `名称,标识,类型,值\n布尔参数,${key},boolean,true\n错误参数,tools.invalid.${suffix},boolean,maybe\n嵌套参数,tools.deep.${suffix},json,${'['.repeat(16)}null${']'.repeat(16)}\n`,
     ),
   })
-  await page
-    .getByLabel('字段映射', { exact: true })
-    .fill(JSON.stringify({ name: '名称', key: '标识', valueType: '类型', value: '值' }))
+  await expect(page.getByRole('combobox', { name: '名称 来源列', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '生成导入预览', exact: true })).toBeDisabled()
+  await mapColumn(page, '名称', '名称')
+  await mapColumn(page, '标识', '标识')
+  await mapColumn(page, '值类型', '类型')
+  await mapColumn(page, '值', '值')
+  await expect(page.getByRole('textbox', { name: '字段映射', exact: true })).toHaveCount(0)
+  await page.getByRole('heading', { name: '数据工具', exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: '.superpowers/sdd/2026-10-24-tri-admin-greenfield/data-mapping-selector.png',
+    fullPage: true,
+    animations: 'disabled',
+  })
   await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
   await expect(page.locator('.data-import-results').getByText(key, { exact: true })).toBeVisible()
   await expect(
@@ -70,6 +90,7 @@ test('real CSV mapping preview applies valid rows once and XLSX exports can be r
     .locator('.el-select__wrapper')
     .click()
   await page.getByRole('option', { name: 'XLSX', exact: true }).click()
+  await expect(page.locator('.data-import-results').getByText(key, { exact: true })).toBeVisible()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出数据', exact: true }).click()
   const download = await downloadEvent
@@ -95,7 +116,6 @@ test('real CSV mapping preview applies valid rows once and XLSX exports can be r
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: workbook,
   })
-  await page.getByLabel('字段映射', { exact: true }).fill('{}')
   await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
   await expect(page.getByRole('button', { name: '应用可导入行', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '应用可导入行', exact: true }).click()
@@ -226,11 +246,52 @@ test('dictionary and typed item tools persist real CSV and XLSX data with visibl
   ).data
   expect(saved).toHaveLength(1)
   expect(saved[0]).toMatchObject({ value: '001', sort: -3, enabled: false })
+  await page
+    .locator('.el-form-item')
+    .filter({ hasText: '表格格式' })
+    .locator('.el-select__wrapper')
+    .click()
+  await page.getByRole('option', { name: 'XLSX', exact: true }).click()
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出数据', exact: true }).click()
   const download = await downloadEvent
   const path = await download.path()
   expect((await readFile(path!)).subarray(0, 2).toString()).toBe('PK')
+})
+
+test('inspection integrity failures keep imports blocked and can be retried without reselecting bytes', async ({
+  page,
+}) => {
+  await login(page)
+  let inspections = 0,
+    creates = 0
+  page.on('request', (request) => {
+    if (request.url().endsWith('/data-tools/imports') && request.method() === 'POST') creates++
+  })
+  await page.route('**/data-tools/inspect', async (route) => {
+    inspections++
+    const response = await route.fetch()
+    const body = await response.json()
+    body.data.sha256 = '0'.repeat(64)
+    await route.fulfill({ response, json: body })
+  })
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'retry.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('name,key,valueType,value\nRetry,inspect.retry,string,value\n'),
+  })
+  await expect(page.locator('.data-alert')).toContainText('内容摘要校验失败')
+  await expect(page.getByRole('button', { name: '生成导入预览', exact: true })).toBeDisabled()
+  expect(creates).toBe(0)
+  await page.unroute('**/data-tools/inspect')
+  await page.getByRole('button', { name: '重试读取表头', exact: true }).click()
+  await expect(page.getByRole('button', { name: '生成导入预览', exact: true })).toBeEnabled()
+  expect(inspections).toBe(1)
+  await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
+  await expect(
+    page.locator('.data-import-results').getByText('inspect.retry', { exact: true }),
+  ).toBeVisible()
+  expect(creates).toBe(1)
 })
 test('an item preview reports a parent rename instead of writing into a replacement dictionary', async ({
   page,
@@ -277,4 +338,71 @@ test('an item preview reports a parent rename instead of writing into a replacem
     await (await page.request.get(`${api}/dictionaries/${parent.id}/items`, { headers })).json()
   ).data
   expect(remaining).toHaveLength(0)
+})
+
+test('cancelled inspection results cannot replace a newly selected file', async ({ page }) => {
+  await login(page)
+  let release!: () => void,
+    completed!: () => void,
+    seen = false,
+    calls = 0,
+    creates = 0
+  const gate = new Promise<void>((resolve) => (release = resolve)),
+    done = new Promise<void>((resolve) => (completed = resolve))
+  page.on('request', (request) => {
+    if (request.url().endsWith('/data-tools/imports') && request.method() === 'POST') creates++
+  })
+  await page.route('**/data-tools/inspect', async (route) => {
+    if (++calls !== 1) {
+      await route.continue()
+      return
+    }
+    const response = await route.fetch()
+    seen = true
+    await gate
+    try {
+      await route.fulfill({ response })
+    } catch {
+      /* The browser may already have retired this cancelled request. */
+    } finally {
+      completed()
+    }
+  })
+  try {
+    await page.locator('input[type=file]').setInputFiles({
+      name: 'old.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from('Old A,Old B\na,b\n'),
+    })
+    await expect.poll(() => seen).toBe(true)
+    await page.getByRole('button', { name: '停止当前操作', exact: true }).click()
+    await expect(page.getByRole('button', { name: '重试读取表头', exact: true })).toBeEnabled()
+    await page.locator('input[type=file]').setInputFiles({
+      name: 'new.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(
+        'name,key,valueType,value\nNew,new.first,string,one\nNew,new.second,string,two\n',
+      ),
+    })
+    await expect(page.getByText(/已识别 2 行数据/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '生成导入预览', exact: true })).toBeEnabled()
+    release()
+    await done
+    await expect(page.getByText('new.csv', { exact: true })).toBeVisible()
+    await expect(page.getByText(/已识别 2 行数据/)).toBeVisible()
+    const control = page.getByRole('combobox', { name: '名称 来源列', exact: true })
+    await page
+      .locator('.data-field-mapping-row')
+      .filter({ has: control })
+      .locator('.el-select__wrapper')
+      .click()
+    const id = await control.getAttribute('aria-controls'),
+      list = page.locator(`[id="${id}"]`)
+    await expect(list.getByRole('option', { name: 'name', exact: true })).toBeVisible()
+    await expect(list.getByRole('option', { name: 'Old A', exact: true })).toHaveCount(0)
+    expect(creates).toBe(0)
+  } finally {
+    release()
+    await page.unroute('**/data-tools/inspect')
+  }
 })

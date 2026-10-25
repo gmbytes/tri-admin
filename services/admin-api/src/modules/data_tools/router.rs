@@ -13,6 +13,7 @@ crate::api_routes! {
     prefix "";
     get "/api/v1/data-tools/resources" => resources, "dataTools.resources", "dataTools", "数据工具资源模板", Permission, &["exports.read"], "仅显示具备资源读取权限的字段白名单";
     post "/api/v1/data-tools/template" => template, "dataTools.template", "dataTools", "下载新资源表格模板", Permission, &["exports.read"];
+    post "/api/v1/data-tools/inspect" => inspect, "dataTools.inspect", "dataTools", "读取导入文件表头", Permission, &["exports.write"], "还需资源读取和写入权限；只返回表头、行数和原始内容摘要，不创建导入记录";
     post "/api/v1/data-tools/export" => export, "dataTools.export", "dataTools", "导出资源表格", Permission, &["exports.write"], "还需资源读取权限；用户数据范围在限制行数前过滤";
     get "/api/v1/data-tools/imports" => list, "dataTools.import.list", "dataTools", "我的最近导入", Permission, &["exports.read"];
     post "/api/v1/data-tools/imports" => preview, "dataTools.import.preview", "dataTools", "预览表格导入", Permission, &["exports.write"], "还需资源读取和写入权限；UUID 请求标识绑定内容与映射";
@@ -59,6 +60,27 @@ async fn template(
                 rows: Vec::new(),
             },
         )
+    })
+    .await
+    .map_err(|_| AppError::Internal)??;
+    Ok(ApiResponse::success(result))
+}
+async fn inspect(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    body: Request,
+) -> Result<ApiResponse<Inspection>, AppError> {
+    actor.require("exports.write")?;
+    let input = request::json::<InspectInput>(body, &state).await?;
+    registry::resource(&input.resource, &Actor::new(&actor)?, true)?;
+    let slot = state
+        .data_tool_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::RateLimited)?;
+    let result = tokio::task::spawn_blocking(move || {
+        let _slot = slot;
+        super::inspection::inspect(input)
     })
     .await
     .map_err(|_| AppError::Internal)??;

@@ -107,7 +107,7 @@ export function createBrowserFileSink(expected: FileContentSpec): FileSink<Blob>
   }
 }
 
-function cancellable<T>(start: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+export function cancellable<T>(start: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return Promise.resolve().then(start)
   if (signal.aborted) return Promise.reject(cancelled())
   return new Promise<T>((resolve, reject) => {

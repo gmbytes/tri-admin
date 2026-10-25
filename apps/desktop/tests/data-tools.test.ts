@@ -200,3 +200,35 @@ it('uses canonical RFC3339 expiry text for the public import contract', () => {
   expect(parseImportView(value).expiresAt).toBe(value.expiresAt)
   expect(() => parseImportView({ ...value, expiresAt: Date.now() })).toThrow()
 })
+it('cancels a pending source read promptly and closes its handle', async () => {
+  let release!: (value: { bytes: Blob; sha256: string }) => void
+  let started!: () => void
+  const reading = new Promise<void>((resolve) => (started = resolve))
+  const waiting = new Promise<{ bytes: Blob; sha256: string }>((resolve) => (release = resolve))
+  const source: UploadSource = {
+    name: 'pending.csv',
+    mediaType: 'text/csv',
+    size: 1,
+    sha256: '0'.repeat(64),
+    readChunk: () => {
+      started()
+      return waiting
+    },
+    close: vi.fn(async () => {}),
+  }
+  const control = new AbortController(),
+    pending = dataSourceBase64(source, control.signal)
+  await reading
+  control.abort()
+  const outcome = await Promise.race([
+    pending.then(
+      () => 'resolved',
+      () => 'cancelled',
+    ),
+    new Promise<string>((resolve) => setTimeout(() => resolve('still waiting'), 100)),
+  ])
+  release({ bytes: new Blob(['x']), sha256: '0'.repeat(64) })
+  await pending.catch(() => {})
+  expect(outcome).toBe('cancelled')
+  expect(source.close).toHaveBeenCalledOnce()
+})

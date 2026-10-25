@@ -15,6 +15,22 @@ pub struct PreviewInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InspectInput {
+    pub resource: String,
+    pub format: Format,
+    pub content_base64: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Inspection {
+    pub resource: String,
+    pub format: Format,
+    pub sha256: String,
+    pub headers: Vec<String>,
+    pub row_count: usize,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExportInput {
     pub resource: String,
     pub format: Format,

@@ -78,3 +78,5 @@
 明细预览会绑定内部父字典 ID，应用时核对父级标识与身份；删除、改名或重新创建同标识父级后返回逐行 `PARENT_CHANGED`，缺少父级返回预览错误 `PARENT_NOT_FOUND`。父级未被替换时，实际创建复用正常明细写入的父级锁及删除约束。`data-tools` 自身 schema v2 为原有新项目预览补齐内部 `parentId:null`，保留原回执和定制菜单；没有旧系统适配分支。
 
 导入响应和历史摘要的 `expiresAt` 使用标准 RFC3339 UTC 毫秒字符串，与全项目公共时间约定一致；内部仍用 MongoDB DateTime 比较到期时间。
+
+`POST /api/v1/data-tools/inspect` 接收 `{resource,format,contentBase64}`，需要 `exports.write` 和所选资源的读写权限；返回 `{resource,format,sha256,headers,rowCount}`，不创建预览记录或业务数据。客户端以原始文件摘要核对结果后构造字段映射；真正创建预览时仍提交原内容及明确映射，由服务器重新验证。

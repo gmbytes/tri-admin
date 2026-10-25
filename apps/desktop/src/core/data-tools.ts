@@ -1,4 +1,10 @@
-import { FILE_CHUNK_SIZE, hashBrowserFile, type FileSink, type UploadSource } from './files'
+import {
+  FILE_CHUNK_SIZE,
+  hashBrowserFile,
+  cancellable,
+  type FileSink,
+  type UploadSource,
+} from './files'
 export const DATA_FILE_LIMIT = 6 * 1024 * 1024
 export type DataFormat = 'csv' | 'xlsx'
 export interface DataResource {
@@ -75,14 +81,14 @@ export async function dataSourceBase64(
       throw new Error('数据文件最多 6 MiB')
     const chunks: Uint8Array<ArrayBuffer>[] = []
     for (let index = 0; index < Math.ceil(size / FILE_CHUNK_SIZE); index++) {
-      const chunk = await source.readChunk(index, signal)
+      const chunk = await cancellable(() => source.readChunk(index, signal), signal)
       active(signal)
       if (
         !(chunk.bytes instanceof Blob) ||
         chunk.bytes.size !== Math.min(FILE_CHUNK_SIZE, size - index * FILE_CHUNK_SIZE)
       )
         throw new Error('源文件校验失败')
-      chunks.push(new Uint8Array(await chunk.bytes.arrayBuffer()))
+      chunks.push(new Uint8Array(await cancellable(() => chunk.bytes.arrayBuffer(), signal)))
       active(signal)
     }
     const content = new Blob(chunks)

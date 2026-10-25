@@ -3,6 +3,14 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useSession } from '../stores/session'
 import { platform } from '../platform'
+import DataFieldMapping from '../components/DataFieldMapping.vue'
+import {
+  parseInspection,
+  defaultMapping,
+  mappingProblem,
+  effectiveMapping,
+  type DataInspection,
+} from '../core/data-mapping'
 import { browserUploadSource } from '../core/file-source'
 import { createBrowserFileSink, type FileSink, type UploadSource } from '../core/files'
 import type { NativeSaveResult } from '../core/file-native'
@@ -29,7 +37,10 @@ const selected = computed(() => resources.value.find((r) => r.key === resource.v
   fileInput = ref<HTMLInputElement | null>(null),
   fileName = ref(''),
   content = ref(''),
-  mapping = ref('{}'),
+  mapping = ref<Record<string, string>>({}),
+  inspection = ref<DataInspection | null>(null),
+  importFormat = ref<DataFormat>('csv'),
+  sourceHash = ref(''),
   preview = ref<ImportView | null>(null),
   clock = ref(Date.now())
 const history = ref<Array<{ id: string; requestId: string; resource: string; expiresAt: string }>>(
@@ -91,21 +102,48 @@ const problems: Record<string, string> = {
   PARENT_NOT_FOUND: '父字典不存在',
   PARENT_CHANGED: '父字典已改变，请重新预览',
 }
+const canPreview = computed(
+  () =>
+    !!content.value &&
+    !!selected.value &&
+    !!inspection.value &&
+    mappingProblem(selected.value, mapping.value, inspection.value.headers) === null,
+)
+const mappingMessage = computed(() => {
+  if (!selected.value || !inspection.value) return ''
+  const issue = mappingProblem(selected.value, mapping.value, inspection.value.headers)
+  if (!issue) return ''
+  const names = issue.fields.map((field) => labels[field] ?? field).join('、')
+  return issue.code === 'MISSING_REQUIRED'
+    ? `请为必填字段选择来源列：${names}`
+    : issue.code === 'DUPLICATE_HEADER'
+      ? `来源列不能重复分配：${names}`
+      : issue.code === 'UNKNOWN_HEADER'
+        ? '所选来源列不在当前文件中，请重新选择'
+        : '字段配置无效，请重新选择文件'
+})
 let alive = true,
   sequence = 0,
   historySequence = 0,
+  sourceSequence = 0,
   requestId = crypto.randomUUID()
 const controls = new Set<AbortController>(),
   ticker = setInterval(() => (clock.value = Date.now()), 1000)
 watch(resource, () => {
   fields.value = [...(selected.value?.fields ?? [])]
+  clearSource()
+})
+function clearSource() {
+  sourceSequence++
   preview.value = null
   content.value = ''
   fileName.value = ''
-  mapping.value = '{}'
+  sourceHash.value = ''
+  inspection.value = null
+  mapping.value = {}
   requestId = crypto.randomUUID()
-})
-watch([mapping, format], () => {
+}
+watch(mapping, () => {
   preview.value = null
   requestId = crypto.randomUUID()
 })
@@ -131,6 +169,10 @@ async function refreshHistory(signal?: AbortSignal) {
 }
 async function acceptSource(source: UploadSource | null, signal: AbortSignal) {
   if (!source) return
+  clearSource()
+  const attempt = sourceSequence,
+    checksum = source.sha256,
+    key = resource.value
   const name = source.name
   const nextFormat = /\.xlsx$/i.test(name) ? 'xlsx' : /\.csv$/i.test(name) ? 'csv' : null
   if (!nextFormat) {
@@ -138,12 +180,35 @@ async function acceptSource(source: UploadSource | null, signal: AbortSignal) {
     throw new Error('请选择 CSV 或 XLSX 文件')
   }
   const bytes = await dataSourceBase64(source, signal)
-  if (!alive || signal.aborted) return
+  if (!alive || signal.aborted || attempt !== sourceSequence || key !== resource.value) return
   content.value = bytes
   fileName.value = name
-  format.value = nextFormat
+  importFormat.value = nextFormat
+  sourceHash.value = checksum
   preview.value = null
   requestId = crypto.randomUUID()
+  await inspectCurrent(signal)
+}
+async function inspectCurrent(signal: AbortSignal) {
+  if (!content.value || !sourceHash.value || !selected.value) throw new Error('请先选择数据文件')
+  const expected = {
+      resource: resource.value,
+      format: importFormat.value,
+      sha256: sourceHash.value,
+    },
+    attempt = sourceSequence
+  const result = await session.request<unknown>('/data-tools/inspect', {
+    method: 'POST',
+    signal,
+    body: { resource: expected.resource, format: expected.format, contentBase64: content.value },
+  })
+  if (!alive || signal.aborted || attempt !== sourceSequence) return
+  const checked = parseInspection(result.data, expected)
+  inspection.value = checked
+  mapping.value = defaultMapping(selected.value, checked.headers)
+}
+function retryInspection() {
+  void run(inspectCurrent)
 }
 function choose() {
   if (platform.files)
@@ -156,25 +221,16 @@ async function browserSelected(event: Event) {
   input.value = ''
   if (!file) return
   await run(async (signal) => {
+    clearSource()
     if (file.size > DATA_FILE_LIMIT) throw new Error('数据文件最多 6 MiB')
     await acceptSource(await browserUploadSource(file, signal), signal)
   })
 }
 async function makePreview() {
   await run(async (signal) => {
-    let columns: unknown
-    try {
-      columns = JSON.parse(mapping.value)
-    } catch {
-      throw new Error('字段映射须为 JSON 对象，例如 {"name":"名称"}')
-    }
-    if (
-      !columns ||
-      typeof columns !== 'object' ||
-      Array.isArray(columns) ||
-      Object.values(columns).some((v) => typeof v !== 'string')
-    )
-      throw new Error('字段映射须使用字段名与表头字符串')
+    if (!selected.value || !inspection.value || !content.value)
+      throw new Error('请先读取文件表头并选择字段映射')
+    const columns = effectiveMapping(selected.value, mapping.value, inspection.value.headers)
     const token = ++sequence,
       result = await session.request<unknown>('/data-tools/imports', {
         method: 'POST',
@@ -182,7 +238,7 @@ async function makePreview() {
         body: {
           requestId,
           resource: resource.value,
-          format: format.value,
+          format: importFormat.value,
           contentBase64: content.value,
           mapping: columns,
         },
@@ -354,21 +410,29 @@ function valueText(value: unknown) {
       <el-button :disabled="busy" @click="choose">选择数据文件</el-button
       ><span>{{ fileName || '尚未选择文件' }}</span>
     </div>
-    <el-form label-position="top"
-      ><el-form-item label="字段映射"
-        ><el-input
-          v-model="mapping"
-          aria-label="字段映射"
-          type="textarea"
-          :rows="3"
-          :disabled="busy"
-          placeholder='{"name":"名称","key":"标识","valueType":"类型","value":"值"}' /></el-form-item
-    ></el-form>
+    <el-button v-if="content && !inspection" :disabled="busy" @click="retryInspection"
+      >重试读取表头</el-button
+    >
+    <template v-if="inspection && selected"
+      ><p class="tiny subtle">
+        已识别 {{ inspection.rowCount }} 行数据、{{ inspection.headers.length }} 列 ·
+        {{ importFormat.toUpperCase() }}
+      </p>
+      <DataFieldMapping
+        v-model="mapping"
+        :resource="selected"
+        :headers="inspection.headers"
+        :labels="labels"
+        :disabled="busy" /><el-alert
+        v-if="mappingMessage"
+        :title="mappingMessage"
+        type="warning"
+        :closable="false"
+    /></template>
     <p class="tiny subtle">
-      {} 使用模板中的同名表头；必填映射：{{ selected?.requiredFields.join('、') }}。启用默认
-      true，明细排序默认 0；省略参数分组列时默认 general。
+      同名表头会自动匹配。带 * 的字段必须选择来源列，每列只能使用一次；可选字段留空使用默认值。
     </p>
-    <el-button type="primary" :disabled="busy || !content" @click="makePreview"
+    <el-button type="primary" :disabled="busy || !canPreview" @click="makePreview"
       >生成导入预览</el-button
     >
   </section>
