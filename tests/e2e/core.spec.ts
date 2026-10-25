@@ -63,10 +63,10 @@ test('API catalog shows actual methods paths permissions and local filters', asy
   await page.getByPlaceholder('搜索操作标识、路径或权限').fill('users.create')
   await expect(page.locator('.api-catalog-table')).toContainText('roles.assign')
   await expect(page.locator('.api-catalog-table')).toContainText('users.write')
-  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('customers.owners')
-  const row = page.getByRole('row').filter({ hasText: 'customers.owners' })
-  await expect(row).toContainText('/api/v1/customers/owners')
-  await expect(row).toContainText('customers.write')
+  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('parameters.get')
+  const row = page.getByRole('row').filter({ hasText: 'parameters.get' })
+  await expect(row).toContainText('/api/v1/parameters/{id}')
+  await expect(row).toContainText('parameters.read')
   const method = page.getByRole('combobox', { name: 'HTTP 方法', exact: true })
   await page.locator('.method-select .el-select__wrapper').click()
   let controls = await method.getAttribute('aria-controls')
@@ -472,184 +472,16 @@ test('selected-role editor grants a bounded team scope that changes without a ne
   }
 })
 
-test('customer forms enforce ownership transfer, scoped visibility and user deletion guards', async ({
-  page,
-  browser,
-}) => {
-  test.setTimeout(60_000)
-  const tokens = await login(page),
-    headers = { authorization: `Bearer ${tokens.accessToken}` },
-    suffix = Date.now().toString(36)
-  const code = `UI-CUSTOMER-${suffix}`,
-    names = [`归属A-${suffix}`, `归属B-${suffix}`],
-    usernames = [`customer-a-${suffix}`, `customer-b-${suffix}`]
-  const roleIds: string[] = [],
-    userIds: string[] = []
-  let customerId = '',
-    version = 1
-  const operatorContext = await browser.newContext({ baseURL: 'http://localhost:1420' }),
-    viewerContext = await browser.newContext({ baseURL: 'http://localhost:1420' })
-  try {
-    for (const [index, name] of names.entries()) {
-      const role = await page.request.post(api + '/roles', {
-        headers,
-        data: {
-          name,
-          slug: `customer-team-${index}-${suffix}`,
-          permissions: [],
-          dataScope: 'self',
-          dataScopeRoleIds: [],
-        },
-      })
-      expect(role.status()).toBe(201)
-      roleIds.push((await role.json()).data.id)
-      const user = await page.request.post(api + '/users', {
-        headers,
-        data: {
-          username: usernames[index],
-          displayName: name,
-          password: await password(),
-          roleIds: [roleIds[index]],
-        },
-      })
-      expect(user.status()).toBe(201)
-      userIds.push((await user.json()).data.id)
-    }
-    for (const [name, permissions] of [
-      ['operator', ['customers.read', 'customers.write']],
-      ['viewer', ['customers.read']],
-    ] as const) {
-      const role = await page.request.post(api + '/roles', {
-        headers,
-        data: {
-          name,
-          slug: `customer-${name}-${suffix}`,
-          permissions,
-          dataScope: 'roles',
-          dataScopeRoleIds: [roleIds[0]],
-        },
-      })
-      expect(role.status()).toBe(201)
-      roleIds.push((await role.json()).data.id)
-      const user = await page.request.post(api + '/users', {
-        headers,
-        data: {
-          username: `customer-${name}-${suffix}`,
-          displayName: name,
-          password: await password(),
-          roleIds: [roleIds[roleIds.length - 1]],
-        },
-      })
-      expect(user.status()).toBe(201)
-      userIds.push((await user.json()).data.id)
-    }
-    await navigate(page, '客户管理')
-    await page.getByRole('button', { name: '新增客户', exact: true }).click()
-    let dialog = page.getByRole('dialog', { name: '新增客户', exact: true })
-    await dialog.getByLabel('客户编号', { exact: true }).fill(code)
-    await dialog.getByLabel('客户名称', { exact: true }).fill('界面客户')
-    await dialog.getByLabel('联系人', { exact: true }).fill('测试联系人')
-    await dialog.getByLabel('电话', { exact: true }).fill('+86 123456')
-    await dialog.getByLabel('邮箱', { exact: true }).fill('contact@example.test')
-    await chooseSelect(page, dialog, '归属人', `${names[0]} · ${usernames[0]}`)
-    let response = page.waitForResponse(
-      (response) => response.url() === api + '/customers' && response.request().method() === 'POST',
-    )
-    await dialog.getByRole('button', { name: '保存客户', exact: true }).click()
-    let body = await (await response).json()
-    customerId = body.data.id
-    expect(body.data.ownerId).toBe(userIds[0])
-    await expect(dialog).not.toBeVisible()
-    const row = page.getByRole('row').filter({ hasText: code })
-    await expect(row).toContainText(names[0]!)
-    const operator = await operatorContext.newPage(),
-      viewer = await viewerContext.newPage()
-    for (const [target, name] of [
-      [operator, 'operator'],
-      [viewer, 'viewer'],
-    ] as const) {
-      await target.addInitScript(
-        (endpoint) => localStorage.setItem('tri-admin.server', endpoint),
-        api,
-      )
-      await login(target, `customer-${name}-${suffix}`)
-      await expect(target.getByRole('heading', { name: '客户管理', exact: true })).toBeVisible()
-      await expect(target.getByRole('row').filter({ hasText: code })).toBeVisible()
-    }
-    await expect(viewer.getByRole('button', { name: '新增客户', exact: true })).toHaveCount(0)
-    await expect(viewer.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
-    const ownerQuery = operator.waitForResponse((response) =>
-      response.url().includes('/customers/owners?'),
-    )
-    await operator
-      .getByRole('row')
-      .filter({ hasText: code })
-      .getByRole('button', { name: '编辑', exact: true })
-      .click()
-    await ownerQuery
-    const scopedDialog = operator.getByRole('dialog', { name: '编辑客户', exact: true })
-    await openSelect(scopedDialog, '归属人')
-    const field = scopedDialog.locator('.el-form-item').filter({ hasText: '归属人' }),
-      controls = await field.getByRole('combobox').getAttribute('aria-controls')
-    await expect(operator.locator(`[id="${controls}"]`)).not.toContainText(usernames[1]!)
-    await scopedDialog.getByLabel('客户名称', { exact: true }).fill('范围维护客户')
-    await scopedDialog.getByRole('button', { name: '保存客户', exact: true }).click()
-    await expect(scopedDialog).not.toBeVisible()
-    version = 2
-    await navigate(page, '用户管理')
-    const oldOwner = page.getByRole('row').filter({ hasText: usernames[0]! })
-    await oldOwner.getByRole('button', { name: '删除', exact: true }).click()
-    await page
-      .getByRole('dialog', { name: '删除用户', exact: true })
-      .getByRole('button', { name: '删除', exact: true })
-      .click()
-    await expect(page.getByText('请先转移该用户的客户归属', { exact: true })).toBeVisible()
-    await navigate(page, '客户管理')
-    await row.getByRole('button', { name: '编辑', exact: true }).click()
-    dialog = page.getByRole('dialog', { name: '编辑客户', exact: true })
-    await expect(dialog.getByLabel('客户名称', { exact: true })).toHaveValue('范围维护客户')
-    await chooseSelect(page, dialog, '归属人', `${names[1]} · ${usernames[1]}`)
-    await chooseSelect(page, dialog, '客户状态', '已归档')
-    response = page.waitForResponse(
-      (response) =>
-        response.url() === api + `/customers/${customerId}` &&
-        response.request().method() === 'PATCH',
-    )
-    await dialog.getByRole('button', { name: '保存客户', exact: true }).click()
-    body = await (await response).json()
-    expect(body.data.ownerId).toBe(userIds[1])
-    version = 3
-    await expect(dialog).not.toBeVisible()
-    await expect(row).toContainText('已归档')
-    expect(
-      (await page.request.delete(`${api}/users/${userIds[1]}?version=1`, { headers })).status(),
-    ).toBe(409)
-    for (const target of [operator, viewer]) {
-      await target.getByRole('button', { name: '刷新', exact: true }).click()
-      await expect(target.getByRole('row').filter({ hasText: code })).toHaveCount(0)
-    }
-    await navigate(page, '用户管理')
-    await oldOwner.getByRole('button', { name: '删除', exact: true }).click()
-    await page
-      .getByRole('dialog', { name: '删除用户', exact: true })
-      .getByRole('button', { name: '删除', exact: true })
-      .click()
-    await expect(oldOwner).toHaveCount(0)
-    await navigate(page, '客户管理')
-    await row.getByRole('button', { name: '删除', exact: true }).click()
-    await page
-      .getByRole('dialog', { name: '删除客户', exact: true })
-      .getByRole('button', { name: '删除', exact: true })
-      .click()
-    await expect(row).toHaveCount(0)
-    customerId = ''
-  } finally {
-    await operatorContext.close()
-    await viewerContext.close()
-    if (customerId)
-      await page.request.delete(`${api}/customers/${customerId}?version=${version}`, { headers })
-    for (const id of userIds) await page.request.delete(`${api}/users/${id}?version=1`, { headers })
-    for (const id of [...roleIds.slice(2), ...roleIds.slice(0, 2)])
-      await page.request.delete(`${api}/roles/${id}?version=1`, { headers })
-  }
+test('removed customer management has no navigation or API entries', async ({ page }) => {
+  await login(page)
+  await expect(
+    page.locator('nav').getByRole('button', { name: '客户管理', exact: true }),
+  ).toHaveCount(0)
+  await navigate(page, '权限目录')
+  await page.getByRole('tab', { name: 'API 接口', exact: true }).click()
+  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('customers')
+  await expect(
+    page.locator('.api-catalog-table').getByRole('row').filter({ hasText: 'customers' }),
+  ).toHaveCount(0)
+  await expect(page.getByText('0 个接口', { exact: true })).toBeVisible()
 })

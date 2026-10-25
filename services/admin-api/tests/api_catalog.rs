@@ -56,7 +56,7 @@ async fn catalog_has_stable_unique_operations_and_a_verifiable_checksum() {
     let data = catalog(&app, token).await;
     assert_eq!(data["schemaVersion"], 1);
     let entries = data["endpoints"].as_array().unwrap();
-    assert!(entries.len() > 40);
+    assert!(entries.len() > 30);
     let mut ids = HashSet::new();
     let mut routes = HashSet::new();
     let mut previous = "";
@@ -102,7 +102,7 @@ async fn catalog_has_stable_unique_operations_and_a_verifiable_checksum() {
     assert_eq!(catalog(&app, token).await["checksum"], checksum);
     for required in [
         "apiCatalog.list",
-        "customers.owners",
+        "parameters.get",
         "roles.assignable",
         "dictionaries.items.update",
         "auth.refresh",
@@ -248,7 +248,7 @@ async fn catalog_access_classes_match_actual_unauthenticated_behavior() {
             other => panic!("unknown access {other}"),
         }
     }
-    let (token, _) = identity(&app, owner, json!(["customers.read"])).await;
+    let (token, _) = identity(&app, owner, json!(["users.read"])).await;
     assert_eq!(
         app.send("GET", "/api/v1/api-catalog", Value::Null, Some(&token))
             .await

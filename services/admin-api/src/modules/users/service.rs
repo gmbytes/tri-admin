@@ -216,7 +216,6 @@ pub async fn delete(
         actor.require_scope(id,&user.role_ids).map_err(|_|fail(Failure::Forbidden))?;
         if user.version!=version{return Err(fail(Failure::Conflict("数据已被修改，请刷新后重试")));}
         check_owner_change(database,actor,&user,&user.role_ids,"disabled",true,session).await?;let now=DateTime::now();
-        if database.collection::<Document>("customers").count_documents(doc!{"ownerId":id,"deletedAt":null}).session(&mut *session).await?>0{return Err(fail(Failure::Conflict("请先转移该用户的客户归属")));}
         database.collection::<Document>("users").update_one(doc!{"_id":id},doc!{"$set":{"status":"disabled","deletedAt":now,"updatedAt":now},"$inc":{"version":1i64}}).session(&mut *session).await?;
         shared::revoke_sessions(database,id,session).await?;shared::audit(database,actor,"users.delete",id,session).await?;Ok(())
     }.boxed()).await

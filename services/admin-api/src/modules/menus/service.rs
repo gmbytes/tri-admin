@@ -42,7 +42,6 @@ const VIEWS: &[&str] = &[
     "gameJobs",
     "settings",
     "versions",
-    "customers",
 ];
 
 fn validate(
@@ -156,6 +155,10 @@ pub async fn navigation(
             .filter(|node| node.parent_id.as_deref() == parent)
         {
             if !node.enabled
+                || node
+                    .view_key
+                    .as_ref()
+                    .is_some_and(|view| !VIEWS.contains(&view.as_str()))
                 || node
                     .permission
                     .as_ref()

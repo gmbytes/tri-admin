@@ -190,16 +190,6 @@ pub const CATALOG: &[Permission] = &[
         group: "versions",
     },
     Permission {
-        code: "customers.read",
-        label: "查看客户",
-        group: "customers",
-    },
-    Permission {
-        code: "customers.write",
-        label: "管理客户",
-        group: "customers",
-    },
-    Permission {
         code: "game.read",
         label: "查询游戏服",
         group: "game",

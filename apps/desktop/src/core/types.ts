@@ -114,23 +114,3 @@ export interface ParameterRecord {
   createdAt: string
   updatedAt: string
 }
-export interface CustomerOwner {
-  id: string
-  username: string
-  displayName: string
-}
-export interface CustomerRecord {
-  id: string
-  code: string
-  name: string
-  contactName: string
-  phone: string
-  email: string
-  note: string
-  status: 'active' | 'archived'
-  ownerId: string
-  owner: CustomerOwner | null
-  version: number
-  createdAt: string
-  updatedAt: string
-}
