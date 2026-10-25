@@ -46,3 +46,5 @@
 - `/settings/service` GET/PATCH：读取需 settings.read，修改需 settings.write 与 version；displayName、可空 loginLimitPerIpOverride、storageProfileId/mailProfileId。覆盖 null 恢复启动默认值，登录限制在下一次登录生效；只校验发生变化的默认绑定。
 - `/settings/profiles` GET/POST；`/{id}` GET/PATCH/DELETE；`/{id}/rewrap` POST `{version}`。读取需 settings.read，写入/轮换需 settings.write。支持 mongodb/localStorage/s3/smtp/http，分页可按 kind 与 code 前缀过滤。secret 不读回；PATCH 省略保持、null 清除、对象替换，credentials 返回配置标志/密钥标识/密钥是否可用。变更有凭据的连接配置需显式替换或清除凭据，存储位置不可原地修改。
 - 配置写入、版本及审计同事务；默认绑定保护与明文/损坏密钥拒绝规则见 [配置中心设计](design-settings.md)。SECRET_STORE_UNAVAILABLE 为 HTTP 503；配置注册不代表实际连接或存储驱动已验收。
+- `POST /settings/profiles/{id}/probe`：settings.write，`{version}`，使用保存的配置/凭据执行限定范围检查。有效请求的目标检查失败仍返回 200 的结果（success=false/errorCode），配置前置错误继续用 403/404/409/422/503；并发容量不足 429。结果含 profileVersion、scope、upstreamStatus、durationMs、时间、isCurrent，不返回响应正文/头或内部异常。
+- `GET /settings/profiles/{id}/checks`：settings.read，按 createdAt/ID 稳定分页。profile 的 lastCheck 同样为安全摘要；配置变化或服务重启后旧检查 isCurrent=false。scope 明确区分 HTTP HEAD、S3 bucket HEAD、MongoDB ping、SMTP 会话、本地临时文件写读删除，不能作为持续监控或整驱动验收。

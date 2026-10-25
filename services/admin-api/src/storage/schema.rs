@@ -21,7 +21,7 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
             {"_id":"versions","version":2},
             {"_id":"version-imports","version":1},
             {"_id":"logs","version":super::logs_schema::VERSION},
-            {"_id":"settings","version":1}
+            {"_id":"settings","version":super::settings_schema::VERSION}
         ]})
         .await?;
     Ok(count == 9)

@@ -15,6 +15,8 @@ pub struct Config {
     settings_keys: BTreeMap<String, Zeroizing<[u8; 32]>>,
     settings_active_key: Option<String>,
     pub storage_root: String,
+    pub outbound_ca_file: Option<std::path::PathBuf>,
+    connection_epoch: String,
 }
 
 #[derive(Debug, Error)]
@@ -129,6 +131,13 @@ impl Config {
         if storage_root.is_empty() || storage_root.len() > 1024 || storage_root.contains('\0') {
             return Err(ConfigError("TRI_STORAGE_ROOT 无效"));
         }
+        let outbound_ca_file = lookup("TRI_OUTBOUND_CA_FILE").map(std::path::PathBuf::from);
+        if outbound_ca_file
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty() || path.as_os_str().len() > 1024)
+        {
+            return Err(ConfigError("TRI_OUTBOUND_CA_FILE 无效"));
+        }
         Ok(Self {
             bind,
             database_name,
@@ -139,6 +148,8 @@ impl Config {
             settings_keys,
             settings_active_key,
             storage_root,
+            outbound_ca_file,
+            connection_epoch: uuid::Uuid::new_v4().to_string(),
         })
     }
 
@@ -153,6 +164,9 @@ impl Config {
     }
     pub fn settings_active_key(&self) -> Option<&str> {
         self.settings_active_key.as_deref()
+    }
+    pub(crate) fn connection_epoch(&self) -> &str {
+        &self.connection_epoch
     }
     pub(crate) fn settings_key(&self, id: &str) -> Option<&[u8; 32]> {
         self.settings_keys.get(id).map(|value| &**value)

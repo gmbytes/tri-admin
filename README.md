@@ -26,3 +26,7 @@ cargo run -p admin-api -- serve
 开发环境工具不覆盖已有 `.env`。升级已有工程时，`dev:settings-key` 仅补充缺失的独立配置加密密钥，不打印密钥或改动已有 JWT/数据库凭据。生产环境独立提供密钥环并安全备份，不能使用示例占位符。
 
 - [配置中心与凭据规则](docs/design-settings.md)
+
+验证命令：`cargo test --workspace`、`npm test`、`npm run test:e2e`。S3 独立验收使用 `npm run test:s3`：自动创建固定镜像的隔离 Garage 服务、随机凭据和存储桶，验证真实签名后清理容器与临时文件。默认 Rust 测试中该外部夹具门禁会标记为 ignored，需另行运行该命令。
+
+Windows 构建/测试前先退出正在运行的开发 API，释放 exe 文件锁。集成连接检查可通过部署环境的 `TRI_OUTBOUND_CA_FILE` 指定私有 CA 证书文件，修改部署信任后重启服务；没有跳过证书校验选项。

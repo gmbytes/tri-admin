@@ -6,17 +6,21 @@ use std::{sync::Arc, time::Duration};
 pub struct AppState {
     pub config: Arc<Config>,
     pub database: Option<Database>,
+    pub(crate) connection_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl AppState {
     pub fn new(config: Config, database: Option<Database>) -> Self {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         Self {
             config: Arc::new(config),
             database,
+            connection_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         }
     }
 
     pub async fn from_config(config: Config) -> Result<Self, AppError> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let _ = crate::common::password::dummy_hash()?;
         let database = if let Some(uri) = config.mongodb_uri() {
             let mut options = ClientOptions::parse(uri)

@@ -12,4 +12,5 @@ playwright-report/
 apps/desktop/src-tauri/gen/
 .superpowers/
 artifacts/
+/data/
 !deploy/.env.example

@@ -25,6 +25,8 @@ crate::api_routes! {
  patch "/api/v1/settings/profiles/{id}" => patch, "settings.profiles.update", "settings", "修改集成配置", Permission, &["settings.write"];
  delete "/api/v1/settings/profiles/{id}" => delete, "settings.profiles.delete", "settings", "删除集成配置", Permission, &["settings.write"];
  post "/api/v1/settings/profiles/{id}/rewrap" => rewrap, "settings.profiles.rewrap", "settings", "轮换配置加密密钥", Permission, &["settings.write"];
+ post "/api/v1/settings/profiles/{id}/probe" => probe, "settings.profiles.probe", "settings", "检查集成连接", Permission, &["settings.write"], "使用保存的配置与凭据；有界连接/认证检查，不发送邮件";
+ get "/api/v1/settings/profiles/{id}/checks" => checks, "settings.profiles.checks", "settings", "连接检查历史", Permission, &["settings.read"];
 }
 async fn application(
     State(state): State<AppState>,
@@ -34,6 +36,34 @@ async fn application(
     Ok(ApiResponse::success(
         json!({"displayName":row.display_name,"version":env!("CARGO_PKG_VERSION")}),
     ))
+}
+async fn probe(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<ApiResponse<super::check_model::CheckView>, AppError> {
+    actor.require("settings.write")?;
+    let input = request::json::<VersionInput>(body, &state).await?;
+    Ok(ApiResponse::success(
+        super::probe::execute(
+            &state,
+            Actor::new(&actor)?,
+            validation::object_id(&id)?,
+            input.version,
+        )
+        .await?,
+    ))
+}
+async fn checks(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    input: Result<Query<crate::common::pagination::PageInput>, QueryRejection>,
+) -> Result<Page<super::check_model::CheckView>, AppError> {
+    actor.require("settings.read")?;
+    let Query(input) = input.map_err(|_| AppError::Validation("检查记录查询无效".into()))?;
+    super::probe::history(&state, validation::object_id(&id)?, input).await
 }
 async fn runtime(
     State(state): State<AppState>,

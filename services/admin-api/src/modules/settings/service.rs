@@ -46,7 +46,7 @@ fn seal(
         json.as_bytes(),
     )
 }
-fn decrypt(config: &Config, row: &Profile) -> Result<Option<Credentials>, AppError> {
+pub(super) fn decrypt(config: &Config, row: &Profile) -> Result<Option<Credentials>, AppError> {
     let Some(sealed) = &row.secret_box else {
         return Ok(None);
     };

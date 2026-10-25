@@ -10,7 +10,7 @@ rust-version = "1.94"
 
 [workspace.dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "fs", "io-util"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "request-id"] }
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +33,13 @@ http-body-util = "0.1"
 chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc"] }
 zeroize = "1"
 url = "2"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+lettre = { version = "=0.11.23", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls"] }
+aws-sigv4 = "=1.4.5"
+aws-credential-types = "=1.2.14"
+cap-std = "=4.0.3"
+rustls-pemfile = "2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

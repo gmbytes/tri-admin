@@ -32,6 +32,7 @@ pub struct Profile {
     pub version: i64,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub last_check: Option<super::check_model::CheckRecord>,
 }
 impl Profile {
     pub fn configuration(&self) -> Result<Integration, AppError> {
@@ -45,6 +46,16 @@ impl Profile {
     }
     pub fn view(self, config: &Config) -> Result<ProfileView, AppError> {
         let configuration = self.configuration()?;
+        let last_check = self
+            .last_check
+            .as_ref()
+            .map(|check| {
+                check.view(
+                    check.profile_version == self.version
+                        && check.fingerprint == super::check_model::fingerprint(&self, config)?,
+                )
+            })
+            .transpose()?;
         let credentials = CredentialState {
             configured: self.secret_box.is_some(),
             key_id: self.secret_box.as_ref().map(|value| value.key_id.clone()),
@@ -64,6 +75,7 @@ impl Profile {
             version: self.version,
             created_at: time(self.created_at)?,
             updated_at: time(self.updated_at)?,
+            last_check,
         })
     }
 }
@@ -87,6 +99,7 @@ pub struct ProfileView {
     pub version: i64,
     pub created_at: String,
     pub updated_at: String,
+    pub last_check: Option<super::check_model::CheckView>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

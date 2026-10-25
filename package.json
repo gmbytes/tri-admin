@@ -19,6 +19,7 @@
     "desktop": "npm --workspace @tri-admin/desktop run tauri -- dev",
     "build:desktop": "npm --workspace @tri-admin/desktop run tauri -- build",
     "test:e2e": "playwright test",
+    "test:s3": "node tools/test-s3.mjs",
     "format": "prettier --write apps/desktop/src apps/desktop/vite.config.ts tests/e2e playwright.config.ts package.json"
   },
   "devDependencies": {

@@ -103,7 +103,13 @@ fn web(value: &str) -> Result<(), AppError> {
         || url.fragment().is_some()
         || url.host_str().is_none()
         || !(url.scheme() == "https"
-            || url.scheme() == "http" && url.host_str().is_some_and(loopback))
+            || url.scheme() == "http"
+                && match url.host() {
+                    Some(url::Host::Domain(value)) => value.eq_ignore_ascii_case("localhost"),
+                    Some(url::Host::Ipv4(value)) => value.is_loopback(),
+                    Some(url::Host::Ipv6(value)) => value.is_loopback(),
+                    None => false,
+                })
     {
         return Err(bad());
     }

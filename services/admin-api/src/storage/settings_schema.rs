@@ -8,14 +8,19 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
+pub const VERSION: i32 = 2;
 pub async fn migrate_settings(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(row) = metadata.find_one(doc! {"_id":"settings"}).await?
-        && row.get_i32("version").ok() != Some(1)
+        && !matches!(row.get_i32("version").ok(), Some(1 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
-    for name in ["service_settings", "integration_profiles"] {
+    for name in [
+        "service_settings",
+        "integration_profiles",
+        "configuration_checks",
+    ] {
         if let Err(error) = database.create_collection(name).await
             && !matches!(&*error.kind,ErrorKind::Command(command)if command.code==48)
         {
@@ -65,10 +70,19 @@ pub async fn migrate_settings(database: &Database) -> Result<(), AppError> {
         )
         .upsert(true)
         .await?;
+    for keys in [
+        doc! {"profileId":1,"createdAt":-1,"_id":-1},
+        doc! {"actorId":1,"createdAt":-1,"_id":-1},
+    ] {
+        database
+            .collection::<Document>("configuration_checks")
+            .create_index(IndexModel::builder().keys(keys).build())
+            .await?;
+    }
     metadata
         .update_one(
             doc! {"_id":"settings"},
-            doc! {"$setOnInsert":{"version":1,"createdAt":now}},
+            doc! {"$set":{"version":VERSION},"$setOnInsert":{"createdAt":now}},
         )
         .upsert(true)
         .await?;

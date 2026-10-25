@@ -14,3 +14,17 @@
 - 集成注册与配置 CRUD、实际连接/驱动验证、页面分阶段完成；配置记录的存在不能代替 MongoDB/S3/SMTP/HTTP 连接或文件驱动验收。存储驱动与数据工具继续按 Task 7，外部/AI 消费按 Task 8/9 接入。
 
 依据：[RustCrypto 0.11 实现与用法](https://docs.rs/chacha20poly1305/0.11.0/src/chacha20poly1305/lib.rs.html)、[发布记录与 MSRV](https://github.com/RustCrypto/AEADs/blob/master/chacha20poly1305/CHANGELOG.md)。密码库使用应用独立密钥；备份/恢复必须同时安全保留匹配的密钥环，原生/服务发布阶段另行验收。
+
+## 连接检查
+
+- POST `/settings/profiles/{id}/probe` 带 version，仅 settings.write 可执行；GET `/{id}/checks` 需 settings.read。只使用已保存配置，不接受临时目标或明文凭据。全局并发上限 8，连接检查部分最多 8 秒，DNS/连接另有限时。
+- 检查启动时取得原子配置/凭据快照，网络期间不持有配置事务锁；结束时同事务保存检查和审计。配置已变更则结果不是当前结果，不能覆盖新版状态；服务重启后的旧结果也不表示当前进程已验证。
+- HTTP/S3 使用固定目标解析结果，拒绝未指定、多播和链路本地地址（覆盖常见元数据网段），不使用环境代理、不跟随重定向。只保留安全状态码和静态摘要，不保存响应正文/头或内部异常。HTTP 只做 HEAD，S3 使用官方 SigV4 做 bucket HEAD，不代表对象写入已通过。
+- MongoDB 使用官方驱动及配置的 TLS/副本集选项进行 ping/认证检查，声明主机先经过地址校验；此项不表示集合读写权限或整个拓扑持续健康。TLS 不允许跳过证书或主机校验。
+- SMTP 检查会话和可选认证，STARTTLS 必须成功升级；不提交邮件。TLS 仍验证原目标主机；可通过部署信任根配置私有 CA，不允许由普通请求添加信任根。
+- 本地存储通过目录能力句柄限制在启动存储根下，创建独立临时文件，验证写/读/移除；不能跟随目录链接越界，不递归清理用户内容。
+- 检查只是一次具体范围的观察，不替代 Task 7 文件驱动读写/取消/恢复、实际外部服务能力和 Task 12 部署验收。
+
+传输依据：[reqwest 客户端控制](https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html)、[AWS SigV4](https://docs.rs/aws-sigv4/latest/aws_sigv4/http_request/index.html)、[Lettre 会话检查](https://docs.rs/lettre/latest/lettre/transport/smtp/struct.AsyncSmtpTransport.html)、[cap-std 目录能力](https://docs.rs/cap-std/latest/cap_std/fs/struct.Dir.html)。
+
+独立 S3 验收使用固定摘要的 Garage 单节点临时容器；正确签名和错误密钥分别验证。MinIO 公共镜像与二进制在本机验证时已不可获取，未将其作为可复现验收依赖。夹具的配置与凭据随机生成，仅监听环回，按标签校验所有权后清理。依据：[Garage 快速启动](https://garagehq.deuxfleurs.fr/documentation/quick-start/)。
