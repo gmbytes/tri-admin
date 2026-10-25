@@ -75,6 +75,13 @@ pub async fn http_client(
     url: &url::Url,
     config: &crate::config::Config,
 ) -> Result<reqwest::Client, &'static str> {
+    http_client_with_timeout(url, config, Duration::from_secs(5)).await
+}
+pub(crate) async fn http_client_with_timeout(
+    url: &url::Url,
+    config: &crate::config::Config,
+    timeout: Duration,
+) -> Result<reqwest::Client, &'static str> {
     let host = url_host(url)?;
     let port = url.port_or_known_default().ok_or("DESTINATION_BLOCKED")?;
     let addresses = resolve(&host, port).await?;
@@ -87,7 +94,8 @@ pub async fn http_client(
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
-        .timeout(Duration::from_secs(5))
+        .timeout(timeout)
+        .read_timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(3))
         .resolve_to_addrs(&host, &addresses)
         .pool_max_idle_per_host(0);

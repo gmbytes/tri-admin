@@ -110,6 +110,27 @@ try {
     },
   )
   exitCode = result.status ?? 1
+  if (exitCode === 0) {
+    const unsupported = spawnSync(
+      'cargo',
+      [
+        'test',
+        '-p',
+        'admin-api',
+        '--test',
+        'file_storage',
+        'real_s3_without_atomic_create',
+        '--',
+        '--ignored',
+      ],
+      {
+        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
+        stdio: 'inherit',
+        windowsHide: true,
+      },
+    )
+    exitCode = unsupported.status ?? 1
+  }
 } finally {
   if (id) {
     const inspected = docker(['inspect', id])

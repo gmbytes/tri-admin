@@ -62,6 +62,24 @@ pub(super) fn decrypt(config: &Config, row: &Profile) -> Result<Option<Credentia
     }
     Ok(Some(value))
 }
+pub(crate) async fn storage_definition(
+    database: &Database,
+    config: &Config,
+    id: ObjectId,
+) -> Result<(Integration, Option<Credentials>), AppError> {
+    let row = database
+        .collection::<Profile>("integration_profiles")
+        .find_one(doc! {"_id":id,"deletedAt":null,"enabled":true})
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if !row.kind.storage() {
+        return Err(AppError::Validation("所选配置不是文件存储".into()));
+    }
+    let public = row.configuration()?;
+    let secret = decrypt(config, &row)?;
+    validate::credentials(&public, secret.as_ref(), true)?;
+    Ok((public, secret))
+}
 fn boxed(value: &Option<SealedBox>) -> mongodb::error::Result<Bson> {
     mongodb::bson::serialize_to_bson(value).map_err(|_| fail(Failure::NotReady))
 }

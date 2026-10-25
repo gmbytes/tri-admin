@@ -1,6 +1,7 @@
 pub mod api_catalog;
 pub mod auth;
 pub mod dictionaries;
+pub mod files;
 pub mod health;
 pub mod logs;
 pub mod menus;
