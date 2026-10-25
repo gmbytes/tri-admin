@@ -103,6 +103,15 @@ async fn validate_parent(
         .map(|node| (node.id, node.parent_id))
         .collect::<HashMap<_, _>>();
     parents.insert(id, parent);
+    validate_graph(&parents)
+}
+
+pub(crate) fn validate_graph(
+    parents: &HashMap<ObjectId, Option<ObjectId>>,
+) -> mongodb::error::Result<()> {
+    if parents.len() > 1000 {
+        return Err(fail(Failure::Conflict("菜单数量已达上限")));
+    }
     for start in parents.keys() {
         let mut next = Some(*start);
         let mut seen = HashSet::new();

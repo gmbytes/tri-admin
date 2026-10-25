@@ -55,7 +55,7 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
         ApiModule {
             prefix: versions::router::API_PREFIX,
             endpoints: versions::router::API_ENDPOINTS,
-            routes: versions::router::routes,
+            routes: versions::router::configured_routes,
         },
     ]
 }

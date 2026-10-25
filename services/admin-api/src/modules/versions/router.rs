@@ -25,9 +25,27 @@ crate::api_routes! {
     prefix "";
     get "/api/v1/versions" => list, "versions.list", "versions", "配置版本列表", Permission, &["versions.read"];
     post "/api/v1/versions" => create, "versions.create", "versions", "捕获配置快照", Permission, &["versions.write"], "所选配置及接口依赖还需各自读取权限";
+    post "/api/v1/versions/import-previews" => import_preview, "versions.import.preview", "versions", "预览配置包导入", Permission, &["versions.write"], "所选配置及接口依赖还需各自读取权限；预览不修改配置";
     get "/api/v1/versions/{id}" => read, "versions.get", "versions", "版本摘要", Permission, &["versions.read"];
     delete "/api/v1/versions/{id}" => delete, "versions.delete", "versions", "删除版本记录", Permission, &["versions.write"];
     get "/api/v1/versions/{id}/download" => download, "versions.download", "versions", "下载配置发版包", Permission, &["versions.read"], "还需包中各类资源的读取权限";
+}
+pub fn configured_routes() -> axum::Router<AppState> {
+    routes().layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
+}
+async fn import_preview(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    body: Request,
+) -> Result<(StatusCode, ApiResponse<super::import_model::PreviewView>), AppError> {
+    actor.require("versions.write")?;
+    let input = request::json::<super::import_model::PreviewInput>(body, &state).await?;
+    Ok((
+        StatusCode::CREATED,
+        ApiResponse::success(
+            super::preview::create(state.require_database()?, Actor::new(&actor)?, input).await?,
+        ),
+    ))
 }
 async fn list(
     State(state): State<AppState>,

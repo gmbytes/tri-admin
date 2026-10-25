@@ -36,4 +36,5 @@
 - 角色 `dataScope` 支持 all/self/roles，`dataScopeRoleIds` 为显式选择，`dataScopeRoles` 返回可读标签。当前用户摘要的 `dataScopeRoleIds` 是有效范围并集；all/self 模式为空。授权、成员资格及范围边界见 [数据范围设计](design-data-scope.md)。
 - `/api-catalog` GET，需要 permissions.read，返回有限的完整编译目录 `{schemaVersion,checksum,endpoints}`。端点含 operationId/method/path/requiredPermissions/access/notes；规范与注册方式见 [API 目录设计](design-api-catalog.md)。
 - `/versions` GET/POST；`/versions/{id}` GET/DELETE；`/versions/{id}/download` GET。POST 为 `{name,code,description?,menuIds?,dictionaryIds?,parameterIds?,apiOperationIds?}`，至少选择一项，自动包含菜单祖先及字典明细。版本不可变，历史编号忽略大小写唯一，删除后不复用。
-- 版本下载为原始 JSON 文件正文，附 Content-Disposition/ETag；摘要接口继续使用 data 包装。下载除了 versions.read，还需包内各类配置的读取权限。新格式与 8 MiB 上限见 [配置版本设计](design-versions.md)；预览和应用接口仍待实现。
+- 版本下载为原始 JSON 文件正文，附 Content-Disposition/ETag；摘要接口继续使用 data 包装。下载除了 versions.read，还需包内各类配置的读取权限。新格式与 8 MiB 上限见 [配置版本设计](design-versions.md)。
+- `POST /versions/import-previews`：`{bundle,strategy?}`，strategy 默认为 createOnly，可显式选择 merge。返回 201 的 data 包含 id/checksum/expiresAt/strategy、汇总 counts、最多 100 条 changes、detailsTruncated、versionAction、canApply 和 missingWritePermissions；预览只写短期预览记录，不改配置。版本模块请求上限 10 MiB，规范化包体上限 8 MiB。确认应用接口仍待实现。

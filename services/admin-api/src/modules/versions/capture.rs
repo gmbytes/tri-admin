@@ -44,22 +44,27 @@ fn ids(raw: &[String], max: usize) -> Result<Vec<ObjectId>, AppError> {
     Ok(ids)
 }
 pub fn prepare(actor: &Actor, input: &CaptureInput) -> Result<Selection, AppError> {
-    validation::text(&input.name, "版本名称", 80)?;
-    if input.code.is_empty()
-        || input.code.len() > 64
-        || !input
-            .code
+    validate_release(&input.name, &input.code, &input.description)?;
+    prepare_selection(actor, input)
+}
+pub(crate) fn validate_release(name: &str, code: &str, description: &str) -> Result<(), AppError> {
+    validation::text(name, "版本名称", 80)?;
+    if code.is_empty()
+        || code.len() > 64
+        || !code
             .bytes()
             .next()
             .is_some_and(|value| value.is_ascii_alphanumeric())
-        || !input
-            .code
+        || !code
             .bytes()
             .all(|value| value.is_ascii_alphanumeric() || b"._-".contains(&value))
-        || input.description.chars().count() > 1000
+        || description.chars().count() > 1000
     {
         return Err(AppError::Validation("版本编号或描述格式无效".into()));
     }
+    Ok(())
+}
+fn prepare_selection(actor: &Actor, input: &CaptureInput) -> Result<Selection, AppError> {
     let menu_ids = ids(&input.menu_ids, 1000)?;
     let dictionary_ids = ids(&input.dictionary_ids, 100)?;
     let parameter_ids = ids(&input.parameter_ids, 100)?;
