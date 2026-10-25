@@ -57,3 +57,24 @@ export interface Permission {
   label: string
   group: string
 }
+export interface DictionaryRecord {
+  id: string
+  name: string
+  key: string
+  description: string
+  enabled: boolean
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+export interface DictionaryItem {
+  id: string
+  dictionaryId: string
+  label: string
+  value: string
+  sort: number
+  enabled: boolean
+  version: number
+  createdAt: string
+  updatedAt: string
+}

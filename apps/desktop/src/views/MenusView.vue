@@ -29,6 +29,7 @@ const views = [
   { value: 'roles', label: '角色管理' },
   { value: 'menus', label: '菜单管理' },
   { value: 'permissions', label: '权限目录' },
+  { value: 'dictionaries', label: '字典管理' },
 ]
 function tree(items: MenuRecord[], parent: string | null = null): MenuRecord[] {
   return items

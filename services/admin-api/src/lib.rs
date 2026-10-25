@@ -38,6 +38,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(modules::roles::router::routes())
         .merge(modules::users::router::routes())
         .merge(modules::menus::router::routes())
+        .merge(modules::dictionaries::router::routes())
         .nest("/api/v1/auth", modules::auth::router::routes())
         .route("/health/live", get(modules::health::live))
         .route("/health/ready", get(modules::health::ready))
