@@ -57,4 +57,19 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- 
 
 Playwright 使用本机 Edge，由测试夹具启动独立临时 Rust 服务，创建随机数据库及随机管理员凭据；结束时停止服务并清理临时数据。原生测试会使用专用范围写入并清理系统凭据库，需在普通桌面会话运行。
 
+原生文件核心与无窗口 IPC 验证：
+
+```powershell
+cargo test -p desktop-core --locked
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+```
+
+5 GiB 磁盘门禁默认忽略，需确认工程所在盘有足够空间后显式运行。它在 `.superpowers/native-file-tests` 下临时生成源和目标两份 5 GiB 文件，验证后清理：
+
+```powershell
+cargo test -p desktop-core --test files native_large_disk_streams_five_gib --locked -- --ignored --exact --nocapture
+```
+
+开发配置对锁定的 sha2 0.10.9 单独启用优化，避免调试构建的大文件摘要过慢；更新该依赖时同步检查两处 profile。无窗口 IPC 测试使用 Common Controls v6 测试清单；实际打开/保存对话框、安装包及原生页面验收单独执行。
+
 桌面 UI、权限和其他业务模块的进度见实施记录；健康检查通过不代表全部产品功能已完成。

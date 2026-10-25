@@ -1,5 +1,7 @@
 //! Platform-independent desktop settings and scoped session persistence.
 
+pub mod files;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fmt, fs, path::PathBuf};

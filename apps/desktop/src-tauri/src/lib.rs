@@ -1,6 +1,7 @@
 use desktop_core::{CredentialVault, DesktopError, SessionManager, Settings};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+pub mod file_commands;
 
 struct NativeVault;
 fn storage_error() -> DesktopError {
@@ -110,8 +111,9 @@ async fn clear_session(
 }
 
 pub fn run() {
-    let builder =
-        tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -130,6 +132,7 @@ pub fn run() {
             };
             let manager = SessionManager::open(path, NativeVault, defaults)?;
             app.manage(Arc::new(Mutex::new(manager)));
+            app.manage(Arc::new(desktop_core::files::FileHandles::default()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -137,7 +140,15 @@ pub fn run() {
             set_server,
             load_session,
             save_session,
-            clear_session
+            clear_session,
+            file_commands::file_reserve,
+            file_commands::file_select_source,
+            file_commands::file_select_download,
+            file_commands::file_read_chunk,
+            file_commands::file_write,
+            file_commands::file_complete,
+            file_commands::file_cancel,
+            file_commands::file_cancel_all
         ])
         .run(tauri::generate_context!());
     if let Err(error) = result {

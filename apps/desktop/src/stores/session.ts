@@ -22,6 +22,8 @@ export const useSession = defineStore('session', () => {
       endpoint,
       vault: platform.vault,
       onChange: (value) => {
+        if (!value || user.value?.id !== value.id)
+          void platform.files?.invalidate().catch(() => undefined)
         user.value = value
         if (!value) {
           navigation.value = []

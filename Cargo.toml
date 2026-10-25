@@ -48,3 +48,7 @@ unsafe_code = "forbid"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Large desktop files use SHA-256 in development too; keep the compression loop optimized.
+[profile.dev.package."sha2@0.10.9"]
+opt-level = 3

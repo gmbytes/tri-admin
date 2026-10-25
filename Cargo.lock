@@ -886,11 +886,13 @@ dependencies = [
 name = "desktop-core"
 version = "0.1.0"
 dependencies = [
+ "cap-std",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "url",
+ "uuid",
 ]
 
 [[package]]

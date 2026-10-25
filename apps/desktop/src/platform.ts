@@ -1,12 +1,24 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri, Channel } from '@tauri-apps/api/core'
 import { ApiError, type SessionVault } from './core/client'
 import { normalizeEndpoint } from './core/endpoint'
+import { NativeFileAccess } from './core/file-native'
 
 export interface Settings {
   apiBaseUrl: string
   rememberSession: boolean
 }
 const native = isTauri()
+const files = native
+  ? new NativeFileAccess({
+      invoke: (name, args, options) =>
+        invoke(name, args, options?.headers ? { headers: options.headers } : undefined),
+      channel: (onMessage) => {
+        const channel = new Channel<number>()
+        channel.onmessage = onMessage
+        return channel
+      },
+    })
+  : null
 async function command<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(name, args)
@@ -25,6 +37,7 @@ let browserSettings: Settings = {
 const memory = new Map<string, string>()
 export const platform = {
   native,
+  files,
   async loadSettings(): Promise<Settings> {
     if (native) return command<Settings>('load_settings')
     try {

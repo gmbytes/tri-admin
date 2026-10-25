@@ -1,10 +1,17 @@
 export const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024
 export const BROWSER_FILE_LIMIT = 128 * 1024 * 1024
+export const FILE_CHUNK_SIZE = 4 * 1024 * 1024
 const WRITE_BLOCK = 64 * 1024
 
 export interface FileContentSpec {
   size: number
   sha256: string
+}
+export interface UploadSource extends FileContentSpec {
+  name: string
+  mediaType: string
+  readChunk(index: number, signal?: AbortSignal): Promise<{ bytes: Blob; sha256: string }>
+  close(): Promise<void>
 }
 
 /** A target keeps writes temporary until complete verifies the supplied size and hash. */
