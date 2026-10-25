@@ -78,3 +78,16 @@ export interface DictionaryItem {
   createdAt: string
   updatedAt: string
 }
+export type ParameterType = 'string' | 'number' | 'boolean' | 'json'
+export interface ParameterRecord {
+  id: string
+  name: string
+  key: string
+  group: string
+  description: string
+  valueType: ParameterType
+  value: unknown
+  version: number
+  createdAt: string
+  updatedAt: string
+}

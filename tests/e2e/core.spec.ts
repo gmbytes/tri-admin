@@ -113,6 +113,54 @@ test('dictionary and item forms persist edits and guard parent deletion', async 
   await expect(row).toHaveCount(0)
 })
 
+test('parameter form validates JSON and preserves typed values through edit and delete', async ({
+  page,
+}) => {
+  await login(page)
+  await navigate(page, '参数管理')
+  const key = `ui-param-${Date.now().toString(36)}`
+  await page.getByRole('button', { name: '新增参数', exact: true }).click()
+  let dialog = page.getByRole('dialog', { name: '新增参数', exact: true })
+  await dialog.getByLabel('参数名称', { exact: true }).fill('业务开关配置')
+  await dialog.getByLabel('参数标识', { exact: true }).fill(key)
+  await chooseSelect(page, dialog, '值类型', 'JSON')
+  await dialog.getByLabel('参数值', { exact: true }).fill('{invalid')
+  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('请输入有效的 JSON')
+  await dialog.getByLabel('参数值', { exact: true }).fill('{"limit":1e999}')
+  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('JSON 中的数字超出安全范围')
+  await dialog.getByLabel('参数值', { exact: true }).fill('{"enabled":true,"limit":10}')
+  let response = page.waitForResponse(
+    (response) => response.url() === api + '/parameters' && response.request().method() === 'POST',
+  )
+  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
+  let body = await (await response).json()
+  expect(body.data.value).toEqual({ enabled: true, limit: 10 })
+  await expect(dialog).not.toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: key })
+  await row.getByRole('button', { name: '编辑', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: '编辑参数', exact: true })
+  await expect(dialog.getByLabel('参数值', { exact: true })).toHaveValue(/"enabled": true/)
+  await dialog.getByLabel('参数值', { exact: true }).fill('null')
+  response = page.waitForResponse(
+    (response) =>
+      response.url() === api + `/parameters/${body.data.id}` &&
+      response.request().method() === 'PATCH',
+  )
+  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
+  body = await (await response).json()
+  expect(body.data.value).toBeNull()
+  expect(body.data.version).toBe(2)
+  await expect(dialog).not.toBeVisible()
+  await row.getByRole('button', { name: '删除', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '删除参数', exact: true })
+    .getByRole('button', { name: '删除', exact: true })
+    .click()
+  await expect(row).toHaveCount(0)
+})
+
 test('role and user forms submit real create and versioned edit requests', async ({ page }) => {
   const tokens = await login(page),
     headers = { authorization: `Bearer ${tokens.accessToken}` },

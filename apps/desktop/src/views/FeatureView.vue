@@ -11,6 +11,7 @@ const views: Record<string, unknown> = {
   menus: defineAsyncComponent(() => import('./MenusView.vue')),
   permissions: defineAsyncComponent(() => import('./PermissionsView.vue')),
   dictionaries: defineAsyncComponent(() => import('./DictionariesView.vue')),
+  parameters: defineAsyncComponent(() => import('./ParametersView.vue')),
 }
 const page = computed(() => views[session.findMenu(route.path)?.viewKey ?? ''])
 </script>
