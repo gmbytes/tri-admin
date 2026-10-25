@@ -32,6 +32,7 @@ const views = [
   { value: 'dictionaries', label: '字典管理' },
   { value: 'parameters', label: '参数管理' },
   { value: 'versions', label: '版本管理' },
+  { value: 'audit', label: '日志中心' },
 ]
 function tree(items: MenuRecord[], parent: string | null = null): MenuRecord[] {
   return items

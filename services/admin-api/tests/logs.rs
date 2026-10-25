@@ -459,7 +459,7 @@ async fn logs_schema_is_required_and_failed_request_log_storage_preserves_the_re
     assert_eq!(
         app.database
             .collection::<Document>("_schema_migrations")
-            .count_documents(doc! {"_id":"logs","version":1})
+            .count_documents(doc! {"_id":"logs","version":2})
             .await
             .unwrap(),
         1
@@ -585,5 +585,68 @@ async fn a_handler_panic_returns_a_sanitized_error_and_is_persisted_without_its_
     assert_eq!(list["meta"]["total"], 1);
     assert_eq!(list["data"][0]["errorCode"], "INTERNAL_ERROR");
     assert!(!list.to_string().contains("PRIVATE-PANIC-PAYLOAD"));
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn logs_menu_migration_requires_v2_and_preserves_customization_and_deletion() {
+    let app = TestApp::new().await;
+    let menus = app.database.collection::<Document>("menus");
+    menus.delete_many(doc! {"path":"/logs"}).await.unwrap();
+    app.database
+        .collection::<Document>("_schema_migrations")
+        .update_one(doc! {"_id":"logs"}, doc! {"$set":{"version":1}})
+        .await
+        .unwrap();
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    let row = menus
+        .find_one(doc! {"path":"/logs","deletedAt":null})
+        .await
+        .unwrap()
+        .unwrap();
+    let id = row.get_object_id("_id").unwrap();
+    assert_eq!(row.get_str("viewKey").unwrap(), "audit");
+    assert_eq!(row.get_str("permission").unwrap(), "audit.read");
+    menus
+        .update_one(doc! {"_id":id}, doc! {"$set":{"label":"自定义日志中心"}})
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .find_one(doc! {"_id":id})
+            .await
+            .unwrap()
+            .unwrap()
+            .get_str("label")
+            .unwrap(),
+        "自定义日志中心"
+    );
+    menus
+        .update_one(doc! {"_id":id}, doc! {"$set":{"deletedAt":DateTime::now()}})
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .count_documents(doc! {"path":"/logs","deletedAt":null})
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::OK
+    );
     app.cleanup().await;
 }

@@ -130,7 +130,7 @@ async fn persist(
 ) -> mongodb::error::Result<()> {
     if database
         .collection::<Document>("_schema_migrations")
-        .find_one(doc! {"_id":"logs","version":1})
+        .find_one(doc! {"_id":"logs","version":crate::storage::logs_schema::VERSION})
         .await?
         .is_none()
     {

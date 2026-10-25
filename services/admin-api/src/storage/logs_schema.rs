@@ -1,14 +1,17 @@
 use crate::common::error::AppError;
 use mongodb::{
     Database, IndexModel,
-    bson::{DateTime, Document, doc},
+    bson::{DateTime, Document, doc, oid::ObjectId},
     error::ErrorKind,
     options::IndexOptions,
 };
+use sha2::{Digest, Sha256};
+pub const VERSION: i32 = 2;
 pub async fn migrate_logs(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
-    if let Some(record) = metadata.find_one(doc! {"_id":"logs"}).await?
-        && record.get_i32("version").ok() != Some(1)
+    let previous = metadata.find_one(doc! {"_id":"logs"}).await?;
+    if let Some(record) = &previous
+        && !matches!(record.get_i32("version").ok(), Some(1 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -19,20 +22,22 @@ pub async fn migrate_logs(database: &Database) -> Result<(), AppError> {
             return Err(error.into());
         }
     }
-    database
-        .collection::<Document>("audit_events")
-        .update_many(
-            doc! {"kind":{"$exists":false},"action":"auth.login"},
-            doc! {"$set":{"kind":"login"}},
-        )
-        .await?;
-    database
-        .collection::<Document>("audit_events")
-        .update_many(
-            doc! {"kind":{"$exists":false}},
-            doc! {"$set":{"kind":"operation"}},
-        )
-        .await?;
+    if previous.is_none() {
+        database
+            .collection::<Document>("audit_events")
+            .update_many(
+                doc! {"kind":{"$exists":false},"action":"auth.login"},
+                doc! {"$set":{"kind":"login"}},
+            )
+            .await?;
+        database
+            .collection::<Document>("audit_events")
+            .update_many(
+                doc! {"kind":{"$exists":false}},
+                doc! {"$set":{"kind":"operation"}},
+            )
+            .await?;
+    }
     for (collection, prefix) in [("audit_events", Some("kind")), ("request_errors", None)] {
         for field in [
             None,
@@ -80,12 +85,31 @@ pub async fn migrate_logs(database: &Database) -> Result<(), AppError> {
         .update_one(doc! {"_id":"logs"}, doc! {"$setOnInsert":{"version":1i64}})
         .upsert(true)
         .await?;
-    metadata
-        .update_one(
-            doc! {"_id":"logs"},
-            doc! {"$setOnInsert":{"version":1,"createdAt":DateTime::now()}},
-        )
-        .upsert(true)
-        .await?;
+    if previous
+        .as_ref()
+        .and_then(|record| record.get_i32("version").ok())
+        != Some(VERSION)
+    {
+        let path = "/logs";
+        let digest = Sha256::digest(format!("tri-admin:menu:{path}"));
+        let mut bytes = [0u8; 12];
+        bytes.copy_from_slice(&digest[..12]);
+        let now = DateTime::now();
+        if database
+            .collection::<Document>("menus")
+            .find_one(doc! {"path":path,"deletedAt":null})
+            .await?
+            .is_none()
+        {
+            database.collection::<Document>("menus").update_one(doc!{"_id":ObjectId::from_bytes(bytes)},doc!{"$setOnInsert":{"label":"日志中心","path":path,"viewKey":"audit","permission":"audit.read","icon":null,"parentId":null,"sort":80,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).await?;
+        }
+        metadata
+            .update_one(
+                doc! {"_id":"logs"},
+                doc! {"$set":{"version":VERSION},"$setOnInsert":{"createdAt":now}},
+            )
+            .upsert(true)
+            .await?;
+    }
     Ok(())
 }

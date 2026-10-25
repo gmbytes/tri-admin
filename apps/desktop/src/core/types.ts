@@ -166,3 +166,37 @@ export interface ImportResult {
   counts: ImportCounts
   versionReused: boolean
 }
+export type LogKind = 'login' | 'operation' | 'error'
+export interface LogRecord {
+  id: string
+  kind: LogKind
+  action: string
+  outcome: string
+  createdAt: string
+  actorId: string | null
+  actorName: string | null
+  targetId: string | null
+  username: string | null
+  requestId: string | null
+  method: string | null
+  route: string | null
+  ip: string | null
+  status: number | null
+  durationMs: number | null
+  errorCode: string | null
+  message: string | null
+}
+export interface LogCleanupRequest {
+  requestId: string
+  kind: LogKind
+  before: string
+  limit: number
+}
+export interface LogCleanupResult {
+  requestId: string
+  kind: LogKind
+  before: string
+  deletedCount: number
+  hasMore: boolean
+  completedAt: string
+}

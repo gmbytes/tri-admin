@@ -5,6 +5,7 @@ use admin_api::{
     config::Config,
     state::AppState,
 };
+use mongodb::bson::{DateTime, Document, doc};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,6 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )
     .await?;
+    // Backdated immutable events exist only in this isolated E2E database.
+    let old = DateTime::from_millis(DateTime::now().timestamp_millis() - 3 * 86_400_000);
+    state.require_database()?.collection::<Document>("audit_events").insert_many((0..3).map(|_|doc!{"kind":"operation","category":"administration","action":"fixture.old","outcome":"success","createdAt":old})).await?;
     let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
     let address = listener.local_addr()?;
     std::fs::write(
