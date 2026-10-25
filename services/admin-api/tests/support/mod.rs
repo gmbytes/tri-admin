@@ -49,6 +49,8 @@ impl TestApp {
         let config = Config::from_lookup(|name| match name {
             "TRI_JWT_SIGNING_KEY" => Some(KEY.into()),
             "TRI_LOGIN_LIMIT_PER_IP" => Some(limit.to_string()),
+            "TRI_SETTINGS_KEYS" => Some(format!("fixture:{}", "11".repeat(32))),
+            "TRI_SETTINGS_ACTIVE_KEY" => Some("fixture".into()),
             _ => None,
         })
         .unwrap();

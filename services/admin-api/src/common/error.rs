@@ -66,6 +66,8 @@ pub enum AppError {
     NotFound,
     #[error("服务尚未就绪")]
     NotReady,
+    #[error("配置密钥库暂不可用")]
+    SecretStoreUnavailable,
     #[error("{0}")]
     Validation(String),
     #[error("{0}")]
@@ -95,6 +97,9 @@ impl IntoResponse for AppError {
             Self::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::NotReady => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_NOT_READY"),
+            Self::SecretStoreUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "SECRET_STORE_UNAVAILABLE")
+            }
             Self::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
             Self::Database(_) => (StatusCode::SERVICE_UNAVAILABLE, "DATABASE_UNAVAILABLE"),

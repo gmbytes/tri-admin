@@ -42,3 +42,7 @@
 - `GET /logs`：需要 audit.read；kind=login/operation/error（默认 operation），支持 page/pageSize、sort=±createdAt、action（精确）、username（登录账号精确匹配）、actorId、requestId、outcome、status、from/to 时间范围（包含 from、不含 to）。只返回白名单摘要和当前操作者名称，不返回正文、查询或凭据。
 - `POST /logs/cleanup`：需要 audit.read 与 audit.delete；`{requestId,kind,before,limit?}`，body requestId 是清理幂等 UUID，与每次传输的 X-Request-Id 分开。只清理至少 24 小时以前、最多 1000 条的确定批次，返回 `{requestId,kind,before,deletedCount,hasMore,completedAt}`；同键异参 409，其他操作者 404，重放不再删除下一批。更多规则见 [日志设计](design-logs.md)。
 - 框架产生的失败响应也归一化为标准错误 JSON，保留状态和 Allow 等响应头；不向响应或错误日志复制原始拒绝正文。处理器 panic 返回 500 的 INTERNAL_ERROR，日志不保留 panic 内容。
+- `GET /application`：认证后返回应用名称与服务版本；`GET /settings/runtime` 需 settings.read，只返回安全启动状态，不返回主数据库 URI、JWT 或加密密钥。
+- `/settings/service` GET/PATCH：读取需 settings.read，修改需 settings.write 与 version；displayName、可空 loginLimitPerIpOverride、storageProfileId/mailProfileId。覆盖 null 恢复启动默认值，登录限制在下一次登录生效；只校验发生变化的默认绑定。
+- `/settings/profiles` GET/POST；`/{id}` GET/PATCH/DELETE；`/{id}/rewrap` POST `{version}`。读取需 settings.read，写入/轮换需 settings.write。支持 mongodb/localStorage/s3/smtp/http，分页可按 kind 与 code 前缀过滤。secret 不读回；PATCH 省略保持、null 清除、对象替换，credentials 返回配置标志/密钥标识/密钥是否可用。变更有凭据的连接配置需显式替换或清除凭据，存储位置不可原地修改。
+- 配置写入、版本及审计同事务；默认绑定保护与明文/损坏密钥拒绝规则见 [配置中心设计](design-settings.md)。SECRET_STORE_UNAVAILABLE 为 HTTP 503；配置注册不代表实际连接或存储驱动已验收。

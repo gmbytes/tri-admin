@@ -20,10 +20,11 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
             {"_id":"parameters","version":1},
             {"_id":"versions","version":2},
             {"_id":"version-imports","version":1},
-            {"_id":"logs","version":super::logs_schema::VERSION}
+            {"_id":"logs","version":super::logs_schema::VERSION},
+            {"_id":"settings","version":1}
         ]})
         .await?;
-    Ok(count == 8)
+    Ok(count == 9)
 }
 
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
@@ -127,5 +128,6 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
     super::parameter_schema::migrate_parameters(database).await?;
     super::version_schema::migrate_versions(database).await?;
     super::version_import_schema::migrate_imports(database).await?;
-    super::logs_schema::migrate_logs(database).await
+    super::logs_schema::migrate_logs(database).await?;
+    super::settings_schema::migrate_settings(database).await
 }

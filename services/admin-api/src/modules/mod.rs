@@ -7,6 +7,7 @@ pub mod menus;
 pub mod parameters;
 pub mod rbac;
 pub mod roles;
+pub mod settings;
 pub mod users;
 pub mod versions;
 
@@ -62,6 +63,11 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
             prefix: logs::router::API_PREFIX,
             endpoints: logs::router::API_ENDPOINTS,
             routes: logs::router::routes,
+        },
+        ApiModule {
+            prefix: settings::router::API_PREFIX,
+            endpoints: settings::router::API_ENDPOINTS,
+            routes: settings::router::routes,
         },
     ]
 }

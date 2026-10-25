@@ -19,6 +19,9 @@ export default async function setup() {
     TRI_E2E_PASSWORD_FILE: passwordFile,
     TRI_E2E_META_FILE: metadata,
     TRI_JWT_SIGNING_KEY: randomBytes(32).toString('hex'),
+    TRI_SETTINGS_KEYS: `fixture:${randomBytes(32).toString('hex')}`,
+    TRI_SETTINGS_ACTIVE_KEY: 'fixture',
+    TRI_STORAGE_ROOT: join(directory, 'storage'),
   }
   const build = spawnSync('cargo', ['build', '-p', 'admin-api', '--example', 'e2e_server'], {
     env: environment,

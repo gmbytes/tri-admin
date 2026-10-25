@@ -9,3 +9,4 @@ pub mod request;
 pub mod response;
 pub mod transaction;
 pub mod validation;
+pub(crate) mod vault;

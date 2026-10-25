@@ -59,3 +59,41 @@ fn configuration_debug_output_redacts_credentials() {
     assert!(!debug.contains("private-password"));
     assert!(!debug.contains("not-a-real-signing-key-but-long-enough"));
 }
+
+#[test]
+fn invalid_configuration_key_rings_are_rejected_without_echoing_key_material() {
+    for (ring, active) in [
+        ("primary:private-short", "primary"),
+        ("primary:1111", "missing"),
+        (
+            "same:1111111111111111111111111111111111111111111111111111111111111111,same:2222222222222222222222222222222222222222222222222222222222222222",
+            "same",
+        ),
+    ] {
+        let result = Config::from_lookup(|name| match name {
+            "TRI_JWT_SIGNING_KEY" => Some("fixture-signing-key-at-least-32-characters".into()),
+            "TRI_SETTINGS_KEYS" => Some(ring.into()),
+            "TRI_SETTINGS_ACTIVE_KEY" => Some(active.into()),
+            _ => None,
+        });
+        assert!(result.is_err());
+        assert!(!result.err().unwrap().to_string().contains(ring));
+    }
+}
+
+#[test]
+fn cors_origins_cannot_contain_credentials_paths_or_query_secrets() {
+    for origin in [
+        "https://user:private-password@example.test",
+        "https://example.test/path",
+        "https://example.test?token=private",
+    ] {
+        let result = Config::from_lookup(|name| match name {
+            "TRI_JWT_SIGNING_KEY" => Some("fixture-signing-key-at-least-32-characters".into()),
+            "TRI_CORS_ORIGINS" => Some(origin.into()),
+            _ => None,
+        });
+        assert!(result.is_err());
+        assert!(!result.err().unwrap().to_string().contains("private"));
+    }
+}
