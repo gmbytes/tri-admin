@@ -168,7 +168,7 @@ docs/                        规范、进度和运维
 
 设计约束见 [持久导出设计](../../design-data-export-jobs.md)，继续作为本计划 Task 7 执行，不关闭其他待办。
 
-- [ ] 在 `data_tools/export_writer.rs` 和 `tests/export_writer.rs` 先复现大于 2000 行/非内存编码缺失，接入逐行 CSV 和锁定 XLSX constant_memory；验证类型、公式、长度/单元格/行数/中间内容预算、取消与实际磁盘摘要。
+- [x] 在 `data_tools/export_writer.rs` 和 `tests/export_writer.rs` 先复现大于 2000 行/非内存编码缺失，接入逐行 CSV 和锁定 XLSX constant_memory；验证类型、公式、长度/单元格/行数/中间内容预算、取消与实际磁盘摘要。
 - [ ] 在 `data_tools/export_jobs/{models,service,router}.rs`、自身 schema v5 和 `tests/export_jobs.rs` 实现不可变配置、UUID 幂等、活动额度、原操作者分页/按请求查询、取消及事务审计；先观察缺失路由失败，再实现，不改同步导入限制。
 - [ ] 在 `export_jobs/{query,worker,authorization}.rs` 与相应集成测试实现有界资源游标、创建与当前范围交集、私有用户行清单、发布/下载前完整授权复核；验证超过 2000 行且不静默截断，范围缩减和成员关系变化均阻止旧结果下载。
 - [ ] 在 `export_jobs/{publish,recovery,cleanup}.rs`、设置引用保护和实际子进程测试实现候选预登记、续租/代际、取消栅栏、未知结果先查后重试、24 小时内容保留及有界清理；复用 BlobStore/VerifiedSource，完成本地/S3 故障验证。

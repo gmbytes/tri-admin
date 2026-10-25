@@ -45,33 +45,49 @@ pub struct Table {
 fn invalid() -> AppError {
     AppError::Validation("表格格式、类型或大小无效".into())
 }
-fn validate(table: &Table) -> Result<(), AppError> {
-    if table.headers.is_empty()
-        || table.headers.len() > MAX_COLUMNS
-        || table.rows.len() > MAX_ROWS
-        || table
-            .headers
+pub(super) fn validate_headers(headers: &[String]) -> Result<(), AppError> {
+    if headers.is_empty()
+        || headers.len() > MAX_COLUMNS
+        || headers
             .iter()
             .any(|v| v.trim().is_empty() || v.len() > 128 || v.chars().any(char::is_control))
-        || table.headers.iter().collect::<HashSet<_>>().len() != table.headers.len()
+        || headers.iter().collect::<HashSet<_>>().len() != headers.len()
     {
+        return Err(invalid());
+    }
+    Ok(())
+}
+pub(super) fn validate_row(row: &[Cell], columns: usize) -> Result<(), AppError> {
+    if row.len() != columns {
+        return Err(invalid());
+    }
+    for cell in row {
+        if matches!(cell, Cell::Number(v) if !v.is_finite() || v.abs() > 9_007_199_254_740_991.0) {
+            return Err(invalid());
+        }
+        let size = match cell {
+            Cell::Text(text) => text.len(),
+            _ => cell.text().len(),
+        };
+        if size > MAX_CELL_BYTES {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
+fn validate(table: &Table) -> Result<(), AppError> {
+    validate_headers(&table.headers)?;
+    if table.rows.len() > MAX_ROWS {
         return Err(invalid());
     }
     let mut total = 0;
     for row in &table.rows {
-        if row.len() != table.headers.len() {
-            return Err(invalid());
-        }
+        validate_row(row, table.headers.len())?;
         for cell in row {
-            if matches!(cell, Cell::Number(v) if !v.is_finite() || v.abs() > 9_007_199_254_740_991.0)
-            {
-                return Err(invalid());
-            }
-            let size = cell.text().len();
-            if size > MAX_CELL_BYTES {
-                return Err(invalid());
-            }
-            total += size;
+            total += match cell {
+                Cell::Text(text) => text.len(),
+                _ => cell.text().len(),
+            };
             if total > 8 * 1024 * 1024 {
                 return Err(AppError::PayloadTooLarge);
             }
@@ -305,7 +321,7 @@ fn xlsx_read(bytes: &[u8]) -> Result<Table, AppError> {
     Ok(Table { headers, rows })
 }
 
-fn csv_safe(text: &str) -> String {
+pub(super) fn csv_safe(text: &str) -> String {
     let trimmed = text.trim_start_matches(|c: char| c.is_whitespace() || c.is_control());
     if text.starts_with(['\t', '\r', '\n']) || trimmed.starts_with(['=', '+', '-', '@']) {
         format!("'{text}")
