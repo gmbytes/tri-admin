@@ -35,7 +35,7 @@ fn safe_numbers(value: &Value) -> bool {
         _ => true,
     }
 }
-fn validate(
+pub(crate) fn validate(
     name: &str,
     key: &str,
     group: &str,

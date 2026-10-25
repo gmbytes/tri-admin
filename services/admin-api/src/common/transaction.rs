@@ -12,6 +12,7 @@ pub enum Failure {
     NotReady,
     Conflict(&'static str),
     Validation(&'static str),
+    PayloadTooLarge,
 }
 pub fn fail(reason: Failure) -> Error {
     Error::custom(reason)
@@ -25,6 +26,7 @@ pub fn map_error(error: Error) -> AppError {
             Failure::NotReady => AppError::NotReady,
             Failure::Conflict(message) => AppError::Conflict((*message).into()),
             Failure::Validation(message) => AppError::Validation((*message).into()),
+            Failure::PayloadTooLarge => AppError::PayloadTooLarge,
         };
     }
     if matches!(&*error.kind,ErrorKind::Write(WriteFailure::WriteError(write)) if write.code==11000)
@@ -47,6 +49,24 @@ where
     let mut session = database.client().start_session().await?;
     session
         .start_transaction()
+        .and_run(context, callback)
+        .await
+        .map_err(map_error)
+}
+
+pub async fn run_snapshot<C: Send, R: Send, F>(
+    database: &Database,
+    context: C,
+    callback: F,
+) -> Result<R, AppError>
+where
+    F: Send
+        + for<'a> FnMut(&'a mut ClientSession, &'a mut C) -> BoxFuture<'a, mongodb::error::Result<R>>,
+{
+    let mut session = database.client().start_session().await?;
+    session
+        .start_transaction()
+        .read_concern(mongodb::options::ReadConcern::snapshot())
         .and_run(context, callback)
         .await
         .map_err(map_error)

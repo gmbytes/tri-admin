@@ -7,6 +7,7 @@ pub mod parameters;
 pub mod rbac;
 pub mod roles;
 pub mod users;
+pub mod versions;
 
 pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
@@ -50,6 +51,11 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
             prefix: api_catalog::API_PREFIX,
             endpoints: api_catalog::API_ENDPOINTS,
             routes: api_catalog::routes,
+        },
+        ApiModule {
+            prefix: versions::router::API_PREFIX,
+            endpoints: versions::router::API_ENDPOINTS,
+            routes: versions::router::routes,
         },
     ]
 }

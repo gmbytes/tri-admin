@@ -4,7 +4,6 @@ use crate::{
 };
 use axum::extract::{Query, rejection::QueryRejection};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 crate::api_routes! {
     prefix "";
@@ -31,11 +30,10 @@ pub fn endpoints() -> Vec<Endpoint> {
 }
 pub fn manifest() -> Result<Catalog, AppError> {
     let entries = endpoints();
-    let value = serde_json::to_value(&entries).map_err(|_| AppError::Internal)?;
-    let bytes = serde_json::to_vec(&value).map_err(|_| AppError::Internal)?;
+    let json = crate::common::canonical::json(&entries)?;
     Ok(Catalog {
         schema_version: 1,
-        checksum: format!("{:x}", Sha256::digest(bytes)),
+        checksum: crate::common::canonical::checksum(json.as_bytes()),
         endpoints: entries,
     })
 }

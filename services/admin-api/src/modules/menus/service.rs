@@ -44,7 +44,7 @@ const VIEWS: &[&str] = &[
     "versions",
 ];
 
-fn validate(
+pub(crate) fn validate(
     label: &str,
     path: &str,
     view: &Option<String>,

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod canonical;
 pub mod error;
 pub mod model;
 pub mod pagination;

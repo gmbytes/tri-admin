@@ -17,7 +17,11 @@ use mongodb::{
     bson::{DateTime, Document, doc, oid::ObjectId},
 };
 
-fn validate_dictionary(name: &str, key: &str, description: &str) -> Result<(), AppError> {
+pub(crate) fn validate_dictionary(
+    name: &str,
+    key: &str,
+    description: &str,
+) -> Result<(), AppError> {
     validation::text(name, "字典名称", 80)?;
     if key.is_empty()
         || key.len() > 64
@@ -35,7 +39,7 @@ fn validate_dictionary(name: &str, key: &str, description: &str) -> Result<(), A
     }
     Ok(())
 }
-fn validate_item(label: &str, value: &str) -> Result<(), AppError> {
+pub(crate) fn validate_item(label: &str, value: &str) -> Result<(), AppError> {
     validation::text(label, "明细名称", 100)?;
     validation::text(value, "明细值", 200)
 }
