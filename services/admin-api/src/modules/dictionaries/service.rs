@@ -104,12 +104,34 @@ pub async fn create(
 ) -> Result<DictionaryView, AppError> {
     validate_dictionary(&input.name, &input.key, &input.description)?;
     let id = ObjectId::new();
-    transaction::run(database, (database.clone(), actor, input), |session, (database, actor, input)| async move {
-        let now = DateTime::now();
-        database.collection::<Document>("dictionaries").insert_one(doc!{"_id":id,"name":&input.name,"key":&input.key,"description":&input.description,"enabled":input.enabled,"version":1i64,"writeFence":0i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).session(&mut *session).await?;
-        shared::audit(database, actor, "dictionaries.create", id, session).await?;
-        database.collection::<DictionaryRecord>("dictionaries").find_one(doc!{"_id":id}).session(session).await?.ok_or_else(||fail(Failure::NotFound))
-    }.boxed()).await?.view()
+    transaction::run(
+        database,
+        (database.clone(), actor, input),
+        |session, (database, actor, input)| {
+            async move { create_in(database, actor, input, id, session).await }.boxed()
+        },
+    )
+    .await?
+    .view()
+}
+pub(crate) async fn create_in(
+    database: &Database,
+    actor: &Actor,
+    input: &CreateDictionary,
+    id: ObjectId,
+    session: &mut ClientSession,
+) -> mongodb::error::Result<DictionaryRecord> {
+    validate_dictionary(&input.name, &input.key, &input.description)
+        .map_err(|_| fail(Failure::Validation("字典字段无效")))?;
+    let now = DateTime::now();
+    database.collection::<Document>("dictionaries").insert_one(doc!{"_id":id,"name":&input.name,"key":&input.key,"description":&input.description,"enabled":input.enabled,"version":1i64,"writeFence":0i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).session(&mut *session).await?;
+    shared::audit(database, actor, "dictionaries.create", id, session).await?;
+    database
+        .collection::<DictionaryRecord>("dictionaries")
+        .find_one(doc! {"_id":id})
+        .session(session)
+        .await?
+        .ok_or_else(|| fail(Failure::NotFound))
 }
 async fn lock_parent(
     database: &Database,
@@ -236,13 +258,36 @@ pub async fn create_item(
 ) -> Result<ItemView, AppError> {
     validate_item(&input.label, &input.value)?;
     let id = ObjectId::new();
-    transaction::run(database,(database.clone(),actor,input),|session,(database,actor,input)|async move {
-        lock_parent(database,parent,session).await?;
-        let now = DateTime::now();
-        database.collection::<Document>("dictionary_items").insert_one(doc!{"_id":id,"dictionaryId":parent,"label":&input.label,"value":&input.value,"sort":input.sort,"enabled":input.enabled,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).session(&mut *session).await?;
-        shared::audit(database,actor,"dictionaries.items.create",id,session).await?;
-        database.collection::<ItemRecord>("dictionary_items").find_one(doc!{"_id":id}).session(session).await?.ok_or_else(||fail(Failure::NotFound))
-    }.boxed()).await?.view()
+    transaction::run(
+        database,
+        (database.clone(), actor, input),
+        |session, (database, actor, input)| {
+            async move { create_item_in(database, actor, parent, input, id, session).await }.boxed()
+        },
+    )
+    .await?
+    .view()
+}
+pub(crate) async fn create_item_in(
+    database: &Database,
+    actor: &Actor,
+    parent: ObjectId,
+    input: &CreateItem,
+    id: ObjectId,
+    session: &mut ClientSession,
+) -> mongodb::error::Result<ItemRecord> {
+    validate_item(&input.label, &input.value)
+        .map_err(|_| fail(Failure::Validation("字典明细字段无效")))?;
+    lock_parent(database, parent, session).await?;
+    let now = DateTime::now();
+    database.collection::<Document>("dictionary_items").insert_one(doc!{"_id":id,"dictionaryId":parent,"label":&input.label,"value":&input.value,"sort":input.sort,"enabled":input.enabled,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).session(&mut *session).await?;
+    shared::audit(database, actor, "dictionaries.items.create", id, session).await?;
+    database
+        .collection::<ItemRecord>("dictionary_items")
+        .find_one(doc! {"_id":id})
+        .session(session)
+        .await?
+        .ok_or_else(|| fail(Failure::NotFound))
 }
 pub async fn patch_item(
     database: &Database,

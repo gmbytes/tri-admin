@@ -93,7 +93,7 @@ it('requires bounded owner-safe import result shape and known row states', () =>
     id: '1'.repeat(24),
     requestId: crypto.randomUUID(),
     resource: 'parameters',
-    expiresAt: Date.now() + 3600,
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
     rows: [row],
   }
   expect(parseImportView(view).rows[0].status).toBe('ready')
@@ -142,11 +142,61 @@ it('accepts the domain JSON depth boundary without counting the preview wrapper'
     id: '1'.repeat(24),
     requestId: crypto.randomUUID(),
     resource: 'parameters',
-    expiresAt: Date.now() + 3600,
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
     rows: [row],
   }
   expect(parseImportView(view).rows[0].values.value).toEqual(value)
   expect(() =>
     parseImportView({ ...view, rows: [{ ...row, values: { ...row.values, value: [value] } }] }),
   ).toThrow()
+})
+it('validates dictionary and item results without accepting extra credential fields', () => {
+  for (const [resource, values] of Object.entries({
+    dictionaries: { name: 'Dictionary', key: 'dictionary', description: '', enabled: false },
+    dictionaryItems: {
+      dictionaryKey: 'dictionary',
+      label: 'Item',
+      value: '001',
+      sort: -3,
+      enabled: true,
+    },
+  })) {
+    const view = {
+      id: '1'.repeat(24),
+      requestId: crypto.randomUUID(),
+      resource,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      rows: [
+        { index: 0, key: 'dictionary / 001', status: 'ready', error: null, targetId: null, values },
+      ],
+    }
+    expect(parseImportView(view).resource).toBe(resource)
+    expect(() =>
+      parseImportView({
+        ...view,
+        rows: [{ ...view.rows[0], values: { ...values, password: 'secret' } }],
+      }),
+    ).toThrow()
+    expect(
+      parseDataDownload({
+        name: `tri-admin-${resource}.csv`,
+        mimeType: 'text/csv;charset=utf-8',
+        size: 0,
+        sha256: '0'.repeat(64),
+        contentBase64: '',
+        rowCount: 0,
+      }).name,
+    ).toContain(resource)
+  }
+})
+it('uses canonical RFC3339 expiry text for the public import contract', () => {
+  const value = {
+    id: '1'.repeat(24),
+    requestId: crypto.randomUUID(),
+    resource: 'parameters',
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    rows: [],
+  }
+  expect(parseImportView(value).expiresAt).toBe(value.expiresAt)
+  expect(() => parseImportView({ ...value, expiresAt: Date.now() })).toThrow()
 })

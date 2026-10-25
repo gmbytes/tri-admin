@@ -32,17 +32,32 @@ const selected = computed(() => resources.value.find((r) => r.key === resource.v
   mapping = ref('{}'),
   preview = ref<ImportView | null>(null),
   clock = ref(Date.now())
-const history = ref<Array<{ id: string; requestId: string; resource: string; expiresAt: number }>>(
+const history = ref<Array<{ id: string; requestId: string; resource: string; expiresAt: string }>>(
   [],
 )
 const canImport = computed(
   () =>
-    selected.value?.importable && session.can('exports.write') && session.can('parameters.write'),
+    selected.value?.importable &&
+    session.can('exports.write') &&
+    !!selected.value.writePermission &&
+    session.can(selected.value.writePermission),
+)
+const previewResource = computed(() =>
+  resources.value.find((r) => r.key === preview.value?.resource),
+)
+const canApply = computed(
+  () =>
+    previewResource.value?.importable &&
+    session.can('exports.write') &&
+    !!previewResource.value.writePermission &&
+    session.can(previewResource.value.writePermission),
 )
 const ready = computed(
   () => preview.value?.rows.filter((row) => row.status === 'ready').length ?? 0,
 )
-const expired = computed(() => !!preview.value && preview.value.expiresAt <= clock.value)
+const expired = computed(
+  () => !!preview.value && Date.parse(preview.value.expiresAt) <= clock.value,
+)
 const page = ref(1),
   pageRows = computed(() => preview.value?.rows.slice((page.value - 1) * 20, page.value * 20) ?? [])
 const labels: Record<string, string> = {
@@ -57,6 +72,10 @@ const labels: Record<string, string> = {
   displayName: '显示名',
   status: '状态',
   version: '版本',
+  dictionaryKey: '父字典标识',
+  label: '明细名称',
+  sort: '排序',
+  enabled: '启用',
 }
 const statuses: Record<string, string> = {
   ready: '可导入',
@@ -69,6 +88,8 @@ const problems: Record<string, string> = {
   INVALID_FIELDS: '字段无效',
   DUPLICATE_IN_FILE: '文件内标识重复',
   KEY_EXISTS: '标识已存在',
+  PARENT_NOT_FOUND: '父字典不存在',
+  PARENT_CHANGED: '父字典已改变，请重新预览',
 }
 let alive = true,
   sequence = 0,
@@ -79,6 +100,9 @@ const controls = new Set<AbortController>(),
 watch(resource, () => {
   fields.value = [...(selected.value?.fields ?? [])]
   preview.value = null
+  content.value = ''
+  fileName.value = ''
+  mapping.value = '{}'
   requestId = crypto.randomUUID()
 })
 watch([mapping, format], () => {
@@ -320,9 +344,10 @@ function valueText(value: unknown) {
     </p>
   </section>
   <section v-if="canImport" class="surface data-options">
-    <h2>导入参数</h2>
+    <h2>导入{{ selected?.label }}</h2>
     <p class="subtle">
-      仅创建新的参数标识，现有数据不会被覆盖。文件最多 6 MiB、2000 行；XLSX 只接受一个无公式工作表。
+      仅创建新数据，现有标识不会被覆盖。明细需先有对应父字典。文件最多 6 MiB、2000 行；XLSX
+      只接受一个无公式工作表。
     </p>
     <input ref="fileInput" type="file" accept=".csv,.xlsx" hidden @change="browserSelected" />
     <div class="data-actions">
@@ -340,8 +365,8 @@ function valueText(value: unknown) {
           placeholder='{"name":"名称","key":"标识","valueType":"类型","value":"值"}' /></el-form-item
     ></el-form>
     <p class="tiny subtle">
-      {} 使用模板中的同名表头；自定义映射需包含 name、key、valueType、value，group 默认
-      general，description 默认留空。
+      {} 使用模板中的同名表头；必填映射：{{ selected?.requiredFields.join('、') }}。启用默认
+      true，明细排序默认 0；省略参数分组列时默认 general。
     </p>
     <el-button type="primary" :disabled="busy || !content" @click="makePreview"
       >生成导入预览</el-button
@@ -358,7 +383,7 @@ function valueText(value: unknown) {
       <div class="data-actions">
         <el-button :disabled="busy" @click="loadImport(preview.id)">查询最新结果</el-button
         ><el-button
-          v-if="canImport"
+          v-if="canApply"
           type="primary"
           :disabled="busy || !ready || expired"
           @click="apply"
@@ -373,17 +398,32 @@ function valueText(value: unknown) {
       :closable="false"
     />
     <el-table :data="pageRows" row-key="index"
+      ><el-table-column type="expand" width="48"
+        ><template #default="{ row }"
+          ><dl class="data-row-details">
+            <template v-for="(value, field) in row.values" :key="field"
+              ><dt>{{ labels[String(field)] ?? field }}</dt>
+              <dd>
+                {{ typeof value === 'string' ? value : JSON.stringify(value, null, 2) }}
+              </dd></template
+            >
+          </dl></template
+        ></el-table-column
       ><el-table-column label="行" width="65"
         ><template #default="{ row }">{{ row.index + 2 }}</template></el-table-column
       ><el-table-column
         prop="key"
-        label="参数标识"
+        label="资源标识"
         min-width="160"
         show-overflow-tooltip
       /><el-table-column label="名称" min-width="130" show-overflow-tooltip
-        ><template #default="{ row }">{{ row.values.name }}</template></el-table-column
+        ><template #default="{ row }">{{
+          row.values.name ?? row.values.label
+        }}</template></el-table-column
       ><el-table-column label="值" min-width="160" show-overflow-tooltip
-        ><template #default="{ row }">{{ valueText(row.values.value) }}</template></el-table-column
+        ><template #default="{ row }">{{
+          valueText('value' in row.values ? row.values.value : row.values.enabled)
+        }}</template></el-table-column
       ><el-table-column label="状态" width="100"
         ><template #default="{ row }"
           ><el-tag
@@ -413,6 +453,10 @@ function valueText(value: unknown) {
       行；已提交行的重试返回同一回执。
     </p>
     <el-table :data="history" row-key="id"
+      ><el-table-column label="资源" min-width="110"
+        ><template #default="{ row }">{{
+          resources.find((r) => r.key === row.resource)?.label ?? row.resource
+        }}</template></el-table-column
       ><el-table-column prop="id" label="导入标识" min-width="210" /><el-table-column
         prop="requestId"
         label="请求标识"
@@ -431,6 +475,22 @@ function valueText(value: unknown) {
 .data-options {
   padding: 24px;
   margin-bottom: 20px;
+}
+.data-row-details {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  margin: 18px 26px;
+}
+.data-row-details dt {
+  color: var(--el-text-color-secondary);
+}
+.data-row-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
 }
 .data-options h2 {
   margin: 0 0 12px;

@@ -52,6 +52,9 @@ pub async fn export(
     if input.search.chars().count() > 100 {
         return Err(AppError::Validation("筛选前缀最多 100 个字符".into()));
     }
+    if resource.key == "dictionaryItems" {
+        return item_export(database, fields, &input.search).await;
+    }
     let mut filter = doc! {"deletedAt":null};
     if resource.key == "users" {
         filter.extend(actor.user_filter());
@@ -79,6 +82,8 @@ pub async fn export(
     // Explicit projection: credentials are never read into an export buffer.
     let projection = if resource.key == "users" {
         doc! {"username":1,"displayName":1,"status":1,"version":1}
+    } else if resource.key == "dictionaries" {
+        doc! {"name":1,"key":1,"description":1,"enabled":1}
     } else {
         doc! {"name":1,"key":1,"group":1,"description":1,"valueType":1,"valueJson":1}
     };
@@ -113,6 +118,10 @@ pub async fn export(
                         .get_i64("version")
                         .map(|v| Cell::Number(v as f64))
                         .map_err(|_| AppError::Internal),
+                    "enabled" => record
+                        .get_bool("enabled")
+                        .map(Cell::Boolean)
+                        .map_err(|_| AppError::Internal),
                     "value" => {
                         let value: serde_json::Value = serde_json::from_str(
                             record
@@ -137,6 +146,72 @@ pub async fn export(
                             },
                         )
                     }
+                    _ => record
+                        .get_str(field)
+                        .map(|v| Cell::Text(v.into()))
+                        .map_err(|_| AppError::Internal),
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Table {
+        headers: fields,
+        rows,
+    })
+}
+
+async fn item_export(
+    database: &Database,
+    fields: Vec<String>,
+    search: &str,
+) -> Result<Table, AppError> {
+    let mut filter = doc! {"deletedAt":null};
+    if !search.trim().is_empty() {
+        let mut prefix = String::from("^");
+        for c in search.trim().chars() {
+            if ".+*?^${}()|[]\\".contains(c) {
+                prefix.push('\\');
+            }
+            prefix.push(c);
+        }
+        filter.insert("key", doc! {"$regex":prefix});
+    }
+    // Start with the indexed parent key. Each lookup is bounded before unwind,
+    // so one dictionary cannot materialize an unbounded BSON array.
+    let pipeline = vec![
+        doc! {"$match":filter},
+        doc! {"$sort":{"key":1,"_id":1}},
+        doc! {"$lookup":{"from":"dictionary_items","localField":"_id","foreignField":"dictionaryId","pipeline":[{"$match":{"deletedAt":null}},{"$sort":{"value":1,"_id":1}},{"$limit":(formats::MAX_ROWS+1) as i64}],"as":"items"}},
+        doc! {"$unwind":"$items"},
+        doc! {"$project":{"_id":"$items._id","dictionaryKey":"$key","label":"$items.label","value":"$items.value","sort":"$items.sort","enabled":"$items.enabled"}},
+        doc! {"$limit":(formats::MAX_ROWS+1) as i64},
+    ];
+    let records = database
+        .collection::<Document>("dictionaries")
+        .aggregate(pipeline)
+        .max_time(std::time::Duration::from_secs(10))
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?;
+    if records.len() > formats::MAX_ROWS {
+        return Err(AppError::Validation(
+            "导出超过 2000 行，请缩小字典标识前缀筛选".into(),
+        ));
+    }
+    let rows = records
+        .into_iter()
+        .map(|record| {
+            fields
+                .iter()
+                .map(|field| match field.as_str() {
+                    "sort" => record
+                        .get_i32("sort")
+                        .map(|v| Cell::Number(v as f64))
+                        .map_err(|_| AppError::Internal),
+                    "enabled" => record
+                        .get_bool("enabled")
+                        .map(Cell::Boolean)
+                        .map_err(|_| AppError::Internal),
                     _ => record
                         .get_str(field)
                         .map(|v| Cell::Text(v.into()))

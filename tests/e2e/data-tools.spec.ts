@@ -155,3 +155,126 @@ test('a lost apply response is reconciled by query without another write', async
   })
   expect((await response.json()).data).toHaveLength(1)
 })
+async function chooseResource(page: Page, label: string) {
+  await page
+    .locator('.el-form-item')
+    .filter({ hasText: '数据资源' })
+    .locator('.el-select__wrapper')
+    .click()
+  await page.getByRole('option', { name: label, exact: true }).click()
+}
+test('dictionary and typed item tools persist real CSV and XLSX data with visible field previews', async ({
+  page,
+}) => {
+  const { api } = await login(page),
+    key = 'ui.dictionary.' + Date.now().toString(36),
+    headers = { authorization: `Bearer ${process.env.TRI_E2E_PROVISIONING_TOKEN}` }
+  await chooseResource(page, '字典')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'dictionary.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(`name,key,description,enabled\n页面字典,${key},测试描述,false\n`),
+  })
+  await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
+  await page.getByRole('button', { name: '应用可导入行', exact: true }).click()
+  await expect(
+    page.locator('.data-import-results').getByText('已创建', { exact: true }),
+  ).toBeVisible()
+  const parent = (
+    await (await page.request.get(api + '/dictionaries?search=' + key, { headers })).json()
+  ).data[0]
+  expect(parent.enabled).toBe(false)
+  const source = await page.request.post(`${api}/dictionaries/${parent.id}/items`, {
+    headers,
+    data: { label: '明细源', value: '001', sort: -3, enabled: false },
+  })
+  expect(source.status()).toBe(201)
+  const item = (await source.json()).data
+  const exported = await page.request.post(api + '/data-tools/export', {
+    headers,
+    data: { resource: 'dictionaryItems', format: 'xlsx', search: key },
+  })
+  expect(exported.status()).toBe(200)
+  const file = (await exported.json()).data
+  expect(
+    (
+      await page.request.delete(`${api}/dictionaries/${parent.id}/items/${item.id}?version=1`, {
+        headers,
+      })
+    ).status(),
+  ).toBe(204)
+  await chooseResource(page, '字典明细')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'items.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(file.contentBase64, 'base64'),
+  })
+  await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
+  const row = page
+    .locator('.data-import-results .el-table__body-wrapper')
+    .getByRole('row')
+    .filter({ hasText: key + ' / 001' })
+  await row.locator('.el-table__expand-icon').click()
+  await expect(page.locator('.data-row-details').getByText('-3', { exact: true })).toBeVisible()
+  await expect(page.locator('.data-row-details').getByText('false', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '应用可导入行', exact: true }).click()
+  await expect(
+    page.locator('.data-import-results').getByText('已创建', { exact: true }),
+  ).toBeVisible()
+  const saved = (
+    await (await page.request.get(`${api}/dictionaries/${parent.id}/items`, { headers })).json()
+  ).data
+  expect(saved).toHaveLength(1)
+  expect(saved[0]).toMatchObject({ value: '001', sort: -3, enabled: false })
+  const downloadEvent = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出数据', exact: true }).click()
+  const download = await downloadEvent
+  const path = await download.path()
+  expect((await readFile(path!)).subarray(0, 2).toString()).toBe('PK')
+})
+test('an item preview reports a parent rename instead of writing into a replacement dictionary', async ({
+  page,
+}) => {
+  const { api } = await login(page),
+    key = 'ui.bound.' + Date.now().toString(36),
+    headers = { authorization: `Bearer ${process.env.TRI_E2E_PROVISIONING_TOKEN}` }
+  const response = await page.request.post(api + '/dictionaries', {
+    headers,
+    data: { name: 'Original', key },
+  })
+  expect(response.status()).toBe(201)
+  const parent = (await response.json()).data
+  await chooseResource(page, '字典明细')
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'bound.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(`dictionaryKey,label,value\n${key},Bound,item\n`),
+  })
+  await page.getByRole('button', { name: '生成导入预览', exact: true }).click()
+  await expect(page.getByRole('button', { name: '应用可导入行', exact: true })).toBeEnabled()
+  expect(
+    (
+      await page.request.patch(`${api}/dictionaries/${parent.id}`, {
+        headers,
+        data: { version: 1, key: key + '.renamed' },
+      })
+    ).status(),
+  ).toBe(200)
+  expect(
+    (
+      await page.request.post(api + '/dictionaries', {
+        headers,
+        data: { name: 'Replacement', key },
+      })
+    ).status(),
+  ).toBe(201)
+  await page.getByRole('button', { name: '应用可导入行', exact: true }).click()
+  await expect(
+    page.locator('.data-import-results').getByText('父字典已改变，请重新预览', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: '应用可导入行', exact: true })).toBeDisabled()
+  const remaining = (
+    await (await page.request.get(`${api}/dictionaries/${parent.id}/items`, { headers })).json()
+  ).data
+  expect(remaining).toHaveLength(0)
+})

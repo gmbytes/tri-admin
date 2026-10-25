@@ -1,4 +1,5 @@
 use super::{
+    domain,
     formats::{self, Cell, Table},
     models::*,
     registry,
@@ -29,9 +30,11 @@ pub fn prepare(input: &PreviewInput) -> Result<(String, Vec<ImportRow>), AppErro
     if uuid::Uuid::parse_str(&input.request_id)
         .ok()
         .is_none_or(|id| id.to_string() != input.request_id)
-        || input.content_base64.len() > formats::MAX_FILE_BYTES.div_ceil(3) * 4
     {
         return Err(invalid());
+    }
+    if input.content_base64.len() > formats::MAX_FILE_BYTES.div_ceil(3) * 4 {
+        return Err(AppError::PayloadTooLarge);
     }
     let bytes = STANDARD
         .decode(&input.content_base64)
@@ -45,7 +48,11 @@ pub fn prepare(input: &PreviewInput) -> Result<(String, Vec<ImportRow>), AppErro
         )
     );
     let table = formats::decode(input.format, &bytes)?;
-    let rows = rows(table, &input.mapping)?;
+    let rows = if input.resource == "parameters" {
+        rows(table, &input.mapping)?
+    } else {
+        domain::rows(&input.resource, table, &input.mapping)?
+    };
     Ok((fingerprint, rows))
 }
 fn rows(table: Table, mapping: &BTreeMap<String, String>) -> Result<Vec<ImportRow>, AppError> {
@@ -140,6 +147,7 @@ fn rows(table: Table, mapping: &BTreeMap<String, String>) -> Result<Vec<ImportRo
             },
             target_id: None,
             values_json,
+            parent_id: None,
         });
     }
     for row in &mut output {
@@ -188,30 +196,7 @@ pub async fn create(
                 {
                     return Err(fail(Failure::RateLimited));
                 }
-                let keys = rows
-                    .iter()
-                    .filter(|r| r.status == "ready")
-                    .map(|r| r.key.clone())
-                    .collect::<Vec<_>>();
-                let mut cursor = database
-                    .collection::<Document>("parameters")
-                    .find(doc! {"key":{"$in":keys},"deletedAt":null})
-                    .projection(doc! {"key":1})
-                    .session(&mut *session)
-                    .await?;
-                let existing = cursor
-                    .stream(&mut *session)
-                    .try_collect::<Vec<_>>()
-                    .await?
-                    .into_iter()
-                    .filter_map(|d| d.get_str("key").ok().map(String::from))
-                    .collect::<HashSet<_>>();
-                for row in rows.iter_mut() {
-                    if row.status == "ready" && existing.contains(&row.key) {
-                        row.status = "duplicate".into();
-                        row.error = Some("KEY_EXISTS".into());
-                    }
-                }
+                domain::annotate(database, &input.resource, rows, session).await?;
                 let record = ImportRecord {
                     id,
                     actor_id: actor.id,
@@ -260,19 +245,21 @@ pub async fn get(
     Ok(record)
 }
 pub async fn list(database: &Database, actor: &Actor) -> Result<Vec<serde_json::Value>, AppError> {
-    if !actor.can("parameters.read") {
-        return Ok(Vec::new());
-    }
+    let resources = registry::RESOURCES
+        .iter()
+        .filter(|r| r.importable && actor.can(r.read_permission))
+        .map(|r| r.key)
+        .collect::<Vec<_>>();
     let records = database
         .collection::<Document>("data_imports")
-        .find(doc! {"actorId":actor.id})
+        .find(doc! {"actorId":actor.id,"resource":{"$in":resources}})
         .projection(doc! {"requestId":1,"resource":1,"createdAt":1,"expiresAt":1})
         .sort(doc! {"createdAt":-1,"_id":-1})
         .limit(20)
         .await?
         .try_collect::<Vec<_>>()
         .await?;
-    records.into_iter().map(|d|Ok(serde_json::json!({"id":d.get_object_id("_id").map_err(|_|AppError::Internal)?.to_hex(),"requestId":d.get_str("requestId").map_err(|_|AppError::Internal)?,"resource":d.get_str("resource").map_err(|_|AppError::Internal)?,"expiresAt":d.get_datetime("expiresAt").map_err(|_|AppError::Internal)?.timestamp_millis()}))).collect()
+    records.into_iter().map(|d|Ok(serde_json::json!({"id":d.get_object_id("_id").map_err(|_|AppError::Internal)?.to_hex(),"requestId":d.get_str("requestId").map_err(|_|AppError::Internal)?,"resource":d.get_str("resource").map_err(|_|AppError::Internal)?,"expiresAt":public_time(*d.get_datetime("expiresAt").map_err(|_|AppError::Internal)?)?}))).collect()
 }
 pub async fn apply(
     database: &Database,
@@ -300,40 +287,25 @@ pub async fn apply(
                 |session, (database, actor)| {
                     async move {
                         let record = database
-                            .collection::<ImportRecord>("data_imports")
+                            .collection::<ApplyRecord>("data_imports")
                             .find_one(doc! {"_id":id,"actorId":actor.id})
+                            .projection(doc!{"resource":1,"expiresAt":1,"rows":{"$slice":[index as i32,1]}})
                             .session(&mut *session)
                             .await?
                             .ok_or_else(|| fail(Failure::NotFound))?;
                         let mut row = record
                             .rows
-                            .get(index)
+                            .first()
                             .cloned()
                             .ok_or_else(|| fail(Failure::Validation("导入行号无效")))?;
+                        if row.index!=index{return Err(fail(Failure::NotReady));}
                         if row.status != "ready" {
                             return Ok(());
                         }
                         if record.expires_at <= DateTime::now() {
                             return Err(fail(Failure::Conflict("预览已过期，请重新导入")));
                         }
-                        let parameter: CreateParameter = serde_json::from_str(&row.values_json)
-                            .map_err(|_| fail(Failure::NotReady))?;
-                        if database
-                            .collection::<Document>("parameters")
-                            .find_one(doc! {"key":&parameter.key,"deletedAt":null})
-                            .session(&mut *session)
-                            .await?
-                            .is_some()
-                        {
-                            row.status = "conflict".into();
-                            row.error = Some("KEY_EXISTS".into());
-                        } else {
-                            parameters::create_in(database, actor, &parameter, target, session)
-                                .await?;
-                            row.status = "applied".into();
-                            row.target_id = Some(target.to_hex());
-                            row.error = None;
-                        }
+                        domain::apply_row(database,actor,&record.resource,&mut row,target,session).await?;
                         let mut set = doc! {};
                         set.insert(
                             format!("rows.{index}"),
@@ -362,4 +334,12 @@ pub async fn apply(
         }
     }
     get(database, &actor, id).await?.view()
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyRecord {
+    resource: String,
+    expires_at: DateTime,
+    rows: Vec<ImportRow>,
 }

@@ -72,3 +72,9 @@
 - 权限为 `exports.read`（目录/模板/查询）、`exports.write`（导出/预览/应用），并同时要求资源读取权限；导入另需资源写入权限。预览后权限撤销会阻止应用。当前不接受密码、角色授权或密钥列。
 
 具体边界与剩余资源接入见 [数据工具设计](design-data-tools.md)。
+
+数据工具已扩展 `dictionaries`（name/key/description/enabled）和 `dictionaryItems`（dictionaryKey/label/value/sort/enabled），均使用 `dictionaries.read` / `dictionaries.write`。明细筛选为父字典标识前缀；导出先查活动父字典，再按每个父级受限关联活动明细，排序为父字典标识、明细值和稳定 ID。布尔与排序保持 XLSX 原生类型；省略或留空的 enabled/sort 分别为 true/0。
+
+明细预览会绑定内部父字典 ID，应用时核对父级标识与身份；删除、改名或重新创建同标识父级后返回逐行 `PARENT_CHANGED`，缺少父级返回预览错误 `PARENT_NOT_FOUND`。父级未被替换时，实际创建复用正常明细写入的父级锁及删除约束。`data-tools` 自身 schema v2 为原有新项目预览补齐内部 `parentId:null`，保留原回执和定制菜单；没有旧系统适配分支。
+
+导入响应和历史摘要的 `expiresAt` 使用标准 RFC3339 UTC 毫秒字符串，与全项目公共时间约定一致；内部仍用 MongoDB DateTime 比较到期时间。

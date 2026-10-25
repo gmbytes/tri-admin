@@ -7,6 +7,8 @@ export interface DataResource {
   fields: string[]
   importable: boolean
   readPermission: string
+  writePermission: string | null
+  requiredFields: string[]
 }
 export interface DataDownload {
   readonly name: string
@@ -28,7 +30,7 @@ export interface ImportView {
   id: string
   requestId: string
   resource: string
-  expiresAt: number
+  expiresAt: string
   rows: ImportRow[]
 }
 function invalid() {
@@ -99,7 +101,7 @@ export function parseDataDownload(value: unknown): DataDownload {
     !data ||
     typeof data !== 'object' ||
     typeof data.name !== 'string' ||
-    !/^tri-admin-(parameters|users)\.(csv|xlsx)$/.test(data.name) ||
+    !/^tri-admin-(parameters|users|dictionaries|dictionaryItems)\.(csv|xlsx)$/.test(data.name) ||
     !Number.isSafeInteger(data.size) ||
     data.size < 0 ||
     data.size > DATA_FILE_LIMIT ||
@@ -167,18 +169,32 @@ export function parseImportView(value: unknown): ImportView {
     !/^[a-f0-9]{24}$/.test(data.id) ||
     typeof data.requestId !== 'string' ||
     !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(data.requestId) ||
-    data.resource !== 'parameters' ||
-    !Number.isSafeInteger(data.expiresAt) ||
+    !['parameters', 'dictionaries', 'dictionaryItems'].includes(data.resource) ||
+    typeof data.expiresAt !== 'string' ||
+    !Number.isFinite(Date.parse(data.expiresAt)) ||
+    new Date(data.expiresAt).toISOString() !== data.expiresAt ||
     !Array.isArray(data.rows) ||
     data.rows.length > 2000
   )
     throw invalid()
+  const shape =
+    data.resource === 'parameters'
+      ? {
+          keys: 'description,group,key,name,value,valueType',
+          strings: ['name', 'key', 'group', 'description', 'valueType'],
+        }
+      : data.resource === 'dictionaries'
+        ? { keys: 'description,enabled,key,name', strings: ['name', 'key', 'description'] }
+        : {
+            keys: 'dictionaryKey,enabled,label,sort,value',
+            strings: ['dictionaryKey', 'label', 'value'],
+          }
   for (const [index, row] of data.rows.entries()) {
     if (
       !row ||
       row.index !== index ||
       typeof row.key !== 'string' ||
-      row.key.length > 16384 ||
+      row.key.length > 32772 ||
       !['ready', 'invalid', 'duplicate', 'conflict', 'applied'].includes(row.status) ||
       (row.error !== null && typeof row.error !== 'string') ||
       (row.targetId !== null &&
@@ -186,11 +202,13 @@ export function parseImportView(value: unknown): ImportView {
       !row.values ||
       typeof row.values !== 'object' ||
       Array.isArray(row.values) ||
-      Object.keys(row.values).sort().join(',') !== 'description,group,key,name,value,valueType' ||
-      !['name', 'key', 'group', 'description', 'valueType'].every(
-        (k) => typeof row.values[k] === 'string',
-      ) ||
-      !safe(row.values.value)
+      Object.keys(row.values).sort().join(',') !== shape.keys ||
+      !shape.strings.every((k) => typeof row.values[k] === 'string') ||
+      !(data.resource === 'parameters' ? safe(row.values.value) : safe(row.values)) ||
+      (data.resource !== 'parameters' &&
+        !['boolean', 'string'].includes(typeof row.values.enabled)) ||
+      (data.resource === 'dictionaryItems' &&
+        !['number', 'string'].includes(typeof row.values.sort))
     )
       throw invalid()
   }

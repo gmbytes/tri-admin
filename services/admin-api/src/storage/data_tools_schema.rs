@@ -6,14 +6,21 @@ use mongodb::{
     options::IndexOptions,
 };
 use sha2::{Digest, Sha256};
-pub const VERSION: i32 = 1;
+pub const VERSION: i32 = 2;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let previous = metadata.find_one(doc! {"_id":"data-tools"}).await?;
     if let Some(record) = &previous
-        && record.get_i32("version").ok() != Some(VERSION)
+        && !matches!(record.get_i32("version").ok(), Some(1 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
+    }
+    if previous
+        .as_ref()
+        .and_then(|row| row.get_i32("version").ok())
+        == Some(1)
+    {
+        database.collection::<Document>("data_imports").update_many(doc!{},vec![doc!{"$set":{"rows":{"$map":{"input":"$rows","as":"row","in":{"$mergeObjects":[{"parentId":null},"$$row"]}}}}}]).await?;
     }
     if let Err(error) = database.create_collection("data_imports").await
         && !matches!(&*error.kind,ErrorKind::Command(command) if command.code==48)
@@ -64,7 +71,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
     metadata
         .update_one(
             doc! {"_id":"data-tools"},
-            doc! {"$setOnInsert":{"version":VERSION,"createdAt":DateTime::now()}},
+            doc! {"$set":{"version":VERSION},"$setOnInsert":{"createdAt":DateTime::now()}},
         )
         .upsert(true)
         .await?;

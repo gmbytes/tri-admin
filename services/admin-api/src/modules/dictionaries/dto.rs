@@ -1,11 +1,11 @@
 use crate::common::request::optional_non_null;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 fn yes() -> bool {
     true
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateDictionary {
     pub name: String,
@@ -28,7 +28,7 @@ pub struct PatchDictionary {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub enabled: Option<bool>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateItem {
     pub label: String,
