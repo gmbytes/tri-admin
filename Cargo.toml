@@ -1,5 +1,6 @@
 [workspace]
-members = ["services/admin-api"]
+members = ["services/admin-api", "crates/desktop-core"]
+exclude = ["apps/desktop/src-tauri"]
 resolver = "3"
 
 [workspace.package]

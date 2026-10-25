@@ -38,7 +38,12 @@ async fn logout_revokes_access_and_refresh_tokens() {
     let tokens = app.login().await;
     let access = tokens["accessToken"].as_str().unwrap();
     let (status, _) = app
-        .send("POST", "/api/v1/auth/logout", Value::Null, Some(access))
+        .send(
+            "POST",
+            "/api/v1/auth/logout",
+            json!({"refreshToken":tokens["refreshToken"]}),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(
@@ -394,6 +399,44 @@ async fn changing_own_password_requires_the_current_password_and_revokes_session
         .await
         .0,
         StatusCode::OK
+    );
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn refresh_credential_can_revoke_a_session_after_access_expiry() {
+    let app = TestApp::new().await;
+    let tokens = app.login().await;
+    let (status, _) = app
+        .send(
+            "POST",
+            "/api/v1/auth/logout",
+            json!({"refreshToken":tokens["refreshToken"]}),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        app.send(
+            "GET",
+            "/api/v1/auth/me",
+            Value::Null,
+            Some(tokens["accessToken"].as_str().unwrap())
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.send(
+            "POST",
+            "/api/v1/auth/logout",
+            json!({"refreshToken":tokens["refreshToken"]}),
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
     );
     app.cleanup().await;
 }

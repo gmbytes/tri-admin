@@ -233,15 +233,31 @@ pub async fn refresh(state: &AppState, raw: String) -> Result<TokenResponse, App
     }
 }
 
-pub async fn logout(state: &AppState, context: &AuthContext) -> Result<(), AppError> {
-    state
-        .require_database()?
-        .collection::<Document>("sessions")
-        .update_one(
-            doc! {"_id":context.session_id},
-            doc! {"$set":{"status":"revoked","revokedAt":DateTime::now()}},
-        )
-        .await?;
+pub async fn logout(state: &AppState, raw: String) -> Result<(), AppError> {
+    if raw.len() != 64 || !raw.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    let database = state.require_database()?;
+    let Some(token) = database
+        .collection::<Document>("refresh_tokens")
+        .find_one(doc! {"_id":token_hash(&raw)})
+        .await?
+    else {
+        return Ok(());
+    };
+    let session_id = token
+        .get_object_id("sessionId")
+        .map_err(|_| AppError::Internal)?;
+    let user_id = token
+        .get_object_id("userId")
+        .map_err(|_| AppError::Internal)?;
+    let mut transaction = database.client().start_session().await?;
+    transaction.start_transaction().and_run(database.clone(),|session,database|async move{
+        let now=DateTime::now();
+        let update=database.collection::<Document>("sessions").update_one(doc!{"_id":session_id,"status":"active"},doc!{"$set":{"status":"revoked","revokedAt":now}}).session(&mut *session).await?;
+        if update.modified_count>0 {database.collection::<Document>("audit_events").insert_one(doc!{"category":"authentication","action":"auth.logout","actorId":user_id,"sessionId":session_id,"outcome":"success","createdAt":now}).session(&mut *session).await?;}
+        Ok(())
+    }.boxed()).await?;
     Ok(())
 }
 

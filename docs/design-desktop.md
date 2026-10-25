@@ -5,7 +5,7 @@
 ## 技术和边界
 
 - Vue 3 + Vite + TypeScript + Pinia + Element Plus + Vue Router hash 路由；Tauri 2 承载 Windows 窗口。
-- 已核对 registry：Vue 3.5.44、Vite 8.3.5、plugin-vue 6.0.10、Pinia 4.1.0、Vue Router 5.4.0、Element Plus 2.14.7、TypeScript 7.0.2、Vitest 5.0.5、vue-tsc 3.3.13、Tauri CLI/API 2.12.4。安装后通过实际类型检查、构建和测试确定 lockfile，不以版本号代替验证。
+- 已核对并通过实际构建：Vue 3.5.44、Vite 8.3.5、plugin-vue 6.0.10、Pinia 4.1.0、Vue Router 5.4.0、Element Plus 2.14.7、TypeScript 6.0.3、Vitest 5.0.5、vue-tsc 3.3.13、Tauri CLI/API 2.12.4。TypeScript 7.0.2 与当前 vue-tsc 的入口不匹配，选用实际通过检查的 6.0.3；不添加兼容补丁。
 - 桌面 Rust 工程位于 apps/desktop/src-tauri，独立 workspace；远程后台 workspace 不依赖 WebView/GTK，Linux 服务验证可独立运行。
 - Windows 首发；窗口建议 1440×960，最小 1100×720，使用原生系统窗口装饰。
 
@@ -18,6 +18,8 @@
 - 服务器切换递增客户端 epoch，清除旧会话并丢弃旧请求/刷新结果。原生保存凭据命令必须核对期望 endpoint 等于当前配置，防止把旧服务令牌保存到新服务范围。
 - 系统凭据按规范化服务地址隔离。原生设置与凭据操作通过同一锁串行化，OS 操作在 blocking 线程完成。
 - 本人修改密码成功后清空会话并回登录；不要继续刷新已撤销的令牌。
+- 注销通过刷新令牌证明会话身份，访问令牌过期后仍可撤销会话；本地状态即使断网也清除。保存凭据失败时回滚远端会话与本地凭据，避免半完成登录。
+- Windows 凭据库通过 keyring 使用；配置文件只包含服务地址和是否恢复会话。独立 desktop-core 测试设置边界，原生测试验证实际系统凭据的保存、重新打开和清除。
 
 ## 首批界面
 
@@ -36,5 +38,9 @@
 先写 endpoint/API client 测试，包括真实本机 HTTP 上游下的刷新 single-flight、错误、注销、切换服务的旧响应丢弃。随后类型检查、Vue 构建、页面测试和 Tauri 构建。
 
 原生验证使用 computer-use 技能：选择实际 Tri Admin 窗口，观察后输入，每次动作后刷新状态。检查登录、菜单导航、筛选/编辑表单、错误反馈、注销及重启；与浏览器/HTTP 证据分开记录。
+
+2026-10-25 证据：17 项客户端测试、4 项真实后端页面测试通过；Windows 实际窗口完成登录、用户列表、关闭后重新启动自动恢复及注销回登录。原生编辑保存、安装包和升级验收仍需补齐。Playwright 每次创建独立临时数据库、随机凭据和临时服务，不复用开发管理员。
+
+页面和功能组件按需加载，Element Plus 按组件导入；生产构建入口脚本约 57.20 kB，最大公共脚本约 99.84 kB（均为未压缩大小），消除了初始整包导入的体积告警。
 
 后续仍需 Task 6–12 的业务页面、文件、扩展、游戏管理和跨平台发布，首批界面不替代完整产品交付。

@@ -53,11 +53,9 @@ async fn refresh(
     ))
 }
 
-async fn logout(
-    State(state): State<AppState>,
-    context: AuthContext,
-) -> Result<StatusCode, AppError> {
-    service::logout(&state, &context).await?;
+async fn logout(State(state): State<AppState>, request: Request) -> Result<StatusCode, AppError> {
+    let input = crate::common::request::json::<RefreshInput>(request, &state).await?;
+    service::logout(&state, input.refresh_token).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

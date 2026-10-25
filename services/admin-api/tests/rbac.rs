@@ -633,3 +633,24 @@ async fn rbac_schema_is_required_before_the_application_reports_ready() {
     );
     app.cleanup().await;
 }
+
+#[tokio::test]
+async fn menu_paths_cannot_shadow_reserved_client_routes() {
+    let app = TestApp::new().await;
+    let tokens = app.login().await;
+    let access = tokens["accessToken"].as_str().unwrap();
+    for path in ["/", "/login", "/profile"] {
+        assert_eq!(
+            app.send(
+                "POST",
+                "/api/v1/menus",
+                json!({"label":"Reserved","path":path,"viewKey":"users"}),
+                Some(access)
+            )
+            .await
+            .0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    app.cleanup().await;
+}

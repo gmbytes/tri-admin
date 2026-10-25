@@ -29,6 +29,7 @@ pub struct UserView {
     pub username: String,
     pub display_name: String,
     pub role_ids: Vec<String>,
+    pub roles: Vec<RoleBrief>,
     pub status: String,
     pub version: i64,
     pub created_at: String,
@@ -41,12 +42,19 @@ impl UserRecord {
             username: self.username,
             display_name: self.display_name,
             role_ids: self.role_ids.into_iter().map(ObjectId::to_hex).collect(),
+            roles: Vec::new(),
             status: self.status,
             version: self.version,
             created_at: time(self.created_at)?,
             updated_at: time(self.updated_at)?,
         })
     }
+}
+
+#[derive(Serialize)]
+pub struct RoleBrief {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Clone, Deserialize)]

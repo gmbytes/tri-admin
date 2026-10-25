@@ -60,7 +60,7 @@ pub async fn list(
         .collection::<Document>("users")
         .count_documents(filter.clone())
         .await?;
-    let data = if skip >= total {
+    let mut data = if skip >= total {
         vec![]
     } else {
         database
@@ -76,17 +76,24 @@ pub async fn list(
             .map(UserRecord::view)
             .collect::<Result<Vec<_>, _>>()?
     };
+    super::repository::enrich_roles(database, &mut data).await?;
     Ok(Page::new(data, &input, total))
 }
 
 pub async fn get(database: &Database, actor: &Actor, id: ObjectId) -> Result<UserView, AppError> {
     actor.require_scope(id)?;
-    database
+    let record = database
         .collection::<UserRecord>("users")
         .find_one(doc! {"_id":id,"deletedAt":null})
         .await?
-        .ok_or(AppError::NotFound)?
-        .view()
+        .ok_or(AppError::NotFound)?;
+    render(database, record).await
+}
+
+async fn render(database: &Database, record: UserRecord) -> Result<UserView, AppError> {
+    let mut view = record.view()?;
+    super::repository::enrich_roles(database, std::slice::from_mut(&mut view)).await?;
+    Ok(view)
 }
 
 async fn check_owner_change(
@@ -148,7 +155,7 @@ pub async fn create(
         shared::audit(database,actor,"users.create",id,session).await?;
         Ok(UserRecord{id,username:username.clone(),display_name:display_name.clone(),role_ids:role_ids.clone(),status:status.clone(),version:1,created_at:now,updated_at:now})
     }.boxed()).await?;
-    result.view()
+    render(database, result).await
 }
 
 pub async fn patch(
@@ -191,7 +198,7 @@ if let Some(status)=&input.status{user.status=status.clone();}
         if user.status=="disabled"{shared::revoke_sessions(database,id,session).await?;}
         shared::audit(database,actor,"users.update",id,session).await?;Ok(user)
     }.boxed()).await?;
-    result.view()
+    render(database, result).await
 }
 
 pub async fn delete(

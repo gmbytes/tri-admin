@@ -9,6 +9,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+apps/desktop/src-tauri/gen/
 .superpowers/
 artifacts/
 !deploy/.env.example

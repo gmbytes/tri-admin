@@ -53,6 +53,9 @@ fn validate(
     permission: &Option<String>,
 ) -> Result<(), AppError> {
     validation::text(label, "菜单名", 80)?;
+    if matches!(path, "/" | "/login" | "/profile") {
+        return Err(AppError::Validation("该路径由客户端保留".into()));
+    }
     if !path.starts_with('/')
         || path.starts_with("//")
         || path.chars().count() > 128
