@@ -152,7 +152,7 @@ pub async fn audit(
     target: ObjectId,
     session: &mut ClientSession,
 ) -> mongodb::error::Result<()> {
-    database.collection::<Document>("audit_events").insert_one(doc!{"category":"administration","action":action,"actorId":actor.id,"targetId":target,"outcome":"success","createdAt":DateTime::now()}).session(session).await?;
+    database.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":action,"actorId":actor.id,"targetId":target,"outcome":"success","createdAt":DateTime::now()})).session(session).await?;
     Ok(())
 }
 

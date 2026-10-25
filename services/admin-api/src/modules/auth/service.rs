@@ -58,6 +58,7 @@ pub async fn login(
         return Err(AppError::NotReady);
     }
     let username_key = input.username.trim().to_lowercase();
+    crate::common::observability::login_username(&username_key);
     let now = DateTime::now();
     enforce_login_rate(
         database,
@@ -78,13 +79,17 @@ pub async fn login(
     }
     .to_owned();
     let verified = password::verify(input.password, hash).await?;
-    let mut event = doc! {"category":"authentication","action":"auth.login","username":&username_key,"ip":peer,"createdAt":now};
+    let mut event = crate::common::observability::event(
+        doc! {"category":"authentication","action":"auth.login","username":&username_key,"ip":peer,"createdAt":now},
+    );
     if !verified || user.is_none() {
         event.insert("outcome", "failure");
+        event.insert("errorCode", "INVALID_CREDENTIALS");
         database
             .collection::<Document>("audit_events")
             .insert_one(event)
             .await?;
+        crate::common::observability::login_recorded();
         return Err(AppError::InvalidCredentials);
     }
     let user = user.ok_or(AppError::InvalidCredentials)?;
@@ -127,6 +132,7 @@ pub async fn login(
             },
         )
         .await?;
+    crate::common::observability::login_recorded();
     let (access_token, expires_in) = jwt::encode(
         &state.config,
         user_id,
@@ -191,10 +197,11 @@ pub async fn refresh(state: &AppState, raw: String) -> Result<TokenResponse, App
         let user_id=current.get_object_id("userId").map_err(|_|invalid())?;
         let user=database.collection::<Document>("users").find_one(doc!{"_id":user_id,"status":"active","deletedAt":null}).session(&mut *session).await?;
         if user.is_none(){return Err(invalid());}
+        crate::common::observability::actor(user_id);
         let unused=token.get("usedAt").is_none_or(|value|matches!(value,mongodb::bson::Bson::Null));
         if !unused || current.get_str("refreshHash").ok()!=Some(previous_hash.as_str()) {
             sessions.update_one(doc!{"_id":session_id},doc!{"$set":{"status":"revoked","revokedAt":now}}).session(&mut *session).await?;
-            database.collection::<Document>("audit_events").insert_one(doc!{"category":"authentication","action":"auth.refreshReuse","actorId":user_id,"sessionId":session_id,"outcome":"revoked","createdAt":now}).session(&mut *session).await?;
+            database.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"authentication","action":"auth.refreshReuse","actorId":user_id,"sessionId":session_id,"outcome":"revoked","createdAt":now})).session(&mut *session).await?;
             // Commit the revocation before reporting the rejected request.
             return Ok(RefreshResult::Reused);
         }
@@ -251,11 +258,12 @@ pub async fn logout(state: &AppState, raw: String) -> Result<(), AppError> {
     let user_id = token
         .get_object_id("userId")
         .map_err(|_| AppError::Internal)?;
+    crate::common::observability::actor(user_id);
     let mut transaction = database.client().start_session().await?;
     transaction.start_transaction().and_run(database.clone(),|session,database|async move{
         let now=DateTime::now();
         let update=database.collection::<Document>("sessions").update_one(doc!{"_id":session_id,"status":"active"},doc!{"$set":{"status":"revoked","revokedAt":now}}).session(&mut *session).await?;
-        if update.modified_count>0 {database.collection::<Document>("audit_events").insert_one(doc!{"category":"authentication","action":"auth.logout","actorId":user_id,"sessionId":session_id,"outcome":"success","createdAt":now}).session(&mut *session).await?;}
+        if update.modified_count>0 {database.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"authentication","action":"auth.logout","actorId":user_id,"sessionId":session_id,"outcome":"success","createdAt":now})).session(&mut *session).await?;}
         Ok(())
     }.boxed()).await?;
     Ok(())

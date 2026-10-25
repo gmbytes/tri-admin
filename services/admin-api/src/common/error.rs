@@ -6,6 +6,44 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 
+pub fn normalize_framework(response: Response) -> Response {
+    let status = response.status();
+    if !(status.is_client_error() || status.is_server_error())
+        || response.extensions().get::<ResponseError>().is_some()
+    {
+        return response;
+    }
+    let error = match status.as_u16() {
+        400 => AppError::BadRequest,
+        401 => AppError::Unauthorized,
+        403 => AppError::Forbidden,
+        404 => AppError::NotFound,
+        405 => AppError::MethodNotAllowed,
+        409 => AppError::Conflict("请求与当前状态冲突".into()),
+        413 => AppError::PayloadTooLarge,
+        415 => AppError::UnsupportedMediaType,
+        422 => AppError::Validation("请求字段无效".into()),
+        429 => AppError::RateLimited,
+        503 => AppError::NotReady,
+        _ if status.is_server_error() => AppError::Internal,
+        _ => AppError::BadRequest,
+    };
+    let (mut original, _) = response.into_parts();
+    let (safe, body) = error.into_response().into_parts();
+    original.headers.remove(axum::http::header::CONTENT_LENGTH);
+    original.headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/json"),
+    );
+    original.extensions.extend(safe.extensions);
+    Response::from_parts(original, body)
+}
+
+#[derive(Clone, Copy)]
+pub struct ResponseError {
+    pub code: &'static str,
+}
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("请求 JSON 格式无效")]
@@ -64,10 +102,12 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR")
             }
         };
-        (
+        let mut response = (
             status,
             Json(json!({"error":{"code":code,"message":self.to_string()}})),
         )
-            .into_response()
+            .into_response();
+        response.extensions_mut().insert(ResponseError { code });
+        response
     }
 }

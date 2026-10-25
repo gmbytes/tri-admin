@@ -60,7 +60,7 @@ pub async fn apply(
         let json = canonical::json(&result).map_err(|_|fail(Failure::NotReady))?;
         database.collection::<Document>("version_previews").update_one(doc!{"_id":id,"status":"pending"},doc!{"$set":{"status":"applied","resultJson":json,"appliedAt":now},"$unset":{"cleanupAt":"","bundleJson":""}}).session(&mut *session).await?;
         let counts = mongodb::bson::serialize_to_bson(&result.counts).map_err(|_|fail(Failure::NotReady))?;
-        database.collection::<Document>("audit_events").insert_one(doc!{"category":"administration","action":"versions.import.apply","actorId":actor.id,"targetId":version_id,"previewId":id,"checksum":&result.checksum,"counts":counts,"outcome":"success","createdAt":now}).session(session).await?;
+        database.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":"versions.import.apply","actorId":actor.id,"targetId":version_id,"previewId":id,"checksum":&result.checksum,"counts":counts,"outcome":"success","createdAt":now})).session(session).await?;
         Ok(result)
     }.boxed()).await
 }

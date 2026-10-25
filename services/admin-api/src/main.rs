@@ -16,6 +16,19 @@ async fn main() -> ExitCode {
                 .unwrap_or_else(|_| "admin_api=info,tower_http=info".into()),
         )
         .try_init();
+    std::panic::set_hook(Box::new(|info| {
+        let request_id = admin_api::common::observability::request_id().unwrap_or_default();
+        if let Some(location) = info.location() {
+            tracing::error!(
+                request_id,
+                file = location.file(),
+                line = location.line(),
+                "handler panicked"
+            );
+        } else {
+            tracing::error!(request_id, "handler panicked");
+        }
+    }));
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

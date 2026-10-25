@@ -167,6 +167,16 @@ async fn apply_commits_every_resource_new_references_version_and_audit_together(
     );
     let counts = serde_json::to_value(audit.get_document("counts").unwrap()).unwrap();
     assert_eq!(counts, plan["counts"]);
+    let (status, logs) = app
+        .send(
+            "GET",
+            "/api/v1/logs?kind=operation&action=versions.import.apply",
+            Value::Null,
+            Some(token),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(logs["meta"]["total"], 1);
     app.cleanup().await;
 }
 

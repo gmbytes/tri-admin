@@ -9,11 +9,7 @@ pub mod storage;
 
 use axum::Router;
 use state::AppState;
-use tower_http::{
-    cors::CorsLayer,
-    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    trace::TraceLayer,
-};
+use tower_http::cors::CorsLayer;
 
 pub fn build_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
@@ -47,9 +43,10 @@ pub fn build_router(state: AppState) -> Router {
     router
         .fallback(|| async { common::error::AppError::NotFound })
         .method_not_allowed_fallback(|| async { common::error::AppError::MethodNotAllowed })
-        .with_state(state)
+        .with_state(state.clone())
         .layer(cors)
-        .layer(PropagateRequestIdLayer::x_request_id())
-        .layer(TraceLayer::new_for_http())
-        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            common::observability::observe,
+        ))
 }

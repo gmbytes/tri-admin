@@ -44,6 +44,10 @@ impl FromRequestParts<AppState> for AuthContext {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
             .ok_or(AppError::Unauthorized)?;
-        service::authenticate(state, raw).await
+        let context = service::authenticate(state, raw).await?;
+        crate::common::observability::actor(
+            ObjectId::parse_str(&context.user.id).map_err(|_| AppError::Internal)?,
+        );
+        Ok(context)
     }
 }

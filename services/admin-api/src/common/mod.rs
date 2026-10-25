@@ -2,6 +2,7 @@ pub mod api;
 pub mod canonical;
 pub mod error;
 pub mod model;
+pub mod observability;
 pub mod pagination;
 pub mod password;
 pub mod request;
