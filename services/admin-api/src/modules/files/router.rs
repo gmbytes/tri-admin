@@ -1,8 +1,9 @@
 use super::{
     categories, chunks, cleanup,
-    dto::{CategoryCreate, CategoryPatch, Empty, UploadCreate},
-    models::{CHUNK_SIZE, CategoryView, UploadView},
-    uploads,
+    dto::{CategoryCreate, CategoryPatch, Empty, FileList, FilePatch, UploadCreate},
+    jobs,
+    models::{CHUNK_SIZE, CategoryView, FileView, UploadView},
+    resources, uploads,
 };
 use crate::{
     common::{
@@ -40,6 +41,99 @@ crate::api_routes! {
     put "/api/v1/uploads/{id}/chunks/{index}"=>chunk_put,"uploads.chunk.put","files","接收上传分片",Permission,&["files.write"],"octet-stream，需X-Chunk-Sha256；4MiB固定分片，重复同片不重复接收";
     post "/api/v1/uploads/{id}/cancel"=>upload_cancel,"uploads.cancel","files","取消上传",Permission,&["files.write"],"幂等持久取消，清理可能仍待确认";
     post "/api/v1/uploads/{id}/cleanup"=>upload_cleanup,"uploads.cleanup","files","重试上传清理",Permission,&["files.write"],"每批最多100个确定候选；仍在写入的尝试不宣称已清理";
+    post "/api/v1/uploads/{id}/complete"=>upload_complete,"uploads.complete","files","校验并发布上传",Permission,&["files.write"],"持久排队与租约；202表示处理中，只有状态completed表示发布成功";
+    get "/api/v1/files"=>file_list,"files.list","files","文件资源列表",Permission,&["files.read"];
+    get "/api/v1/files/{id}"=>file_read,"files.get","files","文件资料",Permission,&["files.read"];
+    patch "/api/v1/files/{id}"=>file_patch,"files.update","files","修改文件资料",Permission,&["files.write"];
+    delete "/api/v1/files/{id}"=>file_delete,"files.delete","files","删除文件资源",Permission,&["files.write"];
+    get "/api/v1/files/{id}/content"=>file_content,"files.content","files","授权下载文件",Permission,&["files.read"],"按当前所有者范围授权，附件下载，正文流校验长度和SHA-256";
+}
+async fn upload_complete(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<(StatusCode, ApiResponse<UploadView>), AppError> {
+    actor.require("files.write")?;
+    request::json::<Empty>(body, &state).await?;
+    let (pending, row) =
+        jobs::enqueue(&state, Actor::new(&actor)?, validation::object_id(&id)?).await?;
+    Ok((
+        if pending {
+            StatusCode::ACCEPTED
+        } else {
+            StatusCode::OK
+        },
+        ApiResponse::success(row),
+    ))
+}
+async fn file_list(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    input: Result<Query<FileList>, QueryRejection>,
+) -> Result<Page<FileView>, AppError> {
+    actor.require("files.read")?;
+    let Query(input) = input.map_err(|_| AppError::Validation("文件查询无效".into()))?;
+    resources::list(state.require_database()?, &Actor::new(&actor)?, input).await
+}
+async fn file_read(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+) -> Result<ApiResponse<FileView>, AppError> {
+    actor.require("files.read")?;
+    Ok(ApiResponse::success(
+        resources::get(
+            state.require_database()?,
+            &Actor::new(&actor)?,
+            validation::object_id(&id)?,
+        )
+        .await?
+        .view()?,
+    ))
+}
+async fn file_patch(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<ApiResponse<FileView>, AppError> {
+    actor.require("files.write")?;
+    let input = request::json::<FilePatch>(body, &state).await?;
+    Ok(ApiResponse::success(
+        resources::patch(
+            state.require_database()?,
+            Actor::new(&actor)?,
+            validation::object_id(&id)?,
+            input,
+        )
+        .await?,
+    ))
+}
+async fn file_delete(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    input: Result<Query<DeleteQuery>, QueryRejection>,
+) -> Result<StatusCode, AppError> {
+    actor.require("files.write")?;
+    let Query(input) = input.map_err(|_| AppError::Validation("文件版本参数无效".into()))?;
+    resources::delete(
+        &state,
+        Actor::new(&actor)?,
+        validation::object_id(&id)?,
+        input.version,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn file_content(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, AppError> {
+    actor.require("files.read")?;
+    resources::content(&state, &Actor::new(&actor)?, validation::object_id(&id)?).await
 }
 async fn category_list(
     State(state): State<AppState>,
@@ -173,9 +267,11 @@ async fn upload_cleanup(
 ) -> Result<ApiResponse<cleanup::CleanupView>, AppError> {
     actor.require("files.write")?;
     request::json::<Empty>(body, &state).await?;
-    Ok(ApiResponse::success(
-        cleanup::run(&state, Actor::new(&actor)?.id, validation::object_id(&id)?).await?,
-    ))
+    let owner = Actor::new(&actor)?.id;
+    let id = validation::object_id(&id)?;
+    let result = cleanup::run(&state, owner, id).await?;
+    jobs::recheck(&state, owner, id).await?;
+    Ok(ApiResponse::success(result))
 }
 async fn chunk_put(
     State(state): State<AppState>,

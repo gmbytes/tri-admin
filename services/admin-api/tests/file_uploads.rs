@@ -900,7 +900,7 @@ async fn cancelled_writers_remain_pending_instead_of_being_declared_cleaned() {
     let upload = create(&app, token, input("pending.bin", 4)).await;
     let id = ObjectId::parse_str(upload["id"].as_str().unwrap()).unwrap();
     let profile = ObjectId::parse_str(upload["storageProfileId"].as_str().unwrap()).unwrap();
-    app.database.collection::<Document>("file_attempts").insert_one(doc!{"uploadId":id,"blobId":ObjectId::new(),"storageProfileId":profile,"state":"writing","leaseUntil":mongodb::bson::DateTime::from_millis(mongodb::bson::DateTime::now().timestamp_millis()+300000),"createdAt":mongodb::bson::DateTime::now()}).await.unwrap();
+    app.database.collection::<Document>("file_attempts").insert_one(doc!{"uploadId":id,"blobId":ObjectId::new(),"storageProfileId":profile,"kind":"chunk","state":"writing","leaseUntil":mongodb::bson::DateTime::from_millis(mongodb::bson::DateTime::now().timestamp_millis()+300000),"createdAt":mongodb::bson::DateTime::now()}).await.unwrap();
     app.database
         .collection::<Document>("file_uploads")
         .update_one(doc! {"_id":id}, doc! {"$set":{"attemptCount":1i64}})
@@ -1284,7 +1284,7 @@ async fn cleanup_is_bounded_to_one_hundred_owned_candidates_and_replays_converge
     let id = ObjectId::parse_str(upload["id"].as_str().unwrap()).unwrap();
     let profile = ObjectId::parse_str(upload["storageProfileId"].as_str().unwrap()).unwrap();
     let now = mongodb::bson::DateTime::now();
-    app.database.collection::<Document>("file_attempts").insert_many((0..101).map(|_|doc!{"uploadId":id,"storageProfileId":profile,"blobId":ObjectId::new(),"state":"orphan","createdAt":now}).collect::<Vec<_>>()).await.unwrap();
+    app.database.collection::<Document>("file_attempts").insert_many((0..101).map(|_|doc!{"uploadId":id,"storageProfileId":profile,"blobId":ObjectId::new(),"kind":"chunk","state":"orphan","createdAt":now}).collect::<Vec<_>>()).await.unwrap();
     app.database
         .collection::<Document>("file_uploads")
         .update_one(doc! {"_id":id}, doc! {"$set":{"attemptCount":101i64}})

@@ -8,6 +8,9 @@ pub struct AppState {
     pub database: Option<Database>,
     pub(crate) connection_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) file_transfer_slots: Arc<tokio::sync::Semaphore>,
+    pub(crate) file_worker_slots: Arc<tokio::sync::Semaphore>,
+    pub(crate) file_maintenance_slot: Arc<tokio::sync::Semaphore>,
+    pub(crate) file_worker_shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl AppState {
@@ -18,6 +21,9 @@ impl AppState {
             database,
             connection_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             file_transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            file_worker_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            file_maintenance_slot: Arc::new(tokio::sync::Semaphore::new(1)),
+            file_worker_shutdown: tokio_util::sync::CancellationToken::new(),
         }
     }
 

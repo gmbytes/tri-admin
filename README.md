@@ -34,3 +34,5 @@ cargo run -p admin-api -- serve
 - [文件管理与数据工具设计](docs/design-files.md)
 
 Windows 构建/测试前先退出正在运行的开发 API，释放 exe 文件锁。集成连接检查可通过部署环境的 `TRI_OUTBOUND_CA_FILE` 指定私有 CA 证书文件，修改部署信任后重启服务；没有跳过证书校验选项。
+
+文件上传 API 采用持久接收与异步发布；完成请求返回 202 后应查询上传状态，只有 `completed` 才表示文件已经发布。服务启动时会继续处理发布队列、到期发布租约和已知清理任务。文件页面、数据工具与原生文件流程仍在实现，接口契约见 [API 规范](docs/api-design.md)。

@@ -326,6 +326,9 @@ impl S3Store {
             }
             return Err(StorageError::Conflict);
         }
+        if response.status().is_server_error() || response.status().is_redirection() {
+            return Err(StorageError::OutcomeUnknown);
+        }
         Err(status(&response))
     }
     pub async fn read(

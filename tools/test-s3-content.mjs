@@ -117,6 +117,27 @@ try {
     },
   )
   exitCode = result.status ?? 1
+  if (exitCode === 0) {
+    const publication = spawnSync(
+      'cargo',
+      [
+        'test',
+        '-p',
+        'admin-api',
+        '--test',
+        'file_publication',
+        'real_s3_published_files',
+        '--',
+        '--ignored',
+      ],
+      {
+        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
+        stdio: 'inherit',
+        windowsHide: true,
+      },
+    )
+    exitCode = publication.status ?? 1
+  }
 } finally {
   if (id) {
     const inspected = docker(['inspect', id])

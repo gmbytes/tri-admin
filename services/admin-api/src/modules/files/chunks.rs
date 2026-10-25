@@ -163,7 +163,12 @@ pub async fn put(
                     if chunk.size != size || chunk.sha256 != *hash {
                         return Err(fail(Failure::Conflict("此分片已接收不同内容")));
                     }
-                    return Ok(Prepared::Replay(Receipt::new(id, chunk)));
+                    if chunk.state == "accepted" {
+                        return Ok(Prepared::Replay(Receipt::new(id, chunk)));
+                    }
+                    if chunk.state != "invalid" {
+                        return Err(fail(Failure::NotReady));
+                    }
                 }
                 if row.attempt_count >= 4096
                     || database
@@ -271,7 +276,7 @@ pub async fn put(
                     if existing.size != size || existing.sha256 != *hash {
                         return Err(fail(Failure::Conflict("此分片已接收不同内容")));
                     }
-                    if existing.blob_id != blob_id {
+                    if existing.state == "accepted" && existing.blob_id != blob_id {
                         database
                             .collection::<Document>("file_attempts")
                             .update_one(
@@ -287,7 +292,12 @@ pub async fn put(
                             .await?;
                         cleanup::schedule(database, &row, session).await?;
                     }
-                    return Ok(Receipt::new(id, existing));
+                    if existing.state == "accepted" {
+                        return Ok(Receipt::new(id, existing));
+                    }
+                    if existing.state != "invalid" {
+                        return Err(fail(Failure::NotReady));
+                    }
                 }
                 let attempt = database
                     .collection::<Document>("file_attempts")
@@ -302,13 +312,10 @@ pub async fn put(
                 let now = DateTime::now();
                 database
                     .collection::<Document>("file_chunks")
-                    .insert_one(doc! {
-                    "uploadId":id,
-                    "index":index,
-                    "size":size,
-                    "sha256":&*hash,
-                    "blobId":blob_id,
-                    "createdAt":now})
+                    .update_one(doc! {"uploadId":id,"index":index}, doc! {
+                        "$set":{"size":size,"sha256":&*hash,"blobId":blob_id,"state":"accepted"},
+                        "$setOnInsert":{"createdAt":now}
+                    }).upsert(true)
                     .session(&mut *session)
                     .await?;
                 database

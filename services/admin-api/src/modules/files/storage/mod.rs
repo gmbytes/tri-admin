@@ -193,26 +193,40 @@ impl BlobStore {
 }
 fn verified_stream(raw: BlobStream, spec: BlobSpec, cancel: CancellationToken) -> BlobStream {
     Box::pin(futures_util::stream::try_unfold(
-        (raw, spec, cancel, Sha256::new(), 0u64),
-        |(mut raw, spec, cancel, mut hash, count)| async move {
-            let next = tokio::select! {biased; _=cancel.cancelled()=>return Err(StorageError::Cancelled),value=raw.next()=>value};
-            match next {
-                Some(value) => {
-                    let data = value?;
-                    let count = count
-                        .checked_add(data.len() as u64)
-                        .ok_or(StorageError::IntegrityMismatch)?;
-                    if count > spec.size {
-                        return Err(StorageError::IntegrityMismatch);
+        (raw, spec, cancel, Sha256::new(), 0u64, None::<Bytes>, false),
+        |(mut raw, spec, cancel, mut hash, mut count, mut pending, done)| async move {
+            if done {
+                return Ok(None);
+            }
+            loop {
+                let next = tokio::select! {biased; _=cancel.cancelled()=>return Err(StorageError::Cancelled),value=raw.next()=>value};
+                match next {
+                    Some(value) => {
+                        let data = value?;
+                        count = count
+                            .checked_add(data.len() as u64)
+                            .ok_or(StorageError::IntegrityMismatch)?;
+                        if count > spec.size {
+                            return Err(StorageError::IntegrityMismatch);
+                        }
+                        hash.update(&data);
+                        if let Some(previous) = pending.replace(data) {
+                            return Ok(Some((
+                                previous,
+                                (raw, spec, cancel, hash, count, pending, false),
+                            )));
+                        }
                     }
-                    hash.update(&data);
-                    Ok(Some((data, (raw, spec, cancel, hash, count))))
-                }
-                None => {
-                    if count != spec.size || format!("{:x}", hash.finalize()) != spec.sha256 {
-                        return Err(StorageError::IntegrityMismatch);
+                    None => {
+                        if count != spec.size
+                            || format!("{:x}", hash.clone().finalize()) != spec.sha256
+                        {
+                            return Err(StorageError::IntegrityMismatch);
+                        }
+                        return Ok(pending
+                            .take()
+                            .map(|last| (last, (raw, spec, cancel, hash, count, None, true))));
                     }
-                    Ok(None)
                 }
             }
         },

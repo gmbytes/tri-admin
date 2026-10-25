@@ -42,9 +42,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("Isolated E2E service ready on {}", listener.local_addr()?);
     let database = state.require_database()?.clone();
-    axum::serve(listener,build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async{
+    let workers = admin_api::modules::files::jobs::start_service(state.clone());
+    let shutdown_state = state.clone();
+    let worker_state = state.clone();
+    let result=axum::serve(listener,build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async move{
         tokio::select!{_=tokio::signal::ctrl_c()=>{},_=tokio::task::spawn_blocking(||{let mut command=String::new();let _=std::io::stdin().read_line(&mut command);})=>{}}
-    }).await?;
+        admin_api::modules::files::jobs::stop_service(&shutdown_state);
+    }).await;
+    admin_api::modules::files::jobs::stop_service(&worker_state);
+    let _ = workers.await;
+    result?;
     database.drop().await?;
     Ok(())
 }

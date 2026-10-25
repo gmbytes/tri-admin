@@ -46,7 +46,7 @@ pub async fn view(database: &Database, row: Upload) -> Result<UploadView, AppErr
     let indices = database
         .collection::<Chunk>("file_chunks")
         .find(doc! {
-        "uploadId":row.id})
+        "uploadId":row.id,"state":"accepted"})
         .sort(doc! {
         "index":1})
         .limit(1281)
@@ -244,6 +244,10 @@ pub async fn create(
                     "receivedBytes":0i64,
                     "attemptCount":0i64,
                     "cleanupPending":false,
+                    "publishAttemptId":null,
+                    "fileId":null,
+                    "lastError":null,
+                    "completedAt":null,
                     "version":1i64,
                     "createdAt":now,
                     "updatedAt":now})
@@ -285,7 +289,20 @@ pub async fn cancel(state: &AppState, actor: Actor, id: ObjectId) -> Result<Uplo
                 if row.state == "cancelled" {
                     return Ok(());
                 }
-                if row.state != "receiving" {
+                if row.state=="queued"&&let Some(attempt)=row.publish_attempt_id {
+                    let stopped=database.collection::<Document>("file_attempts").update_one(doc!{"_id":attempt,"state":"queued"},doc!{"$set":{"state":"cleaned","updatedAt":DateTime::now()}}).session(&mut *session).await?;
+                    if stopped.matched_count==1{
+                        database.collection::<Document>("file_uploads").update_one(doc!{"_id":id},doc!{"$set":{"state":"cancelled","updatedAt":DateTime::now()},"$inc":{"version":1i64}}).session(&mut *session).await?;
+                        cleanup::schedule(database,&row,session).await?;shared::audit(database,actor,"uploads.cancel",id,session).await?;return Ok(())
+                    }
+                }
+                if matches!(row.state.as_str(),"queued"|"verifying"|"publishing"|"reconciling"|"unknown") {
+                    database.collection::<Document>("file_uploads").update_one(doc!{"_id":id},doc!{"$set":{"state":"cancelRequested","cleanupPending":true,"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).session(&mut *session).await?;
+                    if let Some(attempt)=row.publish_attempt_id{database.collection::<Document>("file_attempts").update_one(doc!{"_id":attempt,"state":"unknown"},doc!{"$set":{"nextRunAt":DateTime::now()}}).session(&mut *session).await?;}
+                    shared::audit(database,actor,"uploads.cancel",id,session).await?;return Ok(())
+                }
+                if row.state=="cancelRequested"{return Ok(())}
+                if !matches!(row.state.as_str(),"receiving"|"failed") {
                     return Err(fail(Failure::Conflict(
                         "上传已结束或正在发布，请查询当前状态",
                     )));
@@ -317,5 +334,6 @@ pub async fn cancel(state: &AppState, actor: Actor, id: ObjectId) -> Result<Uplo
     )
     .await?;
     let _ = cleanup::run(state, owner, id).await;
+    let _ = super::jobs::recheck(state, owner, id).await;
     get(database, owner, id).await
 }

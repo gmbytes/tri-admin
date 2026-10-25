@@ -64,6 +64,10 @@ pub struct Upload {
     pub received_bytes: i64,
     pub attempt_count: i64,
     pub cleanup_pending: bool,
+    pub publish_attempt_id: Option<ObjectId>,
+    pub file_id: Option<ObjectId>,
+    pub last_error: Option<String>,
+    pub completed_at: Option<DateTime>,
     pub version: i64,
     pub created_at: DateTime,
     pub updated_at: DateTime,
@@ -88,6 +92,9 @@ pub struct UploadView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub received_indices: Option<Vec<i64>>,
     pub cleanup_pending: bool,
+    pub file_id: Option<String>,
+    pub last_error: Option<String>,
+    pub completed_at: Option<String>,
     pub version: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -111,6 +118,9 @@ impl Upload {
             received_bytes: self.received_bytes,
             received_indices,
             cleanup_pending: self.cleanup_pending,
+            file_id: self.file_id.map(ObjectId::to_hex),
+            last_error: self.last_error,
+            completed_at: self.completed_at.map(time).transpose()?,
             version: self.version,
             created_at: time(self.created_at)?,
             updated_at: time(self.updated_at)?,
@@ -124,6 +134,7 @@ pub struct Chunk {
     pub size: i64,
     pub sha256: String,
     pub blob_id: ObjectId,
+    pub state: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,4 +142,58 @@ pub struct Attempt {
     #[serde(rename = "_id")]
     pub id: ObjectId,
     pub blob_id: ObjectId,
+    pub kind: String,
+    pub storage_profile_id: ObjectId,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileRecord {
+    #[serde(rename = "_id")]
+    pub id: ObjectId,
+    pub upload_id: ObjectId,
+    pub owner_id: ObjectId,
+    pub name: String,
+    pub media_type: String,
+    pub size: i64,
+    pub sha256: String,
+    pub category_id: Option<ObjectId>,
+    pub storage_profile_id: ObjectId,
+    pub blob_id: ObjectId,
+    pub publish_attempt_id: ObjectId,
+    pub version: i64,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileView {
+    pub id: String,
+    pub owner_id: String,
+    pub name: String,
+    pub media_type: String,
+    pub size: i64,
+    pub sha256: String,
+    pub category_id: Option<String>,
+    pub storage_profile_id: String,
+    pub version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl FileRecord {
+    pub fn view(self) -> Result<FileView, AppError> {
+        Ok(FileView {
+            id: self.id.to_hex(),
+            owner_id: self.owner_id.to_hex(),
+            name: self.name,
+            media_type: self.media_type,
+            size: self.size,
+            sha256: self.sha256,
+            category_id: self.category_id.map(ObjectId::to_hex),
+            storage_profile_id: self.storage_profile_id.to_hex(),
+            version: self.version,
+            created_at: time(self.created_at)?,
+            updated_at: time(self.updated_at)?,
+        })
+    }
 }

@@ -43,6 +43,64 @@ pub fn request_id() -> Option<String> {
     CURRENT.try_with(|context| context.id.clone()).ok()
 }
 
+#[derive(Clone)]
+pub(crate) struct StreamErrorReporter {
+    database: Database,
+    context: Context,
+    start: Instant,
+    reported: Arc<std::sync::atomic::AtomicBool>,
+}
+pub(crate) fn stream_reporter(database: &Database) -> Option<StreamErrorReporter> {
+    CURRENT
+        .try_with(|context| StreamErrorReporter {
+            database: database.clone(),
+            context: context.clone(),
+            start: Instant::now(),
+            reported: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        })
+        .ok()
+}
+impl StreamErrorReporter {
+    pub(crate) fn record(&self, code: &'static str) {
+        if self
+            .reported
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+        let context = &self.context;
+        let actor = context
+            .details
+            .lock()
+            .ok()
+            .and_then(|details| details.actor);
+        let document = doc! {
+            "kind":"error","action":context.action.unwrap_or("request.unknown"),"outcome":"failure",
+            "requestId":&context.id,"method":context.method,"route":context.route,"ip":context.ip.clone(),"actorId":actor,
+            "status":200,"errorCode":code,"message":"文件内容传输失败，响应头已发送","phase":"responseBody",
+            "durationMs":i64::try_from(self.start.elapsed().as_millis()).unwrap_or(i64::MAX),"createdAt":DateTime::now()
+        };
+        let database = self.database.clone();
+        tokio::spawn(async move {
+            let _ = tokio::time::timeout(Duration::from_millis(500), async {
+                if database
+                    .collection::<Document>("_schema_migrations")
+                    .find_one(doc! {"_id":"logs","version":crate::storage::logs_schema::VERSION})
+                    .await?
+                    .is_some()
+                {
+                    database
+                        .collection::<Document>("request_errors")
+                        .insert_one(document)
+                        .await?;
+                }
+                Ok::<_, mongodb::error::Error>(())
+            })
+            .await;
+        });
+    }
+}
+
 pub fn actor(id: ObjectId) {
     let _ = CURRENT.try_with(|context| {
         if let Ok(mut details) = context.details.lock() {
