@@ -327,6 +327,10 @@ p {
   width: 33px;
   height: 33px;
 }
+.sidebar .brand > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .side-caption {
   font-size: 10px;
   letter-spacing: 2px;

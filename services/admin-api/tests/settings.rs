@@ -3,6 +3,73 @@ use axum::http::StatusCode;
 use mongodb::bson::{Document, doc, oid::ObjectId};
 use serde_json::{Value, json};
 use support::{PASSWORD, TestApp};
+
+#[tokio::test]
+async fn settings_menu_requires_v3_and_preserves_customization_and_deletion() {
+    let app = TestApp::new().await;
+    let menus = app.database.collection::<Document>("menus");
+    menus.delete_many(doc! {"path":"/settings"}).await.unwrap();
+    app.database
+        .collection::<Document>("_schema_migrations")
+        .update_one(doc! {"_id":"settings"}, doc! {"$set":{"version":2}})
+        .await
+        .unwrap();
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    let row = menus
+        .find_one(doc! {"path":"/settings","deletedAt":null})
+        .await
+        .unwrap()
+        .unwrap();
+    let id = row.get_object_id("_id").unwrap();
+    assert_eq!(row.get_str("viewKey").unwrap(), "settings");
+    assert_eq!(row.get_str("permission").unwrap(), "settings.read");
+    menus
+        .update_one(doc! {"_id":id}, doc! {"$set":{"label":"自定义配置中心"}})
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .find_one(doc! {"_id":id})
+            .await
+            .unwrap()
+            .unwrap()
+            .get_str("label")
+            .unwrap(),
+        "自定义配置中心"
+    );
+    menus
+        .update_one(
+            doc! {"_id":id},
+            doc! {"$set":{"deletedAt":mongodb::bson::DateTime::now()}},
+        )
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .count_documents(doc! {"path":"/settings","deletedAt":null})
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::OK
+    );
+    app.cleanup().await;
+}
+
 fn http(code: &str) -> Value {
     json!({"name":"External","code":code,"enabled":true,"configuration":{"kind":"http","baseUrl":"https://api.example.test/v1"},"secret":{"kind":"http","headerName":"Authorization","value":"Bearer PRIVATE-CONFIG-TOKEN"}})
 }

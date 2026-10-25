@@ -27,6 +27,8 @@ cargo run -p admin-api -- serve
 
 - [配置中心与凭据规则](docs/design-settings.md)
 
+以具有 `settings.read` 权限的账号打开“配置中心”，可查看服务设置、集成配置和启动状态；`settings.write` 允许修改和检查连接。新增集成默认停用，填写完成后显式启用；凭据只能替换或清除，不能读回。升级到当前版本后先运行 `cargo run -p admin-api -- migrate`，再启动服务并重新登录以读取新增菜单。
+
 验证命令：`cargo test --workspace`、`npm test`、`npm run test:e2e`。S3 独立验收使用 `npm run test:s3`：自动创建固定镜像的隔离 Garage 服务、随机凭据和存储桶，验证真实签名后清理容器与临时文件。默认 Rust 测试中该外部夹具门禁会标记为 ignored，需另行运行该命令。
 
 Windows 构建/测试前先退出正在运行的开发 API，释放 exe 文件锁。集成连接检查可通过部署环境的 `TRI_OUTBOUND_CA_FILE` 指定私有 CA 证书文件，修改部署信任后重启服务；没有跳过证书校验选项。

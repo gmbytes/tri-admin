@@ -8,6 +8,7 @@ import { platform, type Settings } from '../platform'
 export const useSession = defineStore('session', () => {
   const user = ref<UserSummary | null>(null),
     navigation = ref<MenuRecord[]>([])
+  const application = ref({ displayName: 'TRI ADMIN', version: '' })
   const settings = ref<Settings>({ apiBaseUrl: '', rememberSession: false })
   const initializing = ref(true),
     busy = ref(false),
@@ -21,7 +22,10 @@ export const useSession = defineStore('session', () => {
       vault: platform.vault,
       onChange: (value) => {
         user.value = value
-        if (!value) navigation.value = []
+        if (!value) {
+          navigation.value = []
+          application.value = { displayName: 'TRI ADMIN', version: '' }
+        }
       },
     })
   }
@@ -54,8 +58,26 @@ export const useSession = defineStore('session', () => {
     }
   }
   async function loadNavigation() {
-    if (client && user.value)
-      navigation.value = (await client.request<MenuRecord[]>('/navigation')).data
+    const source = client,
+      actor = user.value?.id
+    if (source && actor) {
+      const [menus, info] = await Promise.all([
+        source.request<MenuRecord[]>('/navigation'),
+        source.request<{ displayName: string; version: string }>('/application'),
+      ])
+      if (client === source && user.value?.id === actor) {
+        navigation.value = menus.data
+        application.value = info.data
+      }
+    }
+  }
+  async function loadApplication() {
+    const source = client,
+      actor = user.value?.id
+    if (source && actor) {
+      const result = await source.request<{ displayName: string; version: string }>('/application')
+      if (client === source && user.value?.id === actor) application.value = result.data
+    }
   }
   async function syncProfile() {
     if (client && user.value) {
@@ -143,6 +165,7 @@ export const useSession = defineStore('session', () => {
   return {
     user,
     navigation,
+    application,
     settings,
     initializing,
     busy,
@@ -160,6 +183,7 @@ export const useSession = defineStore('session', () => {
     downloadConfiguration,
     syncProfile,
     loadNavigation,
+    loadApplication,
     passwordChanged,
     native: platform.native,
   }

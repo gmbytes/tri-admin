@@ -21,6 +21,7 @@ declare module 'vue' {
     ElDescriptions: typeof import('element-plus/es')['ElDescriptions']
     ElDescriptionsItem: typeof import('element-plus/es')['ElDescriptionsItem']
     ElDialog: typeof import('element-plus/es')['ElDialog']
+    ElDivider: typeof import('element-plus/es')['ElDivider']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
     ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
@@ -44,9 +45,15 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
+    IntegrationBindingSelect: typeof import('./components/IntegrationBindingSelect.vue')['default']
+    IntegrationEditor: typeof import('./components/IntegrationEditor.vue')['default']
+    IntegrationProfilesPanel: typeof import('./components/IntegrationProfilesPanel.vue')['default']
+    IntegrationSummary: typeof import('./components/IntegrationSummary.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    RuntimeSettingsPanel: typeof import('./components/RuntimeSettingsPanel.vue')['default']
     ServerDialog: typeof import('./components/ServerDialog.vue')['default']
+    ServiceSettingsPanel: typeof import('./components/ServiceSettingsPanel.vue')['default']
     SideNavigation: typeof import('./components/SideNavigation.vue')['default']
   }
   export interface GlobalDirectives {

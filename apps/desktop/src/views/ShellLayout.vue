@@ -42,7 +42,7 @@ async function command(value: string) {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <img src="/brand.svg" alt="" /><span>TRI<span class="brand-light">ADMIN</span></span>
+        <img src="/brand.svg" alt="" /><span>{{ session.application.displayName }}</span>
       </div>
       <div class="side-caption">工作空间</div>
       <nav><SideNavigation :nodes="session.navigation" /></nav>
@@ -50,7 +50,7 @@ async function command(value: string) {
         <button @click="serverOpen = true">
           <el-icon><Connection /></el-icon><span>{{ host }}</span
           ><i :class="session.connection" /></button
-        ><small>TRI ADMIN · 0.1.0</small>
+        ><small>{{ session.application.displayName }} · {{ session.application.version }}</small>
       </div>
     </aside>
     <div class="workspace">
@@ -98,7 +98,8 @@ async function command(value: string) {
       </header>
       <main class="page-content"><RouterView /></main>
       <footer class="workspace-footer">
-        <span>Tri Admin Workspace</span><span>让每一次操作都有迹可循</span>
+        <span>{{ session.application.displayName }}</span
+        ><span>让每一次操作都有迹可循</span>
       </footer>
     </div>
     <ServerDialog v-model="serverOpen" />

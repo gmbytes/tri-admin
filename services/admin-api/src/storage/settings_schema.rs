@@ -4,15 +4,17 @@ use crate::{
 };
 use mongodb::{
     Database, IndexModel,
-    bson::{DateTime, Document, doc},
+    bson::{DateTime, Document, doc, oid::ObjectId},
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 2;
+use sha2::{Digest, Sha256};
+pub const VERSION: i32 = 3;
 pub async fn migrate_settings(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
-    if let Some(row) = metadata.find_one(doc! {"_id":"settings"}).await?
-        && !matches!(row.get_i32("version").ok(), Some(1 | VERSION))
+    let previous = metadata.find_one(doc! {"_id":"settings"}).await?;
+    if let Some(row) = &previous
+        && !matches!(row.get_i32("version").ok(), Some(1 | 2 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -78,6 +80,24 @@ pub async fn migrate_settings(database: &Database) -> Result<(), AppError> {
             .collection::<Document>("configuration_checks")
             .create_index(IndexModel::builder().keys(keys).build())
             .await?;
+    }
+    if previous
+        .as_ref()
+        .and_then(|row| row.get_i32("version").ok())
+        != Some(VERSION)
+    {
+        let path = "/settings";
+        let digest = Sha256::digest(format!("tri-admin:menu:{path}"));
+        let mut bytes = [0u8; 12];
+        bytes.copy_from_slice(&digest[..12]);
+        if database
+            .collection::<Document>("menus")
+            .find_one(doc! {"path":path,"deletedAt":null})
+            .await?
+            .is_none()
+        {
+            database.collection::<Document>("menus").update_one(doc! {"_id":ObjectId::from_bytes(bytes)},doc! {"$setOnInsert":{"label":"配置中心","path":path,"viewKey":"settings","permission":"settings.read","icon":null,"parentId":null,"sort":90,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).await?;
+        }
     }
     metadata
         .update_one(
