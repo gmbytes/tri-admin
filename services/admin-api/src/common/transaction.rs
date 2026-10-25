@@ -14,6 +14,7 @@ pub enum Failure {
     Validation(&'static str),
     PayloadTooLarge,
     SecretStoreUnavailable,
+    RateLimited,
 }
 pub fn fail(reason: Failure) -> Error {
     Error::custom(reason)
@@ -29,6 +30,7 @@ pub fn map_error(error: Error) -> AppError {
             Failure::Validation(message) => AppError::Validation((*message).into()),
             Failure::PayloadTooLarge => AppError::PayloadTooLarge,
             Failure::SecretStoreUnavailable => AppError::SecretStoreUnavailable,
+            Failure::RateLimited => AppError::RateLimited,
         };
     }
     if matches!(&*error.kind,ErrorKind::Write(WriteFailure::WriteError(write)) if write.code==11000)

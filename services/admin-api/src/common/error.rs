@@ -68,6 +68,8 @@ pub enum AppError {
     NotReady,
     #[error("配置密钥库暂不可用")]
     SecretStoreUnavailable,
+    #[error("文件存储暂不可用，请查询上传状态后重试")]
+    FileStorageUnavailable,
     #[error("{0}")]
     Validation(String),
     #[error("{0}")]
@@ -99,6 +101,9 @@ impl IntoResponse for AppError {
             Self::NotReady => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_NOT_READY"),
             Self::SecretStoreUnavailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, "SECRET_STORE_UNAVAILABLE")
+            }
+            Self::FileStorageUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "FILE_STORAGE_UNAVAILABLE")
             }
             Self::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),

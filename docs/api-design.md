@@ -48,3 +48,9 @@
 - 配置写入、版本及审计同事务；默认绑定保护与明文/损坏密钥拒绝规则见 [配置中心设计](design-settings.md)。SECRET_STORE_UNAVAILABLE 为 HTTP 503；配置注册不代表实际连接或存储驱动已验收。
 - `POST /settings/profiles/{id}/probe`：settings.write，`{version}`，使用保存的配置/凭据执行限定范围检查。有效请求的目标检查失败仍返回 200 的结果（success=false/errorCode），配置前置错误继续用 403/404/409/422/503；并发容量不足 429。结果含 profileVersion、scope、upstreamStatus、durationMs、时间、isCurrent，不返回响应正文/头或内部异常。
 - `GET /settings/profiles/{id}/checks`：settings.read，按 createdAt/ID 稳定分页。profile 的 lastCheck 同样为安全摘要；配置变化或服务重启后旧检查 isCurrent=false。scope 明确区分 HTTP HEAD、S3 bucket HEAD、MongoDB ping、SMTP 会话、本地临时文件写读删除，不能作为持续监控或整驱动验收。
+- `/file-categories` GET/POST；`/{id}` GET/PATCH/DELETE，读取需 files.read，写入需 files.write。name/code/description，code 创建后固定；按 code 字面前缀搜索，支持 createdAt/code/name 排序分页，PATCH/DELETE 带 version。被活动文件或未结束上传引用时拒绝删除。
+- `/uploads` GET/POST；`/{id}` GET。上传会话仅对创建者可见，即使另一账号具有 all 范围也不能读取或取消其他人的未发布内容。列表需 files.read，创建需 files.write；创建为 `{requestId,name,mediaType,size,sha256,categoryId?,storageProfileId?}`，UUID 与操作者绑定，同参重放、异参 409，省略存储选择时捕获当时默认配置，后续重放不改绑。
+- 上传采用固定 4 MiB 分片，单对象规范上限 5 GiB、最多 1280 片，每账号最多 32 个活动会话。`PUT /uploads/{id}/chunks/{index}` 需 files.write、application/octet-stream 与 X-Chunk-Sha256，长度必须符合索引位置；同片同内容重放不重复计数，异内容 409，体积 413、媒体类型 415、字段或摘要 422，并发接收容量不足 429。
+- GET 上传详情返回 receivedIndices、receivedCount、receivedBytes、state、cleanupPending 等白名单字段；列表不返回完整分片清单，所有响应均不暴露临时路径或内容存储键。分片候选先持久登记，内容 I/O 在事务外，接受清单、计数和成功审计同事务。
+- `POST /uploads/{id}/cancel` 接受 `{}`，需 files.write，幂等取消并触发有界清理；`POST /uploads/{id}/cleanup` 重试清理，返回 `{uploadId,processed,pending,complete}`，每次最多处理 100 个确定候选。正在写入的尝试保留待清理状态，不能把取消响应当作内容已完全移除。FILE_STORAGE_UNAVAILABLE 为 503，结果不明时先查上传状态。
+- 当前上传入口只接收和取消分片；完成发布、文件资源数据范围/下载、过期尝试恢复与维护仍继续实现，不能据此把完整文件功能算作交付。

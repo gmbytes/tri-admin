@@ -105,6 +105,14 @@ test('API catalog shows actual methods paths permissions and local filters', asy
   await page.getByPlaceholder('搜索操作标识、路径或权限').fill('health.')
   await expect(page.locator('.api-catalog-table')).toContainText('health.live')
   await expect(page.locator('.api-catalog-table')).toContainText('公开')
+  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('uploads.chunk.put')
+  await page.locator('.method-select .el-select__wrapper').click()
+  controls = await method.getAttribute('aria-controls')
+  await page.locator(`[id="${controls}"]`).getByRole('option', { name: 'PUT', exact: true }).click()
+  await expect(page.locator('.api-catalog-table')).toContainText(
+    '/api/v1/uploads/{id}/chunks/{index}',
+  )
+  await expect(page.locator('.api-catalog-table')).toContainText('files.write')
   await page.getByRole('tab', { name: '权限操作', exact: true }).click()
   await expect(page.getByPlaceholder('搜索权限名或代码')).toBeVisible()
 })

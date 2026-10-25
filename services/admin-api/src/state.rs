@@ -7,6 +7,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub database: Option<Database>,
     pub(crate) connection_slots: Arc<tokio::sync::Semaphore>,
+    pub(crate) file_transfer_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl AppState {
@@ -16,6 +17,7 @@ impl AppState {
             config: Arc::new(config),
             database,
             connection_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            file_transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         }
     }
 

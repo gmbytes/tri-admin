@@ -30,6 +30,7 @@ pub struct ApiModule {
 #[macro_export]
 macro_rules! api_routes {
     (@method get)=>{"GET"};
+    (@method put)=>{"PUT"};
     (@method post)=>{"POST"};
     (@method patch)=>{"PATCH"};
     (@method delete)=>{"DELETE"};

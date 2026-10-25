@@ -25,6 +25,7 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,
             axum::http::HeaderName::from_static("x-request-id"),
+            axum::http::HeaderName::from_static("x-chunk-sha256"),
         ])
         .expose_headers([
             axum::http::HeaderName::from_static("x-request-id"),
