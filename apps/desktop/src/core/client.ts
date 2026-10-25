@@ -1,5 +1,6 @@
 import { normalizeEndpoint } from './endpoint'
 import type { Envelope, TokenResponse, UserSummary } from './types'
+import { readConfigurationDownload, type ConfigurationDownload } from './configuration'
 
 export interface SessionVault {
   load(endpoint: string): Promise<string | null>
@@ -147,6 +148,7 @@ export class ApiClient {
     path: string,
     options: RequestOptions = {},
     access?: string | null,
+    decode?: (response: Response) => Promise<Envelope<T>>,
   ): Promise<Envelope<T>> {
     if (
       !path.startsWith('/') ||
@@ -170,6 +172,7 @@ export class ApiClient {
     } catch {
       throw new ApiError('NETWORK_ERROR', '无法连接服务器，请检查地址和网络')
     }
+    if (response.ok && decode) return decode(response)
     if (response.status === 204) return { data: undefined as T }
     let value: unknown
     try {
@@ -255,24 +258,46 @@ export class ApiClient {
     return task.promise
   }
 
-  async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
+  private async authorized<T>(
+    path: string,
+    options: RequestOptions,
+    decode?: (response: Response) => Promise<Envelope<T>>,
+  ): Promise<Envelope<T>> {
     const epoch = this.epoch,
       endpoint = this.base,
       originalAccess = this.access
     if (!originalAccess) throw new ApiError('AUTH_REQUIRED', '请先登录')
     let result: Envelope<T>
     try {
-      result = await this.send<T>(endpoint, path, options, originalAccess)
+      result = await this.send<T>(endpoint, path, options, originalAccess, decode)
     } catch (error) {
       this.check(epoch)
       if (!(error instanceof ApiError) || error.status !== 401 || error.code !== 'UNAUTHENTICATED')
         throw error
       if (this.access === originalAccess) await this.refreshOnce(epoch)
       this.check(epoch)
-      result = await this.send<T>(endpoint, path, options, this.access)
+      result = await this.send<T>(endpoint, path, options, this.access, decode)
     }
     this.check(epoch)
     return result
+  }
+
+  async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
+    return this.authorized<T>(path, options)
+  }
+
+  async downloadConfiguration(path: string): Promise<ConfigurationDownload> {
+    const response = await this.authorized<ConfigurationDownload>(path, {}, async (response) => {
+      try {
+        return { data: await readConfigurationDownload(response) }
+      } catch (error) {
+        throw new ApiError(
+          'INVALID_DOWNLOAD',
+          error instanceof Error ? error.message : '配置包下载失败',
+        )
+      }
+    })
+    return response.data
   }
 
   async clearSession(): Promise<void> {

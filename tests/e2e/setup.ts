@@ -75,10 +75,22 @@ export default async function setup() {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     if (!ready) throw new Error('UI 测试服务未就绪，日志：' + directory)
+    const login = await fetch(api + '/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: await readFile(passwordFile, 'utf8') }),
+    })
+    if (!login.ok) throw new Error('UI 测试管理员初始化登录失败')
+    const auth = (await login.json()).data as { accessToken: string; user: { roleIds: string[] } }
+    if (!auth.accessToken || !auth.user.roleIds[0]) throw new Error('UI 测试管理员身份无效')
+    process.env.TRI_E2E_PROVISIONING_TOKEN = auth.accessToken
+    process.env.TRI_E2E_OWNER_ROLE = auth.user.roleIds[0]
     process.env.TRI_E2E_API = api
     process.env.TRI_E2E_PASSWORD_FILE = passwordFile
     return async () => {
       await stop()
+      delete process.env.TRI_E2E_PROVISIONING_TOKEN
+      delete process.env.TRI_E2E_OWNER_ROLE
       const target = resolve(directory)
       if (!target.startsWith(root + sep)) throw new Error('Refusing out-of-scope test cleanup')
       await rm(target, { recursive: true, force: true })

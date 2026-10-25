@@ -136,6 +136,10 @@ export const useSession = defineStore('session', () => {
     await client?.clearSession()
     settings.value.rememberSession = false
   }
+  async function downloadConfiguration(path: string) {
+    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    return client.downloadConfiguration(path)
+  }
   return {
     user,
     navigation,
@@ -153,6 +157,7 @@ export const useSession = defineStore('session', () => {
     logout,
     changeServer,
     request,
+    downloadConfiguration,
     syncProfile,
     loadNavigation,
     passwordChanged,

@@ -1,9 +1,30 @@
 import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { test, expect, type Page, type Locator } from '@playwright/test'
 let api = ''
-test.beforeEach(async ({ page }) => {
+let defaultUsername = ''
+test.beforeEach(async ({ page }, testInfo) => {
   api = process.env.TRI_E2E_API ?? ''
   if (!api) throw new Error('E2E service is not provisioned')
+  const token = process.env.TRI_E2E_PROVISIONING_TOKEN,
+    role = process.env.TRI_E2E_OWNER_ROLE
+  if (!token || !role) throw new Error('E2E provisioning identity is not available')
+  defaultUsername =
+    'e2e-' +
+    createHash('sha256')
+      .update(testInfo.testId + ':' + testInfo.retry)
+      .digest('hex')
+      .slice(0, 24)
+  const response = await page.request.post(api + '/users', {
+    headers: { authorization: `Bearer ${token}` },
+    data: {
+      username: defaultUsername,
+      displayName: 'UI 测试管理员',
+      password: await password(),
+      roleIds: [role],
+    },
+  })
+  expect(response.status()).toBe(201)
   await page.addInitScript((endpoint) => localStorage.setItem('tri-admin.server', endpoint), api)
 })
 
@@ -12,7 +33,7 @@ async function password() {
   if (!path) throw new Error('E2E credential is not provisioned')
   return readFile(path, 'utf8')
 }
-async function login(page: Page, username = 'admin', secret?: string) {
+async function login(page: Page, username = defaultUsername, secret?: string) {
   await page.goto('/#/login')
   await page.getByRole('textbox', { name: '账号', exact: true }).fill(username)
   await page.getByLabel('密码', { exact: true }).fill(secret ?? (await password()))
@@ -20,7 +41,9 @@ async function login(page: Page, username = 'admin', secret?: string) {
     (response) => response.url() === api + '/auth/login' && response.request().method() === 'POST',
   )
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  const body = await (await response).json()
+  const reply = await response
+  expect(reply.status()).toBe(200)
+  const body = await reply.json()
   await expect(page.locator('.sidebar')).toBeVisible()
   return body.data as { accessToken: string; refreshToken: string }
 }
@@ -484,4 +507,160 @@ test('removed customer management has no navigation or API entries', async ({ pa
     page.locator('.api-catalog-table').getByRole('row').filter({ hasText: 'customers' }),
   ).toHaveCount(0)
   await expect(page.getByText('0 个接口', { exact: true })).toBeVisible()
+})
+
+test('configuration versions capture download preview conflicts and apply without overwriting stale targets', async ({
+  page,
+}) => {
+  test.setTimeout(60000)
+  const auth = await login(page)
+  const headers = { authorization: `Bearer ${auth.accessToken}` }
+  const suffix = Date.now().toString(36),
+    key = `ui.version.${suffix}`,
+    name = `版本参数-${suffix}`
+  const created = await page.request.post(api + '/parameters', {
+    headers,
+    data: { name, key, valueType: 'boolean', value: true },
+  })
+  expect(created.status()).toBe(201)
+  const parameter = (await created.json()).data
+  await navigate(page, '版本管理')
+  await page.getByRole('button', { name: '捕获配置', exact: true }).click()
+  let dialog = page.getByRole('dialog', { name: '捕获配置', exact: true })
+  await dialog.getByLabel('版本名称', { exact: true }).fill(`UI快照-${suffix}`)
+  await dialog.getByLabel('版本编号', { exact: true }).fill(`ui-capture-${suffix}`)
+  await chooseSelect(page, dialog, '参数', `${name} · ${key}`)
+  await dialog.getByRole('button', { name: '保存快照', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: `ui-capture-${suffix}` })
+  await expect(row).toBeVisible()
+  const downloaded = page.waitForEvent('download')
+  await row.getByRole('button', { name: '下载', exact: true }).click()
+  const download = await downloaded
+  const stream = await download.createReadStream(),
+    chunks: Buffer[] = []
+  if (!stream) throw Error('Missing package download')
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+  const bundle = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  expect(bundle.resources.parameters[0].value).toBe(true)
+  bundle.release.code = `ui-import-${suffix}`
+  bundle.resources.parameters[0].value = false
+  await page.getByRole('button', { name: '导入配置包', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: '导入配置包', exact: true })
+  await dialog.getByLabel('配置包 JSON', { exact: true }).fill(JSON.stringify(bundle))
+  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
+  await expect(dialog.locator('.import-summary')).toContainText('冲突')
+  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
+  await dialog.getByText('合并更新', { exact: true }).click()
+  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeEnabled()
+  const edited = await page.request.patch(`${api}/parameters/${parameter.id}`, {
+    headers,
+    data: { version: 1, value: true },
+  })
+  expect(edited.status()).toBe(200)
+  await dialog.getByRole('button', { name: '确认应用', exact: true }).click()
+  await expect(dialog).toContainText('目标配置已改变')
+  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
+  await dialog.getByRole('button', { name: '确认应用', exact: true }).click()
+  await expect(dialog).toContainText('配置已应用')
+  expect(
+    (await (await page.request.get(`${api}/parameters/${parameter.id}`, { headers })).json()).data
+      .value,
+  ).toBe(false)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: `ui-import-${suffix}` })).toBeVisible()
+})
+
+test('version page enforces package read permissions and displays missing import writes', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(60000)
+  const owner = await login(page),
+    headers = { authorization: `Bearer ${owner.accessToken}` }
+  const suffix = Date.now().toString(36)
+  const parameterResponse = await page.request.post(api + '/parameters', {
+    headers,
+    data: { name: '权限验证参数', key: `ui.access.${suffix}`, valueType: 'boolean', value: false },
+  })
+  expect(parameterResponse.status()).toBe(201)
+  const parameter = (await parameterResponse.json()).data
+  const captureResponse = await page.request.post(api + '/versions', {
+    headers,
+    data: { name: `权限快照-${suffix}`, code: `ui-access-${suffix}`, parameterIds: [parameter.id] },
+  })
+  expect(captureResponse.status()).toBe(201)
+  const version = (await captureResponse.json()).data
+  const packageResponse = await page.request.get(`${api}/versions/${version.id}/download`, {
+    headers,
+  })
+  const bundle = await packageResponse.json()
+  const context = await browser.newContext()
+  try {
+    for (const [kind, permissions] of [
+      ['reader', ['versions.read']],
+      ['importer', ['versions.read', 'versions.write', 'parameters.read']],
+    ] as const) {
+      const username = `${kind}-${suffix}`
+      const roleResponse = await page.request.post(api + '/roles', {
+        headers,
+        data: { name: username, slug: username, permissions, dataScope: 'all' },
+      })
+      expect(roleResponse.status()).toBe(201)
+      const role = (await roleResponse.json()).data
+      const userResponse = await page.request.post(api + '/users', {
+        headers,
+        data: { username, displayName: username, password: await password(), roleIds: [role.id] },
+      })
+      expect(userResponse.status()).toBe(201)
+      const operator = await context.newPage()
+      await operator.addInitScript(
+        (endpoint) => localStorage.setItem('tri-admin.server', endpoint),
+        api,
+      )
+      await login(operator, username)
+      await navigate(operator, '版本管理')
+      if (kind === 'reader') {
+        await expect(operator.getByRole('button', { name: '捕获配置', exact: true })).toHaveCount(0)
+        await expect(operator.getByRole('button', { name: '导入配置包', exact: true })).toHaveCount(
+          0,
+        )
+        const denied = operator.waitForResponse(
+          (response) => response.url() === `${api}/versions/${version.id}/download`,
+        )
+        await operator
+          .getByRole('row')
+          .filter({ hasText: version.code })
+          .getByRole('button', { name: '下载', exact: true })
+          .click()
+        expect((await denied).status()).toBe(403)
+        await expect(operator.locator('.el-message--error')).toBeVisible()
+      } else {
+        await operator.getByRole('button', { name: '导入配置包', exact: true }).click()
+        const dialog = operator.getByRole('dialog', { name: '导入配置包', exact: true })
+        await dialog.getByLabel('选择配置包', { exact: true }).setInputFiles({
+          name: 'invalid.json',
+          mimeType: 'application/json',
+          buffer: Buffer.from('{}'),
+        })
+        await expect(dialog).toContainText('仅支持 tri-admin/config-bundle')
+        await dialog.getByLabel('选择配置包', { exact: true }).setInputFiles({
+          name: 'configuration.json',
+          mimeType: 'application/json',
+          buffer: Buffer.from(JSON.stringify(bundle)),
+        })
+        await expect(dialog.getByLabel('配置包 JSON', { exact: true })).toHaveValue(
+          JSON.stringify(bundle),
+        )
+        await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
+        await expect(dialog).toContainText('缺少写入权限：parameters.write')
+        await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
+      }
+      await operator.close()
+    }
+  } finally {
+    await context.close()
+  }
 })

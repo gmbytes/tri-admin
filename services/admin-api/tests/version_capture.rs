@@ -514,7 +514,7 @@ async fn version_schema_is_required_for_readiness() {
     let metadata = app.database.collection::<Document>("_schema_migrations");
     assert_eq!(
         metadata
-            .count_documents(doc! {"_id":"versions","version":1})
+            .count_documents(doc! {"_id":"versions","version":2})
             .await
             .unwrap(),
         1
@@ -586,6 +586,73 @@ async fn failed_payload_write_rolls_back_the_version_metadata_and_audit() {
             .await
             .unwrap(),
         0
+    );
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn version_menu_migration_is_explicit_idempotent_and_preserves_user_changes() {
+    let app = TestApp::new().await;
+    let menus = app.database.collection::<Document>("menus");
+    menus.delete_many(doc! {"path":"/versions"}).await.unwrap();
+    app.database
+        .collection::<Document>("_schema_migrations")
+        .update_one(doc! {"_id":"versions"}, doc! {"$set":{"version":1}})
+        .await
+        .unwrap();
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    let menu = menus
+        .find_one(doc! {"path":"/versions","deletedAt":null})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(menu.get_str("label").unwrap(), "版本管理");
+    assert_eq!(menu.get_str("viewKey").unwrap(), "versions");
+    assert_eq!(menu.get_str("permission").unwrap(), "versions.read");
+    let id = menu.get_object_id("_id").unwrap();
+    menus
+        .update_one(doc! {"_id":id}, doc! {"$set":{"label":"自定义版本名称"}})
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .find_one(doc! {"_id":id})
+            .await
+            .unwrap()
+            .unwrap()
+            .get_str("label")
+            .unwrap(),
+        "自定义版本名称"
+    );
+    menus
+        .update_one(
+            doc! {"_id":id},
+            doc! {"$set":{"deletedAt":mongodb::bson::DateTime::now()}},
+        )
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    assert_eq!(
+        menus
+            .count_documents(doc! {"path":"/versions","deletedAt":null})
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        app.send("GET", "/health/ready", Value::Null, None).await.0,
+        StatusCode::OK
     );
     app.cleanup().await;
 }

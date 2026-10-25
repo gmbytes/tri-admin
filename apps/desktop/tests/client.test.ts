@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ApiClient, ApiError, type SessionVault } from '../src/core/client'
 
@@ -52,6 +53,71 @@ function tokens(accessToken = 'old-access', refreshToken = 'a'.repeat(64)) {
 }
 
 describe('new API session client', () => {
+  it('downloads a verified configuration package through the same single refresh as JSON requests', async () => {
+    let refreshes = 0
+    const bytes = Buffer.from('{"format":"tri-admin/config-bundle","schemaVersion":1}')
+    const checksum = createHash('sha256').update(bytes).digest('hex')
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url?.endsWith('/refresh')) {
+        refreshes++
+        return setTimeout(() => send(res, 200, tokens('new-access')), 10)
+      }
+      if (req.headers.authorization === 'Bearer old-access')
+        return send(res, 401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } })
+      if (req.url?.endsWith('/download')) {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'content-disposition': 'attachment; filename="tri-admin-config-proof.json"',
+          etag: `"${checksum}"`,
+        })
+        res.end(bytes)
+        return
+      }
+      send(res, 200, { data: 'ok' })
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'password', false)
+    const [file] = await Promise.all([
+      client.downloadConfiguration('/versions/id/download'),
+      client.request('/users'),
+    ])
+    expect(Buffer.from(file.bytes)).toEqual(bytes)
+    expect(file.filename).toBe('tri-admin-config-proof.json')
+    expect(file.checksum).toBe(checksum)
+    expect(refreshes).toBe(1)
+  })
+
+  it('rejects damaged or oversized configuration downloads and keeps structured permission errors', async () => {
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url?.endsWith('/denied')) {
+        res.setHeader('x-request-id', 'download-denied')
+        return send(res, 403, { error: { code: 'FORBIDDEN', message: '缺少配置读取权限' } })
+      }
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'content-disposition': 'attachment; filename="tri-admin-config-proof.json"',
+        etag: `"${'0'.repeat(64)}"`,
+        ...(req.url?.endsWith('/large') ? { 'content-length': String(8 * 1024 * 1024 + 1) } : {}),
+      })
+      res.end('{}')
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'password', false)
+    await expect(client.downloadConfiguration('/damaged')).rejects.toMatchObject({
+      code: 'INVALID_DOWNLOAD',
+    })
+    await expect(client.downloadConfiguration('/large')).rejects.toMatchObject({
+      code: 'INVALID_DOWNLOAD',
+    })
+    await expect(client.downloadConfiguration('/denied')).rejects.toMatchObject({
+      status: 403,
+      code: 'FORBIDDEN',
+      requestId: 'download-denied',
+    })
+  })
+
   it('preserves selected-role scope from the new authentication contract', async () => {
     const scoped = { ...user, dataScope: 'roles', dataScopeRoleIds: ['0123456789abcdef01234567'] }
     const endpoint = await server((_req, res) =>
