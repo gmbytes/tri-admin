@@ -1,6 +1,6 @@
 use super::export_jobs::router::{
-    by_request as job_by_request, cancel as job_cancel, create as job_create, get as job_get,
-    list as job_list,
+    by_request as job_by_request, cancel as job_cancel, content as job_content,
+    create as job_create, get as job_get, list as job_list,
 };
 use super::template_routes::*;
 use super::{exports, formats, imports, models::*, registry};
@@ -21,6 +21,7 @@ crate::api_routes! {
     get "/api/v1/data-tools/exports/{id}" => job_get, "dataTools.export.get", "dataTools", "查询持久导出任务", Permission, &["exports.read"];
     get "/api/v1/data-tools/exports/by-request/{request}" => job_by_request, "dataTools.export.byRequest", "dataTools", "按请求确认持久导出", Permission, &["exports.read"];
     post "/api/v1/data-tools/exports/{id}/cancel" => job_cancel, "dataTools.export.cancel", "dataTools", "取消持久导出任务", Permission, &["exports.write"];
+    get "/api/v1/data-tools/exports/{id}/content" => job_content, "dataTools.export.content", "dataTools", "下载我的导出结果", Permission, &["exports.read"], "仅原操作者；结果未过期，当前资源权限与完整行清单复核通过后才发送正文";
     get "/api/v1/data-tools/resources" => resources, "dataTools.resources", "dataTools", "数据工具资源模板", Permission, &["exports.read"], "仅显示具备资源读取权限的字段白名单";
     get "/api/v1/data-tools/resources/{resource}/query-schema" => query_schema, "dataTools.querySchema", "dataTools", "资源受控筛选定义", Permission, &["exports.read"];
     get "/api/v1/export-templates" => template_list, "exportTemplates.list", "dataTools", "命名模板列表", Permission, &["exports.read"];

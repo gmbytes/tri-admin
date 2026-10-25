@@ -100,7 +100,7 @@
 
 ## 持久导出任务接口基础
 
-当前已接入任务创建、查询、取消和授权基础；后台执行、内容下载和任务页面继续实现。开发阶段创建的任务尚不会自动生成文件，不能把 202 当作导出完成。
+当前已接入任务创建、查询、取消、后台生成、受控下载及结果清理；显式重试和任务页面继续实现。服务运行时会处理队列，202 仍只代表任务已接受，须查询 completed 后下载。
 
 - `POST /api/v1/data-tools/exports` 接收 requestId、format、maxRows（默认 100000，范围 1–1000000）、可省略的 storageProfileId 和 source。source.kind 为 resource 时包含 resource、columns（有序 field/header）、search/filters/sort；为 template 时包含 id/version。所有字段和条件沿用资源白名单，拒绝 SQL、任意表达式、私有字段和危险表头。
 - 首次创建返回 202，按原操作者/规范 UUID 重放相同规范输入返回 200；不同输入返回 409。模板解析为不可变快照；重放先查原任务，模板已删除或默认存储改变不会替换原条件。省略默认字段和显式默认值归一后绑定同一指纹。
@@ -108,3 +108,4 @@
 - `GET /data-tools/exports` 支持 page/pageSize（1–100）、resource/state，固定按 createdAt/ID 倒序；资源权限与原操作者过滤先于同快照计数和分页。`GET /{id}` 和 `GET /by-request/{requestId}` 查询原任务，其他操作者即使为 Owner 也返回 404。
 - `POST /data-tools/exports/{id}/cancel` 接收空对象，取消可重放且只记一次成功审计。取消撤销执行代际并保留必要的清理引用；已完成或已过期任务返回 409，旧执行器无法继续登记私有行清单。
 - 创建/取消需要 exports.write 和资源读取权限，查询需要 exports.read 和资源读取权限。公共元数据包含状态、行数、格式、模板摘要、文件元数据及时间；配置、创建范围、存储定位、租约和行 ID 清单不返回。全部响应为 private/no-store；过期即隐藏文件元数据，并在实际内容尚存时显示 cleanupPending。
+- `GET /data-tools/exports/{id}/content` 仅原操作者可读，需要 exports.read、当前资源读取权限、completed 且未过期。用户资料还须完整行清单满足当前范围；不满足时在发送正文前返回 409。返回附件原始字节，提供长度、SHA-256 ETag、private/no-store 和 nosniff，末帧通过存储完整性检查后才释放。结果不出现在普通 `/files` 目录，也不能绕过任务授权下载。

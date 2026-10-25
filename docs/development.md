@@ -30,7 +30,9 @@ cargo run -p admin-api -- serve
 
 大批量持久导出正在实现，当前页面仍使用同步限制。独立编码器的真实磁盘探针可在停止开发 API 后单独运行：设置 `TRI_EXPORT_PROBE_ROWS=500000`、`TRI_EXPORT_PROBE_FORMAT=csv` 或 `xlsx`，执行 `cargo test -p admin-api --test export_writer export_writer_memory_probe -- --exact --ignored --nocapture`。探针生成并清理私有测试文件，输出行数、长度和摘要；峰值内存需另行观察测试子进程，不应把 Cargo/编译器内存当作编码器内存。
 
-自身 schema v5 增加持久导出任务、候选和私有行清单。当前已提供 `/api/v1/data-tools/exports` 的创建/分页/查询/取消，原操作者可按 UUID 确认丢失响应；每账号最多两个活动任务、全局八个。执行器和任务界面仍待接入，开发任务暂不会自动生成结果。存储位置依旧不可原地改写，未完成任务或未清理候选会阻止相关配置禁用/删除。
+自身 schema v5 增加持久导出任务、候选和私有行清单。`/api/v1/data-tools/exports` 支持创建/分页/查询/取消，原操作者可按 UUID 确认丢失响应；每账号最多两个活动任务、全局八个。服务已接入两个执行器，查询 completed 后可从 `/{id}/content` 下载；任务页面和显式重试仍待接入。存储位置依旧不可原地改写，未完成任务或未清理候选会阻止相关配置禁用/删除。
+
+服务约每 10 秒处理有界过期/遗留导出清理。`cargo run -p admin-api -- maintain-exports` 单独运行一轮，返回 scanned/retired/pending 计数；此 CLI 不启动队列执行器。未知写入只查询原候选，单次缺失不能认定未写入；pending 表示仍需确认或清理。工作目录不可用会退避，归属未确认或其他进程持锁的文件会保留。
 
 当前开发 Compose 仅绑定本机，使用无认证测试副本集。正式部署需要单独的认证/TLS 配置，开发配置不作为生产配置。
 

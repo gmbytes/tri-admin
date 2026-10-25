@@ -88,3 +88,11 @@ pub async fn cancel(
         .await?,
     ))
 }
+pub async fn content(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, AppError> {
+    actor.require("exports.read")?;
+    super::content::download(&state, &Actor::new(&actor)?, validation::object_id(&id)?).await
+}

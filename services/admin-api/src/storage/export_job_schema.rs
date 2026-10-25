@@ -57,6 +57,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         )
         .await?;
     for keys in [
+        doc! {"nextRunAt":1,"cleanupExpiresAt":1,"_id":1},
         doc! {"storageProfileId":1,"state":1},
         doc! {"state":1,"nextRunAt":1,"_id":1},
     ] {
