@@ -4,6 +4,8 @@ mod cleanup;
 mod dto;
 pub mod jobs;
 mod models;
+mod probes;
+mod recovery;
 mod resources;
 pub mod router;
 pub mod storage;

@@ -54,7 +54,10 @@
 - GET 上传详情返回 receivedIndices、receivedCount、receivedBytes、state、cleanupPending 等白名单字段；列表不返回完整分片清单，所有响应均不暴露临时路径或内容存储键。分片候选先持久登记，内容 I/O 在事务外，接受清单、计数和成功审计同事务。
 - `POST /uploads/{id}/cancel` 接受 `{}`，需 files.write，幂等取消并触发有界清理；`POST /uploads/{id}/cleanup` 重试清理，返回 `{uploadId,processed,pending,complete}`，每次最多处理 100 个确定候选。正在写入的尝试保留待清理状态，不能把取消响应当作内容已完全移除。FILE_STORAGE_UNAVAILABLE 为 503，结果不明时先查上传状态。
 - `POST /uploads/{id}/complete` 接受 `{}`，需 files.write；首次进入持久发布队列返回 202，已完成的重放返回 200 的当前上传状态。GET 详情含 fileId/lastError/completedAt；只有 state=completed 表示文件已发布，202 不等于发布成功。缺片 409，完整摘要不匹配进入 failed；丢失/损坏片会失效并从接收计数中移除，按原分片摘要重传后可再发布。
+- `POST /uploads/{id}/recover` 接受 `{}`，需 files.write，仅限创建者，返回 `{recovered,retired,unknown}`；每批最多 32 个过期或待确认的分片候选。验证通过且当前清单可接受时恢复一次；即时缺失仍待确认，不能误删迟到内容。
+- `POST /uploads/{id}/retry` 接受 `{}`，需 files.write，仅限创建者。已完成返回 200，其余可处理状态返回 202；先查询和校验当前发布候选，已有正确内容直接发布。显式授权重试后，缺失或损坏候选使用全新内容标识，旧的未知写入继续追踪；重复请求不重复创建可见文件。普通 complete 不会因一次 404 自动重写存储。
 - `/files` GET；`/{id}` GET/PATCH/DELETE；读取需 files.read，修改需 files.write。按所有者当前 all/self/roles 范围授权，范围过滤先于分页；范围外统一 404。列表支持名称字面前缀、categoryId、createdAt/name 排序。PATCH 支持 `{version,name?,categoryId?}`，分类 null 清除，省略保留；内容、所有者和存储定位不可原地改写。删除提交软删除及精确清理任务，完成请求重放不会恢复已删除文件。
 - `GET /files/{id}/content` 返回经鉴权的原始字节，附件文件名含 UTF-8 filename*，设置 nosniff、private/no-store、Content-Length 与 SHA-256 ETag。读取流在完整性通过前保留最后一帧，损坏时中止；响应头后的失败仍写入安全错误日志，不记录内容或内部异常，也不改写成功业务审计。
 - 发布工作线程使用持久候选、租约和令牌隔离，元数据/结果/成功审计同事务；已写入但提交失败或上游结果未知时，先核验候选内容再提交，不盲目重复 PUT。主服务重启会继续处理队列和到期发布租约，并按类型执行已知清理任务；未知清理类型保留待确认。
-- 原始分片写入租约的全面恢复、异常暂存/探测内容维护、文件页面、CSV/XLSX 及原生文件流程仍继续实现，尚不能据此把完整 Task 7 算作交付。
+- 主服务周期执行有界文件维护；服务器 CLI `maintain-files` 可执行一轮并返回处理计数，不新增普通用户可调用的全局维护接口。过期原始片先取得恢复令牌；暂存目录只处理规范 UUID 文件、超过一小时且不持有进程锁的候选。S3 探测先持久登记并隔离后续写入，未知结果保留记录及存储引用，不能仅凭 404 宣称清理完成。
+- 文件页面、CSV/XLSX 及原生文件流程仍继续实现，尚不能据此把完整 Task 7 算作交付。

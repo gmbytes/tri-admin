@@ -11,6 +11,7 @@ pub struct AppState {
     pub(crate) file_worker_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) file_maintenance_slot: Arc<tokio::sync::Semaphore>,
     pub(crate) file_worker_shutdown: tokio_util::sync::CancellationToken,
+    pub(crate) file_next_staging_sweep: Arc<std::sync::atomic::AtomicI64>,
 }
 
 impl AppState {
@@ -24,6 +25,7 @@ impl AppState {
             file_worker_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             file_maintenance_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             file_worker_shutdown: tokio_util::sync::CancellationToken::new(),
+            file_next_staging_sweep: Arc::new(std::sync::atomic::AtomicI64::new(0)),
         }
     }
 

@@ -275,6 +275,10 @@ async fn bound(
     }
     shared::lock(database, "files", session).await?;
     for (collection, filter) in [
+        (
+            "file_storage_probes",
+            doc! {"storageProfileId":id,"state":{"$ne":"done"}},
+        ),
         ("files", doc! {"storageProfileId":id,"deletedAt":null}),
         (
             "file_uploads",
@@ -330,7 +334,7 @@ pub async fn patch(
   if row.kind.storage()&&public!=&old{return Err(fail(Failure::Conflict("存储位置创建后不可修改，请新建配置并切换绑定")));}
   if public!=&old&&row.secret_box.is_some()&&input.secret.is_none(){return Err(fail(Failure::Conflict("变更连接配置必须重新提交或清除凭据")));}
   let public_json=canonical::json(public).map_err(tx)?;
-  if input.enabled==Some(false)&&bound(database,id,session).await?{return Err(fail(Failure::Conflict("配置仍被默认设置、文件或上传任务引用，不能禁用")));}
+  if input.enabled==Some(false)&&bound(database,id,session).await?{return Err(fail(Failure::Conflict("配置仍被服务设置、文件或维护任务引用，不能禁用")));}
   if let Some(value)=&input.name{row.name=value.clone();}
   if let Some(value)=&input.description{row.description=value.clone();}
   if let Some(value)=input.enabled{row.enabled=value;}
@@ -352,7 +356,7 @@ pub async fn delete(
     transaction::run(database,(database.clone(),actor),|session,(database,actor)|async move{
  shared::lock(database,"settings",session).await?;let row=database.collection::<Profile>("integration_profiles").find_one(doc!{"_id":id,"deletedAt":null}).session(&mut *session).await?.ok_or_else(||fail(Failure::NotFound))?;
  if row.version!=version{return Err(fail(Failure::Conflict("配置已被修改，请刷新后重试")));}
- if bound(database,id,session).await?{return Err(fail(Failure::Conflict("配置仍被默认设置、文件或上传任务引用，不能删除")));}
+ if bound(database,id,session).await?{return Err(fail(Failure::Conflict("配置仍被服务设置、文件或维护任务引用，不能删除")));}
  let now=DateTime::now();database.collection::<Document>("integration_profiles").update_one(doc!{"_id":id},doc!{"$set":{"deletedAt":now,"enabled":false,"updatedAt":now},"$inc":{"version":1i64}}).session(&mut *session).await?;shared::audit(database,actor,"settings.profiles.delete",id,session).await
 }.boxed()).await
 }

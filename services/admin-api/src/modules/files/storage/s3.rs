@@ -1,4 +1,7 @@
-use super::{BlobId, BlobSpec, BlobStream, PutResult, StorageError, VerifiedSource};
+use super::{
+    BlobId, BlobSpec, BlobStream, ProbeObservation, PutResult, StorageError, VerifiedSource,
+};
+use crate::modules::files::probes::ProbeJournal;
 use crate::{
     config::Config,
     modules::settings::{
@@ -16,12 +19,14 @@ pub(super) struct S3Store {
     region: String,
     secret: Credentials,
     conditional_writes: tokio::sync::OnceCell<()>,
+    journal: ProbeJournal,
 }
 impl S3Store {
     pub fn new(
         config: Arc<Config>,
         public: Integration,
         secret: Option<Credentials>,
+        journal: ProbeJournal,
     ) -> Result<Self, StorageError> {
         let Integration::S3 {
             endpoint,
@@ -66,6 +71,7 @@ impl S3Store {
             region,
             secret,
             conditional_writes: tokio::sync::OnceCell::new(),
+            journal,
         })
     }
     fn url(&self, id: BlobId) -> Result<url::Url, StorageError> {
@@ -193,25 +199,92 @@ impl S3Store {
             .await
             .map_err(|_| StorageError::ConnectionFailed)
     }
-    async fn check_conditional_writes(&self) -> Result<(), StorageError> {
+    fn probe_url(&self, id: uuid::Uuid) -> Result<url::Url, StorageError> {
         let mut url = self.base.clone();
         url.path_segments_mut()
             .map_err(|_| StorageError::InvalidInput)?
             .pop()
             .push("_tri-probes")
-            .push(&uuid::Uuid::new_v4().to_string());
+            .push(&id.to_string());
+        Ok(url)
+    }
+    pub async fn observe_probe(&self, id: uuid::Uuid) -> Result<ProbeObservation, StorageError> {
+        let url = self.probe_url(id)?;
         let client = network::http_client(&url, &self.config)
             .await
             .map_err(|_| StorageError::ConnectionFailed)?;
+        let response = self.probe_request(&client, Method::GET, &url, &[]).await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(ProbeObservation::Missing);
+        }
+        if !response.status().is_success() {
+            return Err(status(&response));
+        }
+        let mut bytes = Vec::with_capacity(1);
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| StorageError::ConnectionFailed)?;
+            if bytes.len() + chunk.len() > 1 {
+                return Ok(ProbeObservation::Other);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(if bytes.len() == 1 {
+            ProbeObservation::Value(bytes[0])
+        } else {
+            ProbeObservation::Other
+        })
+    }
+    pub async fn delete_probe(&self, id: uuid::Uuid) -> Result<(), StorageError> {
+        let url = self.probe_url(id)?;
+        let client = network::http_client(&url, &self.config)
+            .await
+            .map_err(|_| StorageError::ConnectionFailed)?;
+        let response = self
+            .probe_request(&client, Method::DELETE, &url, &[])
+            .await?;
+        if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            Err(status(&response))
+        }
+    }
+    async fn check_conditional_writes(&self) -> Result<(), StorageError> {
+        let id = uuid::Uuid::new_v4();
+        let url = self.probe_url(id)?;
+        let client = network::http_client(&url, &self.config)
+            .await
+            .map_err(|_| StorageError::ConnectionFailed)?;
+        self.journal.begin(id).await?;
+        let mut uncertain = false;
+        let mut no_object = false;
         let result = async {
-            let first = self.probe_request(&client, Method::PUT, &url, &[0]).await?;
+            self.journal.advance(id, 0, 1).await?;
+            let first = match self.probe_request(&client, Method::PUT, &url, &[0]).await {
+                Ok(response) => response,
+                Err(error) => {
+                    uncertain = true;
+                    return Err(error);
+                }
+            };
             if !first.status().is_success() {
+                uncertain = first.status().is_server_error() || first.status().is_redirection();
+                no_object = !uncertain;
                 return Err(status(&first));
             }
-            let second = self.probe_request(&client, Method::PUT, &url, &[1]).await?;
+            self.journal.advance(id, 1, 2).await?;
+            let second = match self.probe_request(&client, Method::PUT, &url, &[1]).await {
+                Ok(response) => response,
+                Err(error) => {
+                    uncertain = true;
+                    return Err(error);
+                }
+            };
+            uncertain = second.status().is_server_error() || second.status().is_redirection();
             if second.status() != reqwest::StatusCode::PRECONDITION_FAILED {
                 return Err(StorageError::Unsupported);
             }
+            self.journal.advance(id, 2, 3).await?;
             let checked = self.probe_request(&client, Method::GET, &url, &[]).await?;
             if !checked.status().is_success() {
                 return Err(status(&checked));
@@ -231,18 +304,14 @@ impl S3Store {
             Ok(())
         }
         .await;
-        let cleanup = self
-            .probe_request(&client, Method::DELETE, &url, &[])
-            .await
-            .and_then(|response| {
-                if response.status().is_success()
-                    || response.status() == reqwest::StatusCode::NOT_FOUND
-                {
-                    Ok(())
-                } else {
-                    Err(status(&response))
-                }
-            });
+        let cleanup = if self.journal.settle(id, uncertain, no_object).await? {
+            match self.delete_probe(id).await {
+                Ok(()) => self.journal.done(id).await,
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(())
+        };
         result?;
         cleanup
     }

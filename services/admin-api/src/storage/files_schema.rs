@@ -5,11 +5,11 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 2;
+pub const VERSION: i32 = 3;
 pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(row) = metadata.find_one(doc! {"_id":"files"}).await?
-        && !matches!(row.get_i32("version").ok(), Some(1 | VERSION))
+        && !matches!(row.get_i32("version").ok(), Some(1 | 2 | VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -20,6 +20,7 @@ pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
         "file_chunks",
         "file_attempts",
         "file_cleanup_tasks",
+        "file_storage_probes",
     ] {
         if let Err(error) = database.create_collection(name).await
             && !matches!(&*error.kind,ErrorKind::Command(command)if command.code==48)
@@ -91,6 +92,17 @@ pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
             .await?;
     }
     for (collection, keys) in [
+        ("file_storage_probes", doc! {"storageProfileId":1,"state":1}),
+        (
+            "file_storage_probes",
+            doc! {"state":1,"nextRunAt":1,"createdAt":1,"_id":1},
+        ),
+        ("file_storage_probes", doc! {"state":1,"leaseUntil":1}),
+        (
+            "file_attempts",
+            doc! {"kind":1,"state":1,"recoveryUntil":1,"nextRunAt":1,"createdAt":1,"_id":1},
+        ),
+        ("file_chunks", doc! {"blobId":1,"state":1}),
         ("file_uploads", doc! {"state":1,"createdAt":1,"_id":1}),
         (
             "file_attempts",
@@ -167,6 +179,20 @@ pub async fn migrate_files(database: &Database) -> Result<(), AppError> {
         .collection::<Document>("_invariants")
         .update_one(doc! {"_id":"files"}, doc! {"$setOnInsert":{"version":1i64}})
         .upsert(true)
+        .await?;
+    database
+        .collection::<Document>("file_attempts")
+        .update_many(
+            doc! {"kind":"chunk","nextRunAt":{"$exists":false}},
+            doc! {"$set":{"nextRunAt":DateTime::now()}},
+        )
+        .await?;
+    database
+        .collection::<Document>("file_attempts")
+        .update_many(
+            doc! {"kind":"publish","retryRequested":{"$exists":false}},
+            doc! {"$set":{"retryRequested":false}},
+        )
         .await?;
     metadata
         .update_one(

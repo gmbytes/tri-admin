@@ -98,7 +98,7 @@ async fn orphan(
                     "_id":attempt,
                     "uploadId":id,
                     "state":{
-                    "$ne":"accepted"}
+                    "$nin":["accepted","recovering"]}
                     },
                     doc! {
                     "$set":{
@@ -175,7 +175,7 @@ pub async fn put(
                         .collection::<Document>("file_attempts")
                         .count_documents(doc! {
                         "uploadId":id,
-                        "state":"writing"})
+                        "state":"writing","leaseUntil":{"$gt":DateTime::now()}})
                         .session(&mut *session)
                         .await?
                         >= 8
@@ -303,7 +303,7 @@ pub async fn put(
                     .collection::<Document>("file_attempts")
                     .find_one(doc! {
                                         "_id":attempt_id,
-                    "state":"writing"})
+                    "state":"writing","leaseUntil":{"$gt":DateTime::now()}})
                     .session(&mut *session)
                     .await?;
                 if attempt.is_none() {

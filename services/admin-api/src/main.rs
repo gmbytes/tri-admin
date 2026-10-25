@@ -57,6 +57,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        "maintain-files" => {
+            if !admin_api::storage::schema::is_initialized(state.require_database()?).await? {
+                return Err("文件维护需要先完成数据库迁移和初始化".into());
+            }
+            let report = admin_api::modules::files::jobs::maintenance_once(&state).await?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         "serve" => {
             let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
             tracing::info!(address=%listener.local_addr()?,"admin service listening");
@@ -76,7 +83,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let _ = workers.await;
             result?;
         }
-        _ => return Err("Usage: admin-api [serve|migrate|bootstrap]".into()),
+        _ => return Err("Usage: admin-api [serve|migrate|bootstrap|maintain-files]".into()),
     }
     Ok(())
 }

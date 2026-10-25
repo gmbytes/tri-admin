@@ -208,6 +208,28 @@ async fn completed_upload_publishes_once_and_downloads_authenticated_verified_by
         .0,
         StatusCode::NOT_FOUND
     );
+    assert_eq!(
+        app.send(
+            "POST",
+            &format!("/api/v1/uploads/{id}/retry"),
+            json!({}),
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.send(
+            "GET",
+            &format!("/api/v1/files/{file}"),
+            Value::Null,
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
     app.cleanup().await;
 }
 #[tokio::test]
@@ -503,6 +525,17 @@ async fn published_file_scope_uses_current_owner_roles_before_pagination_and_eve
         .as_str()
         .unwrap()
         .to_owned();
+    assert_eq!(
+        app.send(
+            "POST",
+            &format!("/api/v1/uploads/{first}/retry"),
+            json!({}),
+            Some(owner)
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
     let second = upload(&app, &viewer, "z-viewer.bin", b"viewer", None).await;
     app.send(
         "POST",
@@ -713,6 +746,131 @@ struct MockS3 {
     writes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     server: tokio::task::JoinHandle<()>,
 }
+async fn corrupt_unknown_candidate(
+    app: &TestApp,
+    root: &std::path::Path,
+    id: &str,
+    contents: &[u8],
+) -> ObjectId {
+    let upload_id = ObjectId::parse_str(id).unwrap();
+    let parent = app
+        .database
+        .collection::<Document>("file_uploads")
+        .find_one(doc! {"_id":upload_id})
+        .await
+        .unwrap()
+        .unwrap();
+    let candidate = ObjectId::new();
+    let blob = ObjectId::new();
+    let now = mongodb::bson::DateTime::now();
+    app.database.collection::<Document>("file_attempts").insert_one(doc! {
+        "_id":candidate,"uploadId":upload_id,"ownerId":parent.get_object_id("ownerId").unwrap(),
+        "storageProfileId":parent.get_object_id("storageProfileId").unwrap(),"kind":"publish","blobId":blob,
+        "size":parent.get_i64("size").unwrap(),"sha256":parent.get_str("sha256").unwrap(),
+        "state":"unknown","retryRequested":false,"leaseToken":null,"leaseUntil":now,"nextRunAt":now,"createdAt":now,"updatedAt":now
+    }).await.unwrap();
+    app.database.collection::<Document>("file_uploads").update_one(doc! {"_id":upload_id},doc! {"$set":{"state":"unknown","publishAttemptId":candidate},"$inc":{"attemptCount":1i64}}).await.unwrap();
+    let directory = root.join("managed/objects");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join(blob.to_hex()), contents).unwrap();
+    candidate
+}
+
+#[tokio::test]
+async fn explicit_retry_retires_corrupt_candidates_without_reusing_their_keys() {
+    let (app, root) = app().await;
+    let auth = app.login().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    for corrupted in [b"x".as_slice(), b"invalid bytes!".as_slice()] {
+        let id = upload(&app, token, "corrupt-retry.bin", b"valid contents", None).await;
+        let old = corrupt_unknown_candidate(&app, root.path(), &id, corrupted).await;
+        assert_eq!(
+            app.send(
+                "POST",
+                &format!("/api/v1/uploads/{id}/retry"),
+                json!({}),
+                Some(token)
+            )
+            .await
+            .0,
+            StatusCode::ACCEPTED
+        );
+        wait(&app, token, &id, &["completed"]).await;
+        let retired = app
+            .database
+            .collection::<Document>("file_attempts")
+            .find_one(doc! {"_id":old})
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retired.get_str("state").unwrap(), "cleaned");
+        let current = app
+            .database
+            .collection::<Document>("files")
+            .find_one(doc! {"uploadId":ObjectId::parse_str(&id).unwrap()})
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            retired.get_object_id("blobId").unwrap(),
+            current.get_object_id("blobId").unwrap()
+        );
+    }
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn cancelled_corrupt_candidate_can_be_cleaned_without_publishing_it() {
+    let (app, root) = app().await;
+    let auth = app.login().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let id = upload(&app, token, "corrupt-cancel.bin", b"valid contents", None).await;
+    let old = corrupt_unknown_candidate(&app, root.path(), &id, b"invalid bytes!").await;
+    assert_eq!(
+        app.send(
+            "POST",
+            &format!("/api/v1/uploads/{id}/cancel"),
+            json!({}),
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    app.send(
+        "POST",
+        &format!("/api/v1/uploads/{id}/cleanup"),
+        json!({}),
+        Some(token),
+    )
+    .await;
+    tokio::time::timeout(std::time::Duration::from_secs(8), async {
+        loop {
+            let row = app
+                .database
+                .collection::<Document>("file_attempts")
+                .find_one(doc! {"_id":old})
+                .await
+                .unwrap()
+                .unwrap();
+            if row.get_str("state").unwrap() == "cleaned" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("cancelled corrupt candidate was not cleaned");
+    assert_eq!(
+        app.database
+            .collection::<Document>("files")
+            .count_documents(doc! {})
+            .await
+            .unwrap(),
+        0
+    );
+    app.cleanup().await;
+}
 impl Drop for MockS3 {
     fn drop(&mut self) {
         self.release.cancel();
@@ -864,6 +1022,165 @@ async fn a_remote_error_after_storage_commit_reconciles_by_reading_without_anoth
     .await;
     wait(&app, token, &id, &["completed"]).await;
     assert_eq!(server.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn explicit_retry_checks_the_existing_object_before_creating_another_candidate() {
+    let (app, _root) = app().await;
+    let auth = app.login().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let server = mock_s3(false, true).await;
+    default_s3(&app, token, &server.endpoint).await;
+    let id = upload(
+        &app,
+        token,
+        "explicit-existing.bin",
+        b"existing retry",
+        None,
+    )
+    .await;
+    app.send(
+        "POST",
+        &format!("/api/v1/uploads/{id}/complete"),
+        json!({}),
+        Some(token),
+    )
+    .await;
+    wait(&app, token, &id, &["unknown"]).await;
+    assert_eq!(
+        app.send(
+            "POST",
+            &format!("/api/v1/uploads/{id}/retry"),
+            json!({}),
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    wait(&app, token, &id, &["completed"]).await;
+    assert_eq!(server.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(
+        app.database
+            .collection::<Document>("file_attempts")
+            .count_documents(doc! {"kind":"publish"})
+            .await
+            .unwrap(),
+        1
+    );
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn explicit_retry_uses_a_fresh_key_and_retains_the_late_old_write_for_cleanup() {
+    let (app, _root) = app().await;
+    let auth = app.login().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let server = mock_s3(true, true).await;
+    default_s3(&app, token, &server.endpoint).await;
+    let id = upload(&app, token, "explicit-missing.bin", b"missing retry", None).await;
+    app.send(
+        "POST",
+        &format!("/api/v1/uploads/{id}/complete"),
+        json!({}),
+        Some(token),
+    )
+    .await;
+    wait(&app, token, &id, &["unknown"]).await;
+    let upload_id = ObjectId::parse_str(&id).unwrap();
+    let old = app
+        .database
+        .collection::<Document>("file_attempts")
+        .find_one(doc! {"uploadId":upload_id,"kind":"publish"})
+        .await
+        .unwrap()
+        .unwrap()
+        .get_object_id("_id")
+        .unwrap();
+    assert_eq!(
+        app.send(
+            "POST",
+            &format!("/api/v1/uploads/{id}/retry"),
+            json!({}),
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::ACCEPTED
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while server.writes.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("explicit retry did not create the fresh candidate");
+    assert_eq!(
+        app.database
+            .collection::<Document>("file_attempts")
+            .find_one(doc! {"_id":old})
+            .await
+            .unwrap()
+            .unwrap()
+            .get_str("state")
+            .unwrap(),
+        "orphanUnknown"
+    );
+    server.release.cancel();
+    server.committed.cancelled().await;
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    app.send(
+        "POST",
+        &format!("/api/v1/uploads/{id}/complete"),
+        json!({}),
+        Some(token),
+    )
+    .await;
+    wait(&app, token, &id, &["completed"]).await;
+    app.send(
+        "POST",
+        &format!("/api/v1/uploads/{id}/cleanup"),
+        json!({}),
+        Some(token),
+    )
+    .await;
+    tokio::time::timeout(std::time::Duration::from_secs(12), async {
+        loop {
+            if app
+                .database
+                .collection::<Document>("file_attempts")
+                .find_one(doc! {"_id":old})
+                .await
+                .unwrap()
+                .unwrap()
+                .get_str("state")
+                .unwrap()
+                == "cleaned"
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("late old write was not retained and cleaned");
+    assert_eq!(
+        app.database
+            .collection::<Document>("files")
+            .count_documents(doc! {})
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        app.database
+            .collection::<Document>("audit_events")
+            .count_documents(doc! {"action":"files.publish"})
+            .await
+            .unwrap(),
+        1
+    );
     app.cleanup().await;
 }
 #[tokio::test]

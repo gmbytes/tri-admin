@@ -1,6 +1,7 @@
 mod local;
 mod s3;
 mod source;
+use super::probes::ProbeJournal;
 use crate::{
     config::Config,
     modules::settings::{
@@ -70,6 +71,11 @@ pub enum PutResult {
     Created,
     AlreadyPresent,
 }
+pub(crate) enum ProbeObservation {
+    Missing,
+    Value(u8),
+    Other,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StorageError {
     #[error("存储输入无效")]
@@ -114,6 +120,7 @@ impl BlobStore {
                 subdirectory: subdirectory.into(),
             },
             None,
+            None,
         )
         .await
     }
@@ -130,12 +137,19 @@ impl BlobStore {
                 }
                 _ => StorageError::ConfigurationUnavailable,
             })?;
-        Self::new(config, public, secret).await
+        Self::new(
+            config,
+            public,
+            secret,
+            Some(ProbeJournal::new(database.clone(), id)),
+        )
+        .await
     }
     async fn new(
         config: Arc<Config>,
         public: Integration,
         secret: Option<Credentials>,
+        journal: Option<ProbeJournal>,
     ) -> Result<Self, StorageError> {
         crate::modules::settings::validate::public(&public)
             .map_err(|_| StorageError::InvalidInput)?;
@@ -145,9 +159,12 @@ impl BlobStore {
             Integration::LocalStorage { subdirectory } => Driver::Local(
                 local::LocalStore::open(config.storage_root.clone(), subdirectory).await?,
             ),
-            Integration::S3 { .. } => {
-                Driver::S3(Box::new(s3::S3Store::new(config, public, secret)?))
-            }
+            Integration::S3 { .. } => Driver::S3(Box::new(s3::S3Store::new(
+                config,
+                public,
+                secret,
+                journal.ok_or(StorageError::ConfigurationUnavailable)?,
+            )?)),
             _ => return Err(StorageError::InvalidInput),
         };
         Ok(Self { driver })
@@ -188,6 +205,21 @@ impl BlobStore {
         match &self.driver {
             Driver::Local(store) => store.delete(id).await,
             Driver::S3(store) => store.delete(id, cancel).await,
+        }
+    }
+    pub(crate) async fn observe_probe(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<ProbeObservation, StorageError> {
+        match &self.driver {
+            Driver::S3(store) => store.observe_probe(id).await,
+            _ => Err(StorageError::InvalidInput),
+        }
+    }
+    pub(crate) async fn delete_probe(&self, id: uuid::Uuid) -> Result<(), StorageError> {
+        match &self.driver {
+            Driver::S3(store) => store.delete_probe(id).await,
+            _ => Err(StorageError::InvalidInput),
         }
     }
 }

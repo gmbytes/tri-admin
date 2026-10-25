@@ -79,8 +79,8 @@ pub(crate) async fn run_as(
     for attempt in candidates {
         let claimed = transaction::run(
             database,
-            (database.clone(), attempt.id,attempt.kind.clone()),
-            |session, (database, attempt_id,kind)| {
+            (database.clone(), attempt.id,attempt.kind.clone(),attempt.blob_id),
+            |session, (database, attempt_id,kind,blob)| {
                 async move {
                     shared::lock(database, "files", session).await?;
                     let parent = database
@@ -90,6 +90,8 @@ pub(crate) async fn run_as(
                         .await?
                         .ok_or_else(|| fail(Failure::NotFound))?;
                     let allowed = allowed(&parent.state,kind);
+                    if kind=="publish"&&database.collection::<Document>("files").find_one(doc!{"blobId":*blob,"deletedAt":null}).session(&mut *session).await?.is_some(){return Ok(false)}
+                    if kind=="chunk"&&!matches!(parent.state.as_str(),"completed"|"cancelled")&&database.collection::<Document>("file_chunks").find_one(doc!{"blobId":*blob,"state":"accepted"}).session(&mut *session).await?.is_some(){return Ok(false)}
                     let result = database
                         .collection::<Document>("file_attempts")
                         .update_one(

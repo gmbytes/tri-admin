@@ -30,9 +30,10 @@ struct Claim {
     blob: ObjectId,
     token: String,
     reconcile: bool,
+    retry_requested: bool,
 }
 
-async fn allowed(
+pub(super) async fn allowed(
     database: &Database,
     owner: ObjectId,
     session: &mut ClientSession,
@@ -72,6 +73,23 @@ pub async fn enqueue(
     actor: Actor,
     id: ObjectId,
 ) -> Result<(bool, UploadView), AppError> {
+    enqueue_request(state, actor, id, false).await
+}
+
+pub async fn retry(
+    state: &AppState,
+    actor: Actor,
+    id: ObjectId,
+) -> Result<(bool, UploadView), AppError> {
+    enqueue_request(state, actor, id, true).await
+}
+
+async fn enqueue_request(
+    state: &AppState,
+    actor: Actor,
+    id: ObjectId,
+    explicit_retry: bool,
+) -> Result<(bool, UploadView), AppError> {
     let database = state.require_database()?;
     let candidate = ObjectId::new();
     let blob = ObjectId::new();
@@ -100,6 +118,10 @@ pub async fn enqueue(
                     "queued" | "verifying" | "publishing" | "reconciling" | "unknown"
                 ) {
                     if let Some(attempt) = row.publish_attempt_id {
+                        let mut update = doc! {"nextRunAt":DateTime::now()};
+                        if explicit_retry {
+                            update.insert("retryRequested", true);
+                        }
                         database
                             .collection::<Document>("file_attempts")
                             .update_one(
@@ -107,12 +129,9 @@ pub async fn enqueue(
                                 "_id":attempt,
                                 "state":{
                                 "$in":["unknown",
-                                "stored"]}
+                                "stored", "reconciling"]}
                                 },
-                                doc! {
-                                "$set":{
-                                "nextRunAt":DateTime::now()}
-                                },
+                                doc! {"$set":update},
                             )
                             .session(session)
                             .await?;
@@ -181,6 +200,7 @@ pub async fn enqueue(
                     "size":row.size,
                     "sha256":&row.sha256,
                     "state":"queued",
+                    "retryRequested":false,
                         "leaseToken":null,
                     "leaseUntil":null,
                     "nextRunAt":now,
@@ -351,6 +371,9 @@ else{
                     blob,
                     token: token.clone(),
                     reconcile,
+                    retry_requested: attempt
+                        .get_bool("retryRequested")
+                        .map_err(|_| fail(Failure::NotReady))?,
                 }))
             }
             .boxed()
@@ -439,33 +462,68 @@ fn maintenance(state: AppState) {
         let Ok(_permit) = state.file_maintenance_slot.clone().try_acquire_owned() else {
             return;
         };
-        let Ok(database) = state.require_database() else {
-            return;
-        };
-        let task = database
-            .collection::<Document>("file_cleanup_tasks")
-            .find_one(doc! {
-            "state":"pending",
-            "nextRunAt":{
-            "$lte":DateTime::now()}
-            })
-            .sort(doc! {
-            "nextRunAt":1,
-            "updatedAt":1,
-            "_id":1})
-            .await;
-        if let Ok(Some(task)) = task
-            && let Ok(id) = task.get_object_id("uploadId")
-            && let Ok(Some(parent)) = database
-                .collection::<Upload>("file_uploads")
-                .find_one(doc! {
-                "_id":id})
-                .await
-            && cleanup::run(&state, parent.owner_id, id).await.is_err()
-        {
-            tracing::warn!("file cleanup deferred");
+        if maintenance_once(&state).await.is_err() {
+            tracing::warn!("file maintenance deferred");
         }
     });
+}
+#[derive(Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaintenanceView {
+    pub recovered: u64,
+    pub retired: u64,
+    pub unknown: u64,
+    pub staging_removed: u64,
+    pub probes_cleaned: u64,
+    pub contents_cleaned: u64,
+}
+pub async fn maintenance_once(state: &AppState) -> Result<MaintenanceView, AppError> {
+    let database = state.require_database()?;
+    let recovery = super::recovery::background(state).await?;
+    let mut result = MaintenanceView {
+        recovered: recovery.recovered,
+        retired: recovery.retired,
+        unknown: recovery.unknown,
+        ..Default::default()
+    };
+    let now = DateTime::now().timestamp_millis();
+    if now
+        >= state
+            .file_next_staging_sweep
+            .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        state
+            .file_next_staging_sweep
+            .store(now + 60000, std::sync::atomic::Ordering::Relaxed);
+        result.staging_removed = super::storage::VerifiedSource::sweep(&state.config)
+            .await
+            .map_err(|_| AppError::FileStorageUnavailable)?
+            .removed;
+    }
+    result.probes_cleaned = super::probes::background(state).await?;
+    let task = database
+        .collection::<Document>("file_cleanup_tasks")
+        .find_one(doc! {
+        "state":"pending",
+        "nextRunAt":{
+        "$lte":DateTime::now()}
+        })
+        .sort(doc! {
+        "nextRunAt":1,
+        "updatedAt":1,
+        "_id":1})
+        .await;
+    if let Ok(Some(task)) = task
+        && let Ok(id) = task.get_object_id("uploadId")
+        && let Ok(Some(parent)) = database
+            .collection::<Upload>("file_uploads")
+            .find_one(doc! {
+            "_id":id})
+            .await
+    {
+        result.contents_cleaned = cleanup::run(state, parent.owner_id, id).await?.processed;
+    }
+    Ok(result)
 }
 
 pub fn stop_service(state: &AppState) {
@@ -592,12 +650,35 @@ async fn execute(state: &AppState, job: &Claim, cancel: CancellationToken) -> Re
     if job.reconcile {
         match store.read(blob, spec, cancel).await {
             Ok(mut stream) => {
+                if retire_observed(state, job).await? {
+                    return Ok(());
+                }
                 while let Some(chunk) = stream.next().await {
-                    if chunk.is_err() {
+                    if let Err(error) = chunk {
+                        if error == StorageError::IntegrityMismatch
+                            && job.retry_requested
+                            && supersede(state, job, true).await?
+                        {
+                            return Ok(());
+                        }
                         return unknown(state, job, "STORAGE_CONTENT_UNAVAILABLE").await;
                     }
                 }
                 return commit_or_defer(state, job).await;
+            }
+            Err(StorageError::NotFound) if job.retry_requested => {
+                if supersede(state, job, false).await? {
+                    return Ok(());
+                }
+                return unknown(state, job, "STORAGE_OUTCOME_UNKNOWN").await;
+            }
+            Err(StorageError::IntegrityMismatch) => {
+                if retire_observed(state, job).await?
+                    || job.retry_requested && supersede(state, job, true).await?
+                {
+                    return Ok(());
+                }
+                return unknown(state, job, "STORAGE_CONTENT_UNAVAILABLE").await;
             }
             Err(_) => return unknown(state, job, "STORAGE_OUTCOME_UNKNOWN").await,
         }
@@ -705,6 +786,100 @@ async fn execute(state: &AppState, job: &Claim, cancel: CancellationToken) -> Re
             .await
         }
     }
+}
+
+async fn retire_observed(state: &AppState, job: &Claim) -> Result<bool, AppError> {
+    let database = state.require_database()?;
+    transaction::run(
+        database,
+        (database.clone(), job.clone()),
+        |session, (database, job)| {
+            async move {
+                shared::lock(database, "files", session).await?;
+                let row = database
+                    .collection::<Upload>("file_uploads")
+                    .find_one(doc! {"_id":job.upload.id})
+                    .session(&mut *session)
+                    .await?
+                    .ok_or_else(|| fail(Failure::NotReady))?;
+                if row.publish_attempt_id == Some(job.attempt)
+                    && !matches!(
+                        row.state.as_str(),
+                        "cancelled" | "cancelRequested" | "completed"
+                    )
+                {
+                    return Ok(false);
+                }
+                let changed = database
+                    .collection::<Document>("file_attempts")
+                    .update_one(
+                        doc! {"_id":job.attempt,"leaseToken":&job.token,"state":"reconciling"},
+                        doc! {"$set":{"state":"orphan","updatedAt":DateTime::now()}},
+                    )
+                    .session(&mut *session)
+                    .await?;
+                if changed.matched_count == 0 {
+                    return Ok(false);
+                }
+                if row.publish_attempt_id == Some(job.attempt) && row.state == "cancelRequested" {
+                    database
+                        .collection::<Document>("file_uploads")
+                        .update_one(doc! {"_id":row.id}, doc! {"$set":{"state":"cancelled"}})
+                        .session(&mut *session)
+                        .await?;
+                }
+                cleanup::schedule(database, &row, session).await?;
+                Ok(true)
+            }
+            .boxed()
+        },
+    )
+    .await
+}
+
+async fn supersede(state: &AppState, job: &Claim, observed: bool) -> Result<bool, AppError> {
+    let database = state.require_database()?;
+    let candidate = ObjectId::new();
+    let blob = ObjectId::new();
+    transaction::run(database, (database.clone(), job.clone()), |session, (database, job)| {
+        async move {
+            shared::lock(database, "rbac", session).await?;
+            shared::lock(database, "files", session).await?;
+            let now = DateTime::now();
+            let owned = database.collection::<Document>("file_attempts")
+                .find_one(doc! {"_id":job.attempt,"leaseToken":&job.token,"state":"reconciling","retryRequested":true,"leaseUntil":{"$gt":now}})
+                .session(&mut *session).await?;
+            if owned.is_none() { return Ok(false); }
+            let row = database.collection::<Upload>("file_uploads")
+                .find_one(doc! {"_id":job.upload.id}).session(&mut *session).await?
+                .ok_or_else(|| fail(Failure::NotReady))?;
+            if row.publish_attempt_id != Some(job.attempt)
+                || matches!(row.state.as_str(), "cancelled" | "cancelRequested" | "completed")
+                || !allowed(database, row.owner_id, session).await? {
+                return Ok(false);
+            }
+            if row.attempt_count >= 4096 { return Err(fail(Failure::RateLimited)); }
+            database.collection::<Document>("file_attempts").update_one(
+                doc! {"_id":job.attempt,"leaseToken":&job.token},
+                doc! {"$set":{"state":if observed {"orphan"} else {"orphanUnknown"},"retryRequested":false,"leaseToken":null,"leaseUntil":now,"nextRunAt":DateTime::from_millis(now.timestamp_millis()+30000),"updatedAt":now}}
+            ).session(&mut *session).await?;
+            database.collection::<Document>("file_attempts").insert_one(doc! {
+                "_id":candidate,"uploadId":row.id,"ownerId":row.owner_id,
+                "storageProfileId":row.storage_profile_id,"kind":"publish","blobId":blob,
+                "size":row.size,"sha256":&row.sha256,"state":"queued","retryRequested":false,
+                "leaseToken":null,"leaseUntil":null,"nextRunAt":now,"createdAt":now,"updatedAt":now
+            }).session(&mut *session).await?;
+            database.collection::<Document>("file_uploads").update_one(
+                doc! {"_id":row.id,"publishAttemptId":job.attempt},
+                doc! {"$set":{"state":"queued","publishAttemptId":candidate,"lastError":null,"updatedAt":now},"$inc":{"version":1i64,"attemptCount":1i64}}
+            ).session(&mut *session).await?;
+            cleanup::schedule(database, &row, session).await?;
+            database.collection::<Document>("audit_events").insert_one(
+                crate::common::observability::event(doc! {"category":"administration","action":"uploads.retry","actorId":row.owner_id,"targetId":row.id,"outcome":"success","createdAt":now})
+            ).session(session).await?;
+            Ok(true)
+        }.boxed()
+    }).await
 }
 
 async fn mark_putting(state: &AppState, job: &Claim) -> Result<bool, AppError> {

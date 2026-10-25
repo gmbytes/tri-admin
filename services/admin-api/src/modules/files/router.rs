@@ -3,7 +3,7 @@ use super::{
     dto::{CategoryCreate, CategoryPatch, Empty, FileList, FilePatch, UploadCreate},
     jobs,
     models::{CHUNK_SIZE, CategoryView, FileView, UploadView},
-    resources, uploads,
+    recovery, resources, uploads,
 };
 use crate::{
     common::{
@@ -42,11 +42,44 @@ crate::api_routes! {
     post "/api/v1/uploads/{id}/cancel"=>upload_cancel,"uploads.cancel","files","取消上传",Permission,&["files.write"],"幂等持久取消，清理可能仍待确认";
     post "/api/v1/uploads/{id}/cleanup"=>upload_cleanup,"uploads.cleanup","files","重试上传清理",Permission,&["files.write"],"每批最多100个确定候选；仍在写入的尝试不宣称已清理";
     post "/api/v1/uploads/{id}/complete"=>upload_complete,"uploads.complete","files","校验并发布上传",Permission,&["files.write"],"持久排队与租约；202表示处理中，只有状态completed表示发布成功";
+    post "/api/v1/uploads/{id}/recover"=>upload_recover,"uploads.recover","files","恢复过期分片",Permission,&["files.write"],"只处理创建者的过期或待确认候选；缺少即时内容不等于写入从未发生";
+    post "/api/v1/uploads/{id}/retry"=>upload_retry,"uploads.retry","files","显式重试上传发布",Permission,&["files.write"],"先查询既有候选；缺少内容时使用新标识，并继续追踪旧写入";
     get "/api/v1/files"=>file_list,"files.list","files","文件资源列表",Permission,&["files.read"];
     get "/api/v1/files/{id}"=>file_read,"files.get","files","文件资料",Permission,&["files.read"];
     patch "/api/v1/files/{id}"=>file_patch,"files.update","files","修改文件资料",Permission,&["files.write"];
     delete "/api/v1/files/{id}"=>file_delete,"files.delete","files","删除文件资源",Permission,&["files.write"];
     get "/api/v1/files/{id}/content"=>file_content,"files.content","files","授权下载文件",Permission,&["files.read"],"按当前所有者范围授权，附件下载，正文流校验长度和SHA-256";
+}
+async fn upload_retry(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<(StatusCode, ApiResponse<UploadView>), AppError> {
+    actor.require("files.write")?;
+    request::json::<Empty>(body, &state).await?;
+    let (pending, row) =
+        jobs::retry(&state, Actor::new(&actor)?, validation::object_id(&id)?).await?;
+    Ok((
+        if pending {
+            StatusCode::ACCEPTED
+        } else {
+            StatusCode::OK
+        },
+        ApiResponse::success(row),
+    ))
+}
+async fn upload_recover(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+    body: Request,
+) -> Result<ApiResponse<recovery::RecoveryView>, AppError> {
+    actor.require("files.write")?;
+    request::json::<Empty>(body, &state).await?;
+    Ok(ApiResponse::success(
+        recovery::recover(&state, Actor::new(&actor)?.id, validation::object_id(&id)?).await?,
+    ))
 }
 async fn upload_complete(
     State(state): State<AppState>,
