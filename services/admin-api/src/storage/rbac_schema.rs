@@ -10,7 +10,7 @@ pub async fn migrate_rbac(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let previous = metadata.find_one(doc! {"_id":"rbac"}).await?;
     if let Some(record) = &previous
-        && record.get_i32("version").ok() != Some(1)
+        && !matches!(record.get_i32("version").ok(), Some(1 | 2))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -24,6 +24,17 @@ pub async fn migrate_rbac(database: &Database) -> Result<(), AppError> {
             .collection::<Document>("_invariants")
             .update_one(doc! {"_id":key}, doc! {"$setOnInsert":{"version":1i64}})
             .upsert(true)
+            .await?;
+    }
+    for keys in [
+        doc! {"deletedAt":1,"createdAt":-1,"_id":-1},
+        doc! {"deletedAt":1,"slug":1,"_id":1},
+        doc! {"deletedAt":1,"name":1,"_id":1},
+        doc! {"dataScopeRoleIds":1,"deletedAt":1},
+    ] {
+        database
+            .collection::<Document>("roles")
+            .create_index(IndexModel::builder().keys(keys).build())
             .await?;
     }
     database
@@ -53,7 +64,10 @@ pub async fn migrate_rbac(database: &Database) -> Result<(), AppError> {
     if previous.is_none() {
         database
             .collection::<Document>("roles")
-            .update_one(doc! {"slug":"owner"}, doc! {"$set":{"dataScope":"all"}})
+            .update_one(
+                doc! {"slug":"owner"},
+                doc! {"$set":{"dataScope":"all","dataScopeRoleIds":[]}},
+            )
             .await?;
         let now = DateTime::now();
         for (path, label, view, permission, sort) in [
@@ -86,9 +100,22 @@ pub async fn migrate_rbac(database: &Database) -> Result<(), AppError> {
         metadata
             .update_one(
                 doc! {"_id":"rbac"},
-                doc! {"$setOnInsert":{"version":1,"createdAt":now}},
+                doc! {"$setOnInsert":{"version":2,"createdAt":now}},
             )
             .upsert(true)
+            .await?;
+    }
+    if previous
+        .as_ref()
+        .is_some_and(|record| record.get_i32("version").ok() == Some(1))
+    {
+        database.collection::<Document>("roles")
+            .update_many(doc!{"dataScopeRoleIds":{"$exists":false}},doc!{"$set":{"dataScopeRoleIds":[],"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).await?;
+        metadata
+            .update_one(
+                doc! {"_id":"rbac","version":1},
+                doc! {"$set":{"version":2,"updatedAt":DateTime::now()}},
+            )
             .await?;
     }
     Ok(())

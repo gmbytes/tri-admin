@@ -4,7 +4,7 @@ import { User, UserFilled, Menu, Lock, ArrowRight } from '@element-plus/icons-vu
 import { useRouter } from 'vue-router'
 import { useSession } from '../stores/session'
 import type { MenuRecord, Permission } from '../core/types'
-import { notifyError } from '../ui'
+import { notifyError, scopeText } from '../ui'
 const session = useSession(),
   router = useRouter(),
   loading = ref(true),
@@ -129,7 +129,7 @@ onMounted(load)
         <span
           >账号<b>{{ session.user?.username }}</b></span
         ><span
-          >数据范围<b>{{ session.user?.dataScope === 'all' ? '全部数据' : '自身数据' }}</b></span
+          >数据范围<b>{{ scopeText(session.user?.dataScope) }}</b></span
         ><span
           >服务状态<b class="positive">{{
             session.connection === 'ready' ? '已连接' : '待检查'

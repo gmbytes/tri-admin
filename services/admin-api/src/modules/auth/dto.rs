@@ -29,6 +29,7 @@ pub struct UserSummary {
     pub role_ids: Vec<String>,
     pub permissions: Vec<String>,
     pub data_scope: crate::common::model::DataScope,
+    pub data_scope_role_ids: Vec<String>,
 }
 
 #[derive(Serialize)]

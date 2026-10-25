@@ -45,9 +45,7 @@ pub async fn list(
     let skip = input.validate()?;
     let sort = input.sort_document(&["createdAt", "username", "displayName"])?;
     let mut filter = doc! {"deletedAt":null};
-    if actor.scope == DataScope::Own {
-        filter.insert("_id", actor.id);
-    }
+    filter.extend(actor.user_filter());
     if let Some(search) = &input.search
         && !search.trim().is_empty()
     {
@@ -81,12 +79,12 @@ pub async fn list(
 }
 
 pub async fn get(database: &Database, actor: &Actor, id: ObjectId) -> Result<UserView, AppError> {
-    actor.require_scope(id)?;
     let record = database
         .collection::<UserRecord>("users")
         .find_one(doc! {"_id":id,"deletedAt":null})
         .await?
         .ok_or(AppError::NotFound)?;
+    actor.require_scope(id, &record.role_ids)?;
     render(database, record).await
 }
 
@@ -136,7 +134,7 @@ pub async fn create(
     actor: Actor,
     input: CreateUser,
 ) -> Result<UserView, AppError> {
-    if actor.scope != DataScope::All {
+    if actor.scope == DataScope::Own {
         return Err(AppError::Forbidden);
     }
     validation::username(&input.username)?;
@@ -147,8 +145,9 @@ pub async fn create(
         return Err(AppError::Forbidden);
     }
     let role_ids = shared::ids(&input.role_ids)?;
-    let hash = password::hash(input.password).await?;
     let id = ObjectId::new();
+    actor.require_scope(id, &role_ids)?;
+    let hash = password::hash(input.password).await?;
     let result=transaction::run(database,(database.clone(),actor,input.username,input.display_name,input.status,role_ids,hash),|session,(database,actor,username,display_name,status,role_ids,hash)|async move{
         shared::lock(database,"rbac",session).await?;shared::roles_for_assignment(database,role_ids,actor,session).await?;let now=DateTime::now();
         database.collection::<Document>("users").insert_one(doc!{"_id":id,"username":username.as_str(),"usernameKey":username.to_lowercase(),"displayName":display_name.as_str(),"passwordHash":hash.as_str(),"roleIds":role_ids.clone(),"status":status.as_str(),"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).session(&mut *session).await?;
@@ -164,7 +163,6 @@ pub async fn patch(
     id: ObjectId,
     input: PatchUser,
 ) -> Result<UserView, AppError> {
-    actor.require_scope(id)?;
     if input.version < 1 {
         return Err(AppError::Validation("版本号无效".into()));
     }
@@ -185,8 +183,10 @@ pub async fn patch(
     let result=transaction::run(database,(database.clone(),actor,input,requested_roles),|session,(database,actor,input,requested_roles)|async move{
         shared::lock(database,"rbac",session).await?;
         let mut user=database.collection::<UserRecord>("users").find_one(doc!{"_id":id,"deletedAt":null}).session(&mut *session).await?.ok_or_else(||fail(Failure::NotFound))?;
+        actor.require_scope(id,&user.role_ids).map_err(|_|fail(Failure::Forbidden))?;
         if user.version!=input.version{return Err(fail(Failure::Conflict("数据已被修改，请刷新后重试")));}
         let roles=requested_roles.as_ref().unwrap_or(&user.role_ids);let status=input.status.as_deref().unwrap_or(&user.status);
+        actor.require_scope(id,roles).map_err(|_|fail(Failure::Forbidden))?;
         check_owner_change(database,actor,&user,roles,status,false,session).await?;
         if roles!=&user.role_ids{shared::roles_for_assignment(database,roles,actor,session).await?;}
         if let Some(name)=&input.username{user.username=name.clone();}
@@ -207,13 +207,13 @@ pub async fn delete(
     id: ObjectId,
     version: i64,
 ) -> Result<(), AppError> {
-    actor.require_scope(id)?;
     if version < 1 {
         return Err(AppError::Validation("版本号无效".into()));
     }
     transaction::run(database,(database.clone(),actor),|session,(database,actor)|async move{
         shared::lock(database,"rbac",session).await?;
         let user=database.collection::<UserRecord>("users").find_one(doc!{"_id":id,"deletedAt":null}).session(&mut *session).await?.ok_or_else(||fail(Failure::NotFound))?;
+        actor.require_scope(id,&user.role_ids).map_err(|_|fail(Failure::Forbidden))?;
         if user.version!=version{return Err(fail(Failure::Conflict("数据已被修改，请刷新后重试")));}
         check_owner_change(database,actor,&user,&user.role_ids,"disabled",true,session).await?;let now=DateTime::now();
         database.collection::<Document>("users").update_one(doc!{"_id":id},doc!{"$set":{"status":"disabled","deletedAt":now,"updatedAt":now},"$inc":{"version":1i64}}).session(&mut *session).await?;
@@ -227,7 +227,6 @@ pub async fn reset_password(
     id: ObjectId,
     input: PasswordInput,
 ) -> Result<(), AppError> {
-    actor.require_scope(id)?;
     if input.version < 1 {
         return Err(AppError::Validation("版本号无效".into()));
     }
@@ -235,6 +234,7 @@ pub async fn reset_password(
     transaction::run(database,(database.clone(),actor,hash),|session,(database,actor,hash)|async move{
         shared::lock(database,"rbac",session).await?;
         let user=database.collection::<UserRecord>("users").find_one(doc!{"_id":id,"deletedAt":null}).session(&mut *session).await?.ok_or_else(||fail(Failure::NotFound))?;
+        actor.require_scope(id,&user.role_ids).map_err(|_|fail(Failure::Forbidden))?;
         if user.version!=input.version{return Err(fail(Failure::Conflict("数据已被修改，请刷新后重试")));}
         check_owner_change(database,actor,&user,&user.role_ids,&user.status,false,session).await?;
         database.collection::<Document>("users").update_one(doc!{"_id":id},doc!{"$set":{"passwordHash":hash.as_str(),"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).session(&mut *session).await?;

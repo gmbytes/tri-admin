@@ -3,11 +3,12 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
-import type { RoleRecord, UserRecord } from '../core/types'
+import type { RoleChoice, UserRecord } from '../core/types'
 import { dateText, errorText, notifyError } from '../ui'
 const session = useSession(),
   rows = ref<UserRecord[]>([]),
-  roles = ref<RoleRecord[]>([]),
+  roles = ref<RoleChoice[]>([]),
+  rolesLoading = ref(false),
   loading = ref(false),
   saving = ref(false),
   open = ref(false),
@@ -18,6 +19,7 @@ const page = ref(1),
   total = ref(0),
   search = ref('')
 let sequence = 0
+let roleSequence = 0
 const form = reactive({
   username: '',
   displayName: '',
@@ -27,8 +29,15 @@ const form = reactive({
 })
 const canCreate = computed(
   () =>
-    session.can('users.write') && session.can('roles.assign') && session.user?.dataScope === 'all',
+    session.can('users.write') && session.can('roles.assign') && session.user?.dataScope !== 'self',
 )
+const roleOptions = computed(() => {
+  const choices = new Map<string, RoleChoice>()
+  for (const item of editing.value?.roles ?? [])
+    if (form.roleIds.includes(item.id)) choices.set(item.id, item)
+  for (const item of roles.value) choices.set(item.id, item)
+  return [...choices.values()]
+})
 async function load() {
   const id = ++sequence
   loading.value = true
@@ -50,13 +59,21 @@ function queryUsers() {
   page.value = 1
   void load()
 }
-async function loadRoles() {
-  if (session.can('roles.read'))
+async function loadRoles(search = '') {
+  const sequence = ++roleSequence
+  if (session.can('roles.assign')) {
+    rolesLoading.value = true
     try {
-      roles.value = (await session.request<RoleRecord[]>('/roles?pageSize=100')).data
+      const response = await session.request<RoleChoice[]>(
+        `/roles/assignable?pageSize=100&sort=slug&search=${encodeURIComponent(search)}`,
+      )
+      if (sequence === roleSequence) roles.value = response.data
     } catch (failure) {
-      notifyError(failure)
+      if (sequence === roleSequence) notifyError(failure)
+    } finally {
+      if (sequence === roleSequence) rolesLoading.value = false
     }
+  }
 }
 function edit(row: UserRecord | null) {
   editing.value = row
@@ -69,6 +86,7 @@ function edit(row: UserRecord | null) {
   })
   error.value = ''
   open.value = true
+  void loadRoles()
 }
 async function save() {
   error.value = ''
@@ -78,6 +96,14 @@ async function save() {
   }
   if (!editing.value && form.password.length < 12) {
     error.value = '初始密码至少需要 12 个字符'
+    return
+  }
+  if (
+    !editing.value &&
+    session.user?.dataScope === 'roles' &&
+    !form.roleIds.some((id) => session.user?.dataScopeRoleIds.includes(id))
+  ) {
+    error.value = '新用户至少需要属于一个可管理的角色'
     return
   }
   saving.value = true
@@ -260,10 +286,14 @@ onMounted(() => {
         ><el-select
           v-model="form.roleIds"
           multiple
-          placeholder="选择角色"
+          filterable
+          remote
+          :remote-method="loadRoles"
+          :loading="rolesLoading"
+          placeholder="搜索角色标识"
           :disabled="!session.can('roles.assign')"
           ><el-option
-            v-for="role in roles"
+            v-for="role in roleOptions"
             :key="role.id"
             :label="role.name"
             :value="role.id" /></el-select></el-form-item

@@ -39,7 +39,7 @@ pub async fn bootstrap_database(
             return Ok(BootstrapReport{admin_created:false,user_id:id.to_hex()});
         }
         let now=DateTime::now();
-        let owner=database.collection::<Document>("roles").find_one_and_update(doc!{"slug":"owner"},doc!{"$setOnInsert":{"name":"系统管理员","slug":"owner","permissions":["*"],"dataScope":"all","protected":true,"createdAt":now,"updatedAt":now,"version":1}})
+        let owner=database.collection::<Document>("roles").find_one_and_update(doc!{"slug":"owner"},doc!{"$setOnInsert":{"name":"系统管理员","slug":"owner","permissions":["*"],"dataScope":"all","dataScopeRoleIds":[],"protected":true,"createdAt":now,"updatedAt":now,"version":1}})
             .upsert(true).return_document(ReturnDocument::After).session(&mut *session).await?
             .ok_or_else(||mongodb::error::Error::custom("owner-role-missing"))?;
         let role_id=owner.get_object_id("_id").map_err(mongodb::error::Error::custom)?;

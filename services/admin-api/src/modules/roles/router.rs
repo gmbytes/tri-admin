@@ -32,7 +32,17 @@ pub struct DeleteQuery {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/roles", get(list).post(create))
+        .route("/api/v1/roles/assignable", get(assignable))
         .route("/api/v1/roles/{id}", patch(update).delete(delete))
+}
+async fn assignable(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    query: Result<Query<PageInput>, QueryRejection>,
+) -> Result<Page<super::dto::RoleChoice>, AppError> {
+    actor.require("roles.assign")?;
+    let Query(input) = query.map_err(|_| AppError::Validation("查询参数无效".into()))?;
+    service::assignable(state.require_database()?, &Actor::new(&actor)?, input).await
 }
 async fn list(
     State(state): State<AppState>,

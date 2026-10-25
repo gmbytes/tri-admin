@@ -322,3 +322,121 @@ test('viewer sees only their account and readable role labels without role-manag
     if (roleId) await page.request.delete(`${api}/roles/${roleId}?version=1`, { headers })
   }
 })
+
+test('selected-role editor grants a bounded team scope that changes without a new login', async ({
+  page,
+  browser,
+}) => {
+  const tokens = await login(page),
+    headers = { authorization: `Bearer ${tokens.accessToken}` },
+    suffix = Date.now().toString(36)
+  const teamName = `团队-${suffix}`,
+    teamSlug = `zz-team-${suffix}`,
+    operatorName = `scope-${suffix}`
+  const userIds: string[] = [],
+    teamIds: string[] = []
+  let scopeId = '',
+    scopeVersion = 1
+  const context = await browser.newContext({ baseURL: 'http://localhost:1420' })
+  try {
+    for (const [name, slug] of [
+      [teamName, teamSlug],
+      [`外部-${suffix}`, `outside-${suffix}`],
+    ]) {
+      const response = await page.request.post(api + '/roles', {
+        headers,
+        data: { name, slug, permissions: [], dataScope: 'self', dataScopeRoleIds: [] },
+      })
+      expect(response.status()).toBe(201)
+      teamIds.push((await response.json()).data.id)
+    }
+    for (const [index, roleId] of teamIds.entries()) {
+      const response = await page.request.post(api + '/users', {
+        headers,
+        data: {
+          username: `member-${index}-${suffix}`,
+          displayName: index === 0 ? '范围内成员' : '范围外成员',
+          password: await password(),
+          roleIds: [roleId],
+        },
+      })
+      expect(response.status()).toBe(201)
+      userIds.push((await response.json()).data.id)
+    }
+    await navigate(page, '角色管理')
+    await page.getByRole('button', { name: '新增角色', exact: true }).click()
+    let dialog = page.getByRole('dialog', { name: '新增角色', exact: true })
+    await dialog.getByLabel('角色名', { exact: true }).fill(`指定范围-${suffix}`)
+    await dialog.getByLabel('角色标识', { exact: true }).fill(`scoped-${suffix}`)
+    await dialog.getByText('指定角色', { exact: true }).click()
+    await expect(dialog.getByRole('radio', { name: '指定角色', exact: true })).toBeChecked()
+    const field = dialog.locator('.el-form-item').filter({ hasText: '范围角色' })
+    await field.getByRole('combobox').fill(teamSlug)
+    const controls = await field.getByRole('combobox').getAttribute('aria-controls')
+    await page
+      .locator(`[id="${controls}"]`)
+      .getByRole('option', { name: `${teamName} · ${teamSlug}`, exact: true })
+      .click()
+    for (const label of ['查看用户', '管理用户', '分配角色'])
+      await dialog.getByText(label, { exact: true }).click()
+    const saved = page.waitForResponse(
+      (response) => response.url() === api + '/roles' && response.request().method() === 'POST',
+    )
+    await dialog.getByRole('button', { name: '保存角色', exact: true }).click()
+    const role = (await (await saved).json()).data
+    scopeId = role.id
+    expect(role.dataScopeRoleIds).toEqual([teamIds[0]])
+    await expect(dialog).not.toBeVisible()
+    const row = page.getByRole('row').filter({ hasText: `scoped-${suffix}` })
+    await expect(row).toContainText(teamName)
+    const response = await page.request.post(api + '/users', {
+      headers,
+      data: {
+        username: operatorName,
+        displayName: '范围操作员',
+        password: await password(),
+        roleIds: [scopeId],
+      },
+    })
+    expect(response.status()).toBe(201)
+    userIds.push((await response.json()).data.id)
+    const operator = await context.newPage()
+    await operator.addInitScript(
+      (endpoint) => localStorage.setItem('tri-admin.server', endpoint),
+      api,
+    )
+    await login(operator, operatorName)
+    await expect(operator.locator('.member-cell')).toHaveCount(2)
+    await expect(operator.locator('.table-surface')).toContainText('范围内成员')
+    await expect(operator.locator('.table-surface')).not.toContainText('范围外成员')
+    await expect(operator.getByRole('button', { name: '新增用户', exact: true })).toBeVisible()
+    await operator.getByRole('button', { name: '新增用户', exact: true }).click()
+    const memberDialog = operator.getByRole('dialog', { name: '新增用户', exact: true })
+    await memberDialog.getByLabel('账号', { exact: true }).fill(`created-${suffix}`)
+    await memberDialog.getByLabel('显示名', { exact: true }).fill('范围内新建成员')
+    await memberDialog.getByLabel('初始密码', { exact: true }).fill(await password())
+    await chooseSelect(operator, memberDialog, '角色', teamName)
+    const created = operator.waitForResponse(
+      (response) => response.url() === api + '/users' && response.request().method() === 'POST',
+    )
+    await memberDialog.getByRole('button', { name: '保存用户', exact: true }).click()
+    userIds.push((await (await created).json()).data.id)
+    await expect(memberDialog).not.toBeVisible()
+    await expect(operator.locator('.member-cell')).toHaveCount(3)
+    await row.getByRole('button', { name: '编辑', exact: true }).click()
+    dialog = page.getByRole('dialog', { name: '编辑角色', exact: true })
+    await dialog.getByText('自身数据', { exact: true }).click()
+    await dialog.getByRole('button', { name: '保存角色', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    scopeVersion = 2
+    await operator.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(operator.locator('.member-cell')).toHaveCount(1)
+    await expect(operator.locator('.table-surface')).not.toContainText('范围内成员')
+  } finally {
+    await context.close()
+    for (const id of userIds) await page.request.delete(`${api}/users/${id}?version=1`, { headers })
+    if (scopeId)
+      await page.request.delete(`${api}/roles/${scopeId}?version=${scopeVersion}`, { headers })
+    for (const id of teamIds) await page.request.delete(`${api}/roles/${id}?version=1`, { headers })
+  }
+})

@@ -30,10 +30,22 @@ pub async fn summary(database: &Database, user: &Document) -> Result<UserSummary
         .await?;
     let mut permissions = BTreeSet::new();
     let mut data_scope = crate::common::model::DataScope::Own;
+    let mut scope_roles = BTreeSet::new();
     for role in roles {
         match role.get_str("dataScope").map_err(|_| AppError::Internal)? {
             "all" => data_scope = crate::common::model::DataScope::All,
             "self" => {}
+            "roles" => {
+                if data_scope != crate::common::model::DataScope::All {
+                    data_scope = crate::common::model::DataScope::Roles;
+                }
+                for value in role
+                    .get_array("dataScopeRoleIds")
+                    .map_err(|_| AppError::Internal)?
+                {
+                    scope_roles.insert(value.as_object_id().ok_or(AppError::Internal)?.to_hex());
+                }
+            }
             _ => return Err(AppError::Internal),
         }
         if let Ok(values) = role.get_array("permissions") {
@@ -57,5 +69,10 @@ pub async fn summary(database: &Database, user: &Document) -> Result<UserSummary
         role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
         permissions: permissions.into_iter().collect(),
         data_scope,
+        data_scope_role_ids: if data_scope == crate::common::model::DataScope::All {
+            Vec::new()
+        } else {
+            scope_roles.into_iter().collect()
+        },
     })
 }

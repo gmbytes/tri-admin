@@ -1,4 +1,4 @@
-export type DataScope = 'all' | 'self'
+export type DataScope = 'all' | 'self' | 'roles'
 export interface UserSummary {
   id: string
   username: string
@@ -6,6 +6,7 @@ export interface UserSummary {
   roleIds: string[]
   permissions: string[]
   dataScope: DataScope
+  dataScopeRoleIds: string[]
 }
 export interface Envelope<T> {
   data: T
@@ -34,10 +35,17 @@ export interface RoleRecord {
   slug: string
   permissions: string[]
   dataScope: DataScope
+  dataScopeRoleIds: string[]
+  dataScopeRoles: Array<{ id: string; name: string }>
   protected: boolean
   version: number
   createdAt: string
   updatedAt: string
+}
+export interface RoleChoice {
+  id: string
+  name: string
+  slug?: string
 }
 export interface MenuRecord {
   id: string

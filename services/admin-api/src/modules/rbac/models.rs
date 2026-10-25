@@ -66,6 +66,7 @@ pub struct RoleRecord {
     pub slug: String,
     pub permissions: Vec<String>,
     pub data_scope: DataScope,
+    pub data_scope_role_ids: Vec<ObjectId>,
     pub protected: bool,
     pub version: i64,
     pub created_at: DateTime,
@@ -80,6 +81,8 @@ pub struct RoleView {
     pub slug: String,
     pub permissions: Vec<String>,
     pub data_scope: DataScope,
+    pub data_scope_role_ids: Vec<String>,
+    pub data_scope_roles: Vec<RoleBrief>,
     pub protected: bool,
     pub version: i64,
     pub created_at: String,
@@ -93,6 +96,12 @@ impl RoleRecord {
             slug: self.slug,
             permissions: self.permissions,
             data_scope: self.data_scope,
+            data_scope_role_ids: self
+                .data_scope_role_ids
+                .into_iter()
+                .map(ObjectId::to_hex)
+                .collect(),
+            data_scope_roles: Vec::new(),
             protected: self.protected,
             version: self.version,
             created_at: time(self.created_at)?,

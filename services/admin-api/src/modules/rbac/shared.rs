@@ -19,6 +19,8 @@ pub struct Actor {
     pub id: ObjectId,
     pub permissions: Vec<String>,
     pub scope: DataScope,
+    pub scope_role_ids: Vec<ObjectId>,
+    pub role_ids: Vec<ObjectId>,
 }
 impl Actor {
     pub fn new(context: &AuthContext) -> Result<Self, AppError> {
@@ -26,6 +28,18 @@ impl Actor {
             id: ObjectId::parse_str(&context.user.id).map_err(|_| AppError::Internal)?,
             permissions: context.user.permissions.clone(),
             scope: context.user.data_scope,
+            scope_role_ids: context
+                .user
+                .data_scope_role_ids
+                .iter()
+                .map(|value| crate::common::validation::object_id(value))
+                .collect::<Result<Vec<_>, _>>()?,
+            role_ids: context
+                .user
+                .role_ids
+                .iter()
+                .map(|value| crate::common::validation::object_id(value))
+                .collect::<Result<Vec<_>, _>>()?,
         })
     }
     pub fn can(&self, code: &str) -> bool {
@@ -33,12 +47,45 @@ impl Actor {
             .iter()
             .any(|value| value == "*" || value == code)
     }
-    pub fn require_scope(&self, id: ObjectId) -> Result<(), AppError> {
-        if self.scope == DataScope::All || self.id == id {
+    pub fn require_scope(&self, id: ObjectId, role_ids: &[ObjectId]) -> Result<(), AppError> {
+        if self.scope == DataScope::All
+            || self.id == id
+            || self.scope == DataScope::Roles
+                && role_ids.iter().any(|id| self.scope_role_ids.contains(id))
+        {
             Ok(())
         } else {
             Err(AppError::Forbidden)
         }
+    }
+    pub fn can_grant_scope(&self, scope: DataScope, role_ids: &[ObjectId]) -> bool {
+        match scope {
+            DataScope::Own => true,
+            DataScope::All => self.scope == DataScope::All,
+            DataScope::Roles => {
+                self.scope == DataScope::All
+                    || self.scope == DataScope::Roles
+                        && role_ids.iter().all(|id| self.scope_role_ids.contains(id))
+            }
+        }
+    }
+    pub fn user_filter(&self) -> Document {
+        match self.scope {
+            DataScope::All => doc! {},
+            DataScope::Own => doc! {"_id":self.id},
+            DataScope::Roles => {
+                doc! {"$or":[{"_id":self.id},{"roleIds":{"$in":&self.scope_role_ids}}]}
+            }
+        }
+    }
+    pub fn can_assign_role(&self, role: &RoleRecord) -> bool {
+        (!role.protected || self.can("*"))
+            && role.permissions.iter().all(|code| self.can(code))
+            && self.can_grant_scope(role.data_scope, &role.data_scope_role_ids)
+            && (self.scope == DataScope::All
+                || self.role_ids.contains(&role.id)
+                || self.scope_role_ids.contains(&role.id)
+                || role.data_scope == DataScope::Roles)
     }
 }
 
@@ -91,13 +138,7 @@ pub async fn roles_for_assignment(
         return Err(fail(Failure::Validation("所选角色不存在或已删除")));
     }
     for role in roles {
-        if role.protected && !actor.can("*")
-            || role
-                .permissions
-                .iter()
-                .any(|permission| !actor.can(permission))
-            || role.data_scope == DataScope::All && actor.scope != DataScope::All
-        {
+        if !actor.can_assign_role(&role) {
             return Err(fail(Failure::Forbidden));
         }
     }

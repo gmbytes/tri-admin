@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useSession } from '../stores/session'
-import { errorText } from '../ui'
+import { errorText, scopeText } from '../ui'
 import { ElMessage } from 'element-plus'
 const session = useSession(),
   current = ref(''),
@@ -48,7 +48,7 @@ async function save() {
       <p class="subtle">{{ session.user?.username }}</p>
       <div class="info-list">
         <span
-          >数据范围<b>{{ session.user?.dataScope === 'all' ? '全部数据' : '自身数据' }}</b></span
+          >数据范围<b>{{ scopeText(session.user?.dataScope) }}</b></span
         ><span
           >授权能力<b>{{
             session.user?.permissions.includes('*')

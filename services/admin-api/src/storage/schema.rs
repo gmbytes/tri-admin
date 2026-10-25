@@ -15,7 +15,7 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
         .count_documents(doc! {"$or":[
             {"_id":"core","version":1,"bootstrapComplete":true},
             {"_id":"auth","version":1},
-            {"_id":"rbac","version":1},
+            {"_id":"rbac","version":2},
             {"_id":"dictionaries","version":1},
             {"_id":"parameters","version":1}
         ]})

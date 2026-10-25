@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { DataScope, Permission, RoleRecord } from '../core/types'
-import { errorText, notifyError } from '../ui'
+import { errorText, notifyError, scopeText } from '../ui'
 const session = useSession(),
   rows = ref<RoleRecord[]>([]),
   permissions = ref<Permission[]>([]),
@@ -20,7 +20,33 @@ const form = reactive({
   slug: '',
   permissions: [] as string[],
   dataScope: 'self' as DataScope,
+  dataScopeRoleIds: [] as string[],
 })
+const scopeChoices = ref<Array<{ id: string; name: string; slug?: string }>>([]),
+  scopeLoading = ref(false)
+let scopeQuery = 0
+const scopeOptions = computed(() => {
+  const options = new Map<string, { id: string; name: string; slug?: string }>()
+  for (const item of [...(editing.value?.dataScopeRoles ?? []), ...scopeChoices.value])
+    options.set(item.id, item)
+  return [...options.values()].filter(
+    (item) => session.user?.dataScope === 'all' || session.user?.dataScopeRoleIds.includes(item.id),
+  )
+})
+async function loadScopeChoices(search = '') {
+  const query = ++scopeQuery
+  scopeLoading.value = true
+  try {
+    const response = await session.request<RoleRecord[]>(
+      `/roles?pageSize=100&sort=slug&search=${encodeURIComponent(search)}`,
+    )
+    if (query === scopeQuery) scopeChoices.value = response.data
+  } catch (failure) {
+    if (query === scopeQuery) notifyError(failure)
+  } finally {
+    if (query === scopeQuery) scopeLoading.value = false
+  }
+}
 const groups = computed(() => {
   const result = new Map<string, Permission[]>()
   for (const item of permissions.value.filter((item) => session.can(item.code))) {
@@ -57,9 +83,11 @@ function edit(row: RoleRecord | null) {
     slug: row?.slug ?? '',
     permissions: [...(row?.permissions ?? [])],
     dataScope: row?.dataScope ?? 'self',
+    dataScopeRoleIds: [...(row?.dataScopeRoleIds ?? [])],
   })
   error.value = ''
   open.value = true
+  void loadScopeChoices()
 }
 async function save() {
   error.value = ''
@@ -67,11 +95,19 @@ async function save() {
     error.value = '请填写角色名和标识'
     return
   }
+  if (form.dataScope === 'roles' && form.dataScopeRoleIds.length === 0) {
+    error.value = '请选择范围角色'
+    return
+  }
   saving.value = true
   try {
     await session.request(editing.value ? `/roles/${editing.value.id}` : '/roles', {
       method: editing.value ? 'PATCH' : 'POST',
-      body: { ...form, ...(editing.value ? { version: editing.value.version } : {}) },
+      body: {
+        ...form,
+        dataScopeRoleIds: form.dataScope === 'roles' ? form.dataScopeRoleIds : [],
+        ...(editing.value ? { version: editing.value.version } : {}),
+      },
     })
     open.value = false
     ElMessage.success('角色已保存')
@@ -135,9 +171,12 @@ onMounted(() => {
           }}</el-tag></template
         ></el-table-column
       ><el-table-column label="数据范围" min-width="160"
-        ><template #default="{ row }">{{
-          row.dataScope === 'all' ? '全部数据' : '自身数据'
-        }}</template></el-table-column
+        ><template #default="{ row }"
+          >{{ scopeText(row.dataScope)
+          }}<small v-if="row.dataScope === 'roles'" class="table-secondary">{{
+            row.dataScopeRoles.map((role: { name: string }) => role.name).join('、')
+          }}</small></template
+        ></el-table-column
       ><el-table-column label="操作" width="170" fixed="right"
         ><template #default="{ row }"
           ><template v-if="session.can('roles.write') && !row.protected"
@@ -176,9 +215,30 @@ onMounted(() => {
           ><el-radio-button value="self">自身数据</el-radio-button
           ><el-radio-button value="all" :disabled="session.user?.dataScope !== 'all'"
             >全部数据</el-radio-button
+          ><el-radio-button value="roles" :disabled="session.user?.dataScope === 'self'"
+            >指定角色</el-radio-button
           ></el-radio-group
         ></el-form-item
       >
+      <el-form-item v-if="form.dataScope === 'roles'" label="范围角色">
+        <el-select
+          v-model="form.dataScopeRoleIds"
+          multiple
+          filterable
+          remote
+          :remote-method="loadScopeChoices"
+          :loading="scopeLoading"
+          :multiple-limit="32"
+          placeholder="搜索角色标识，最多选择 32 个"
+        >
+          <el-option
+            v-for="item in scopeOptions"
+            :key="item.id"
+            :value="item.id"
+            :label="item.slug ? `${item.name} · ${item.slug}` : item.name"
+          />
+        </el-select>
+      </el-form-item>
       <div class="permission-heading">
         <strong>操作权限</strong><span class="subtle">已选 {{ form.permissions.length }} 项</span>
       </div>

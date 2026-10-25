@@ -46,7 +46,14 @@ function parseTokens(value: unknown): TokenResponse {
     !user.roleIds.every((value) => typeof value === 'string') ||
     !Array.isArray(user.permissions) ||
     !user.permissions.every((value) => typeof value === 'string') ||
-    !['all', 'self'].includes(user.dataScope)
+    !['all', 'self', 'roles'].includes(user.dataScope) ||
+    !Array.isArray(user.dataScopeRoleIds) ||
+    !user.dataScopeRoleIds.every(
+      (value) => typeof value === 'string' && /^[a-f0-9]{24}$/.test(value),
+    ) ||
+    (user.dataScope === 'roles'
+      ? user.dataScopeRoleIds.length === 0
+      : user.dataScopeRoleIds.length !== 0)
   )
     throw new ApiError('INVALID_RESPONSE', '服务器返回的数据格式无效')
   return {
@@ -60,6 +67,7 @@ function parseTokens(value: unknown): TokenResponse {
       roleIds: [...user.roleIds],
       permissions: [...user.permissions],
       dataScope: user.dataScope,
+      dataScopeRoleIds: [...user.dataScopeRoleIds],
     },
   }
 }
