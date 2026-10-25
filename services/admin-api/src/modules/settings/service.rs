@@ -274,7 +274,16 @@ async fn bound(
         return Ok(true);
     }
     shared::lock(database, "files", session).await?;
+    shared::lock(database, "data-exports", session).await?;
     for (collection, filter) in [
+        (
+            "data_exports",
+            doc! {"storageProfileId":id,"storageRetained":true},
+        ),
+        (
+            "data_export_attempts",
+            doc! {"storageProfileId":id,"state":{"$ne":"cleaned"}},
+        ),
         (
             "file_storage_probes",
             doc! {"storageProfileId":id,"state":{"$ne":"done"}},

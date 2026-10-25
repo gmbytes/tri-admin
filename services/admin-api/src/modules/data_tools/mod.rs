@@ -1,4 +1,5 @@
 mod domain;
+pub mod export_jobs;
 pub mod export_writer;
 pub mod exports;
 pub mod formats;

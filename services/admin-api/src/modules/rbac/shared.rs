@@ -24,18 +24,21 @@ pub struct Actor {
 }
 impl Actor {
     pub fn new(context: &AuthContext) -> Result<Self, AppError> {
+        Self::from_summary(&context.user)
+    }
+    pub(crate) fn from_summary(
+        user: &crate::modules::auth::dto::UserSummary,
+    ) -> Result<Self, AppError> {
         Ok(Self {
-            id: ObjectId::parse_str(&context.user.id).map_err(|_| AppError::Internal)?,
-            permissions: context.user.permissions.clone(),
-            scope: context.user.data_scope,
-            scope_role_ids: context
-                .user
+            id: ObjectId::parse_str(&user.id).map_err(|_| AppError::Internal)?,
+            permissions: user.permissions.clone(),
+            scope: user.data_scope,
+            scope_role_ids: user
                 .data_scope_role_ids
                 .iter()
                 .map(|value| crate::common::validation::object_id(value))
                 .collect::<Result<Vec<_>, _>>()?,
-            role_ids: context
-                .user
+            role_ids: user
                 .role_ids
                 .iter()
                 .map(|value| crate::common::validation::object_id(value))

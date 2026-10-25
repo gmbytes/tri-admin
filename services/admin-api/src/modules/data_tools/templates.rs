@@ -125,48 +125,9 @@ pub fn validate(input: &TemplateInput) -> Result<(), AppError> {
     {
         return Err(AppError::Validation("模板标识格式无效".into()));
     }
-    let definition = registry::definition(&input.resource)?;
-    if input.columns.is_empty()
-        || input.columns.len() > 32
-        || !(1..=formats::MAX_ROWS as u32).contains(&input.max_rows)
-    {
+    validate_columns(&input.resource, &input.columns, input.allow_import)?;
+    if !(1..=formats::MAX_ROWS as u32).contains(&input.max_rows) {
         return Err(AppError::Validation("模板列或同步行数上限无效".into()));
-    }
-    let fields = input
-        .columns
-        .iter()
-        .map(|c| c.field.as_str())
-        .collect::<HashSet<_>>();
-    let headers = input
-        .columns
-        .iter()
-        .map(|c| c.header.as_str())
-        .collect::<HashSet<_>>();
-    if fields.len() != input.columns.len()
-        || headers.len() != input.columns.len()
-        || input.columns.iter().any(|column| {
-            !definition.fields.contains(&column.field.as_str())
-                || column.header.is_empty()
-                || column.header.len() > 128
-                || column.header.trim() != column.header
-                || column.header.chars().any(char::is_control)
-                || column.header.starts_with(['=', '+', '-', '@'])
-        })
-    {
-        return Err(AppError::Validation(
-            "模板字段或表头无效、重复或含公式前缀".into(),
-        ));
-    }
-    if input.allow_import
-        && (!definition.importable
-            || definition
-                .required_fields
-                .iter()
-                .any(|field| !fields.contains(field)))
-    {
-        return Err(AppError::Validation(
-            "导入模板缺少必填字段或资源不支持导入".into(),
-        ));
     }
     query::plan(
         &input.resource,
@@ -180,6 +141,51 @@ pub fn validate(input: &TemplateInput) -> Result<(), AppError> {
         > 64 * 1024
     {
         return Err(AppError::PayloadTooLarge);
+    }
+    Ok(())
+}
+pub(super) fn validate_columns(
+    resource: &str,
+    columns: &[Column],
+    allow_import: bool,
+) -> Result<(), AppError> {
+    let definition = registry::definition(resource)?;
+    if columns.is_empty() || columns.len() > 32 {
+        return Err(AppError::Validation("导出列数量无效".into()));
+    }
+    let fields = columns
+        .iter()
+        .map(|c| c.field.as_str())
+        .collect::<HashSet<_>>();
+    let headers = columns
+        .iter()
+        .map(|c| c.header.as_str())
+        .collect::<HashSet<_>>();
+    if fields.len() != columns.len()
+        || headers.len() != columns.len()
+        || columns.iter().any(|column| {
+            !definition.fields.contains(&column.field.as_str())
+                || column.header.is_empty()
+                || column.header.len() > 128
+                || column.header.trim() != column.header
+                || column.header.chars().any(char::is_control)
+                || column.header.starts_with(['=', '+', '-', '@'])
+        })
+    {
+        return Err(AppError::Validation(
+            "模板字段或表头无效、重复或含公式前缀".into(),
+        ));
+    }
+    if allow_import
+        && (!definition.importable
+            || definition
+                .required_fields
+                .iter()
+                .any(|field| !fields.contains(field)))
+    {
+        return Err(AppError::Validation(
+            "导入模板缺少必填字段或资源不支持导入".into(),
+        ));
     }
     Ok(())
 }

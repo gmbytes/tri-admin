@@ -6,12 +6,15 @@ use mongodb::{
     options::IndexOptions,
 };
 use sha2::{Digest, Sha256};
-pub const VERSION: i32 = 4;
+pub const VERSION: i32 = 5;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let previous = metadata.find_one(doc! {"_id":"data-tools"}).await?;
     if let Some(record) = &previous
-        && !matches!(record.get_i32("version").ok(), Some(1 | 2 | 3 | VERSION))
+        && !matches!(
+            record.get_i32("version").ok(),
+            Some(1 | 2 | 3 | 4 | VERSION)
+        )
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -125,6 +128,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
             database.collection::<Document>("menus").update_one(doc!{"_id":ObjectId::from_bytes(bytes)},doc!{"$setOnInsert":{"label":"数据工具","path":path,"viewKey":"exports","permission":"exports.read","icon":null,"parentId":null,"sort":110,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).await?;
         }
     }
+    super::export_job_schema::migrate(database).await?;
     metadata
         .update_one(
             doc! {"_id":"data-tools"},
