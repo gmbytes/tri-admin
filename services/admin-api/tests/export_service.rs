@@ -299,3 +299,143 @@ async fn real_main_reconciles_the_original_written_candidate_after_process_death
     drop(second);
     app.cleanup().await;
 }
+
+#[tokio::test]
+async fn killed_main_during_xlsx_generation_retires_partial_workspace_and_rebuilds_one_complete_result()
+ {
+    use calamine::Reader;
+    let (app, auth) = fixture().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let now = DateTime::now();
+    for batch in 0..100 {
+        let rows = (0..1000).map(|offset| {
+            let index = batch * 1000 + offset;
+            doc! {"_id":ObjectId::new(),"key":format!("kill.export.{index:06}"),"name":"Process death fixture","group":"kill","description":"A bounded real XLSX row used to observe durable progress before process termination.","valueType":"boolean","valueJson":"true","version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}
+        }).collect::<Vec<_>>();
+        app.database
+            .collection::<Document>("parameters")
+            .insert_many(rows)
+            .await
+            .unwrap();
+    }
+    let (code, result) = app.send("POST", "/api/v1/data-tools/exports", json!({"requestId":uuid::Uuid::new_v4().to_string(),"format":"xlsx","maxRows":100000,"source":{"kind":"resource","resource":"parameters","columns":[{"field":"key","header":"key"},{"field":"name","header":"name"},{"field":"group","header":"group"},{"field":"description","header":"description"},{"field":"valueType","header":"type"},{"field":"value","header":"value"}],"search":"kill.export."}}), Some(token)).await;
+    assert_eq!(code, StatusCode::ACCEPTED, "{result}");
+    let id = ObjectId::parse_str(result["data"]["id"].as_str().unwrap()).unwrap();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap();
+    let (mut first, base) = server(&app.database, root.path());
+    ready(&mut first, &client, &base).await;
+    let before = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        loop {
+            let row = app
+                .database
+                .collection::<Document>("data_exports")
+                .find_one(doc! {"_id":id})
+                .await
+                .unwrap()
+                .unwrap();
+            assert_ne!(
+                row.get_str("state").unwrap(),
+                "completed",
+                "missed the live generation boundary"
+            );
+            if row.get_str("state").unwrap() == "running"
+                && row.get_i64("rowCount").unwrap() >= 1000
+            {
+                break row;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let candidate = app
+        .database
+        .collection::<Document>("data_export_attempts")
+        .find_one(doc! {"_id":before.get_object_id("candidateId").unwrap()})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(candidate.get_str("state").unwrap(), "generating");
+    assert!(!candidate.get_bool("writeStarted").unwrap());
+    let workspace = root
+        .path()
+        .join(".tri-export-work")
+        .join(candidate.get_str("workspaceId").unwrap());
+    assert!(workspace.join("artifact.part").is_file());
+    assert!(matches!(first.0.try_wait(), Ok(None)));
+    first.0.kill().unwrap();
+    assert!(!first.0.wait().unwrap().success());
+    drop(first);
+    // Advance only the isolated fixture's expired lease after confirmed process death.
+    app.database.collection::<Document>("data_exports").update_one(doc!{"_id":id},doc!{"$set":{"leaseExpiresAt":DateTime::from_millis(0),"nextRunAt":DateTime::from_millis(0)}}).await.unwrap();
+    let (mut second, base) = server(&app.database, root.path());
+    ready(&mut second, &client, &base).await;
+    wait_job(&app, token, &id.to_hex(), "completed", true).await;
+    let after = app
+        .database
+        .collection::<Document>("data_exports")
+        .find_one(doc! {"_id":id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.get_i64("generation").unwrap() > before.get_i64("generation").unwrap());
+    assert_ne!(
+        after.get_object_id("candidateId").unwrap(),
+        candidate.get_object_id("_id").unwrap()
+    );
+    let retired = app
+        .database
+        .collection::<Document>("data_export_attempts")
+        .find_one(doc! {"_id":candidate.get_object_id("_id").unwrap()})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retired.get_str("state").unwrap(), "cleaned");
+    assert!(retired.get_bool("workspaceCleaned").unwrap());
+    assert!(!retired.get_bool("writeStarted").unwrap());
+    assert!(!workspace.exists());
+    let response = client
+        .get(format!("{base}/api/v1/data-tools/exports/{id}/content"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let bytes = response.bytes().await.unwrap();
+    let mut workbook: calamine::Xlsx<_> =
+        calamine::open_workbook_from_rs(std::io::Cursor::new(bytes)).unwrap();
+    let sheet = workbook.worksheet_range_at(0).unwrap().unwrap();
+    assert_eq!(sheet.height(), 100001);
+    assert_eq!(sheet.width(), 6);
+    assert_eq!(
+        sheet.get_value((1, 0)),
+        Some(&calamine::Data::String("kill.export.000000".into()))
+    );
+    assert_eq!(
+        sheet.get_value((100000, 0)),
+        Some(&calamine::Data::String("kill.export.099999".into()))
+    );
+    assert_eq!(
+        app.database
+            .collection::<Document>("audit_events")
+            .count_documents(doc! {"action":"dataTools.export.complete","targetId":id})
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        app.database
+            .collection::<Document>("files")
+            .count_documents(doc! {})
+            .await
+            .unwrap(),
+        0
+    );
+    drop(second);
+    app.cleanup().await;
+}

@@ -171,8 +171,8 @@ docs/                        规范、进度和运维
 - [x] 在 `data_tools/export_writer.rs` 和 `tests/export_writer.rs` 先复现大于 2000 行/非内存编码缺失，接入逐行 CSV 和锁定 XLSX constant_memory；验证类型、公式、长度/单元格/行数/中间内容预算、取消与实际磁盘摘要。
 - [x] 在 `data_tools/export_jobs/{models,service,router}.rs`、自身 schema v5 和 `tests/export_jobs.rs` 实现不可变配置、UUID 幂等、活动额度、原操作者分页/按请求查询、取消及事务审计；先观察缺失路由失败，再实现，不改同步导入限制。
 - [x] 以 `export_jobs/query.rs` / `worker.rs` 接入有界资源游标、实际生成及发布/下载前授权复核；实际 5001 行 CSV/XLSX 和 2501 条明细通过，行数超限不发布前缀，成员移组和范围收缩均在真实内容路由拒绝旧结果下载。
-- [ ] 在 `export_jobs/{publish,recovery,cleanup}.rs`、设置引用保护和实际子进程测试实现候选预登记、续租/代际、取消栅栏、未知结果先查后重试、24 小时内容保留及有界清理；复用 BlobStore/VerifiedSource，完成本地/S3 故障验证。
-- [ ] 主服务启动/停止/周期执行和 `maintain-exports` CLI 已接入，真实进程重启队列和已写候选确认已验证；继续完成生成中终止、提交响应丢失等剩余故障门禁后关闭本项。
+- [ ] 在 `export_jobs/{journal,worker,maintenance}.rs`、设置引用保护和实际子进程测试实现候选预登记、续租/代际、取消栅栏、未知结果先查后重试、24 小时内容保留及有界清理；真实 S3 响应丢失、迟到写入、明确拒绝、既存候选读取被拒绝和取消竞争已验证，继续发布中终止及提交响应丢失门禁。
+- [ ] 主服务启动/停止/周期执行和 `maintain-exports` CLI 已接入，真实进程重启队列、已写候选确认和生成 10 万行 XLSX 中硬终止后重建已验证；继续完成发布中终止、提交响应丢失等剩余故障门禁后关闭本项。
 - [x] 在 `core/export-jobs.ts`、`components/ExportJobsPanel.vue`、DataToolsView 接入创建/查询恢复/分页/取消/显式重试/完整性下载；真实页面验证响应丢失恢复、只读、模板、慢分页和确认取消，ApiClient 复用现有刷新/取消/校验链且不绕过任务授权。
 - [ ] 运行适当全量 Rust/客户端/页面回归、严格检查、实际服务与性能验证；分别记录未恢复的原生窗口/安装门禁，再审计整个 Task 7。
 

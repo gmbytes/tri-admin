@@ -60,6 +60,7 @@ const reasons: Record<string, string> = {
   PERMISSION_REVOKED: '执行权限已撤销',
   SCOPE_CHANGED: '数据范围已变化',
   PUBLICATION_PENDING: '正在确认存储结果',
+  STORAGE_WRITE_REJECTED: '存储拒绝写入，请检查配置后重试',
   WORKSPACE_BUSY: '工作目录仍在使用',
   WORKSPACE_UNAVAILABLE: '工作目录暂不可用，等待重试',
   WORKSPACE_UNCONFIRMED: '工作目录归属未确认',

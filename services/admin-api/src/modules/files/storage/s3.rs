@@ -373,15 +373,17 @@ impl S3Store {
                         if error == StorageError::IntegrityMismatch {
                             StorageError::Conflict
                         } else {
-                            error
+                            // A 412 establishes that this candidate already exists.
+                            // Failure to verify it cannot prove that no object was written.
+                            StorageError::OutcomeUnknown
                         }
                     })?;
             let mut count = 0u64;
             use sha2::{Digest, Sha256};
             let mut hash = Sha256::new();
-            while let Some(chunk) = tokio::select! {biased;_=cancel.cancelled()=>return Err(StorageError::Cancelled),value=stream.next()=>value}
+            while let Some(chunk) = tokio::select! {biased;_=cancel.cancelled()=>return Err(StorageError::OutcomeUnknown),value=stream.next()=>value}
             {
-                let chunk = chunk?;
+                let chunk = chunk.map_err(|_| StorageError::OutcomeUnknown)?;
                 count = count
                     .checked_add(chunk.len() as u64)
                     .ok_or(StorageError::Conflict)?;

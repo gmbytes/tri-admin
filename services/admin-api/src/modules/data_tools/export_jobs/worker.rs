@@ -261,9 +261,23 @@ async fn execute(
         .await
         .map_err(|_| AppError::FileStorageUnavailable)?;
         journal::putting(database, claim).await?;
-        if store.put(blob, source, cancel).await.is_err() {
-            journal::unknown(database, claim, "PUBLICATION_PENDING").await?;
-            return Ok(());
+        match store.put(blob, source, cancel).await {
+            Ok(_) => (),
+            Err(
+                StorageError::AuthenticationRejected
+                | StorageError::InvalidInput
+                | StorageError::ConfigurationUnavailable
+                | StorageError::SecretUnavailable
+                | StorageError::DestinationBlocked
+                | StorageError::Unsupported,
+            ) => {
+                journal::rejected(database, claim).await?;
+                return Ok(());
+            }
+            Err(_) => {
+                journal::unknown(database, claim, "PUBLICATION_PENDING").await?;
+                return Ok(());
+            }
         }
         database
             .collection::<Document>("data_export_attempts")

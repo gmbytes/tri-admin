@@ -119,6 +119,23 @@ pub async fn unknown(database: &Database, claim: &Claim, code: &str) -> Result<(
     database.collection::<Document>("data_exports").update_one(doc!{"_id":claim.job.meta.id,"generation":claim.job.generation,"leaseToken":&claim.token},doc!{"$set":{"state":"unknown","lastError":code,"leaseToken":null,"leaseExpiresAt":null,"cleanupPending":true,"nextRunAt":DateTime::from_millis(DateTime::now().timestamp_millis()+30000),"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).await?;
     Ok(())
 }
+pub async fn rejected(database: &Database, claim: &Claim) -> Result<(), AppError> {
+    transaction::run(database, (database.clone(), claim.clone()), |session, (database, claim)| async move {
+        shared::lock(database, "data-exports", session).await?;
+        let changed = database.collection::<Document>("data_export_attempts").update_one(
+            doc! {"_id":claim.attempt.id,"jobId":claim.job.meta.id,"generation":claim.job.generation,"state":"putting","writeStarted":true,"blobKnown":false},
+            doc! {"$set":{"writeStarted":false,"state":"orphaned","updatedAt":DateTime::now()}},
+        ).session(&mut *session).await?;
+        if changed.matched_count != 1 { return Err(fail(Failure::Conflict("写入候选已改变"))); }
+        // Cancellation may already have won the job fence. The rejected candidate
+        // still has no object, but must never overwrite that terminal decision.
+        database.collection::<Document>("data_exports").update_one(
+            doc! {"_id":claim.job.meta.id,"generation":claim.job.generation,"leaseToken":&claim.token},
+            doc! {"$set":{"state":"failed","lastError":"STORAGE_WRITE_REJECTED","leaseToken":null,"leaseExpiresAt":null,"cleanupPending":true,"updatedAt":DateTime::now()},"$inc":{"version":1i64}},
+        ).session(session).await?;
+        Ok(())
+    }.boxed()).await
+}
 pub async fn failed(database: &Database, claim: &Claim, code: &str) -> Result<(), AppError> {
     database.collection::<Document>("data_exports").update_one(doc!{"_id":claim.job.meta.id,"generation":claim.job.generation,"leaseToken":&claim.token},doc!{"$set":{"state":"failed","lastError":code,"leaseToken":null,"leaseExpiresAt":null,"cleanupPending":true,"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).await?;
     Ok(())

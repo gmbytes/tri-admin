@@ -36,6 +36,8 @@ cargo run -p admin-api -- serve
 
 服务约每 10 秒处理有界过期/遗留导出清理。`cargo run -p admin-api -- maintain-exports` 单独运行一轮，返回 scanned/retired/pending 计数；此 CLI 不启动队列执行器。未知写入只查询原候选，单次缺失不能认定未写入；pending 表示仍需确认或清理。工作目录不可用会退避，归属未确认或其他进程持锁的文件会保留。
 
+任务显示“存储拒绝写入”时，确认存储配置和权限后可明确重试。已发出的写入结果不明或候选读取失败时仍显示待确认，服务先查询原候选，不自动再次上传。S3 专项验证使用 `npm run test:s3`；只运行 SeaweedFS 内容/发布/导出故障门禁可用 `node tools/test-s3-content.mjs`，只运行持久导出故障可加 `--exports-only`。测试容器仅绑定本机随机端口，使用临时凭据，并校验归属后清理。
+
 当前开发 Compose 仅绑定本机，使用无认证测试副本集。正式部署需要单独的认证/TLS 配置，开发配置不作为生产配置。
 
 ## 启动桌面客户端
