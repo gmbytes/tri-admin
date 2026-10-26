@@ -7,6 +7,9 @@ pub enum Access {
     Authenticated,
     RefreshCredential,
     Permission,
+    OpenApplication,
+    OpenUser,
+    OpenRefreshCredential,
 }
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +21,7 @@ pub struct Endpoint {
     pub label: &'static str,
     pub access: Access,
     pub required_permissions: &'static [&'static str],
+    pub required_scopes: &'static [&'static str],
     pub notes: &'static str,
 }
 pub struct ApiModule {
@@ -29,15 +33,17 @@ pub struct ApiModule {
 // Each declaration registers the live route and its metadata together.
 #[macro_export]
 macro_rules! api_routes {
+    (@scopes)=>{&[]};
+    (@scopes $scopes:expr)=>{$scopes};
     (@method get)=>{"GET"};
     (@method put)=>{"PUT"};
     (@method post)=>{"POST"};
     (@method patch)=>{"PATCH"};
     (@method delete)=>{"DELETE"};
-    (prefix $prefix:literal; $( $method:ident $path:literal => $handler:ident, $operation:literal, $group:literal, $label:literal, $access:ident, $permissions:expr $(, $notes:literal)?; )*) => {
+    (prefix $prefix:literal; $( $method:ident $path:literal => $handler:ident, $operation:literal, $group:literal, $label:literal, $access:ident, $permissions:expr $(, scopes = $scopes:expr)? $(, $notes:literal)?; )*) => {
         pub const API_PREFIX:&str=$prefix;
         pub const API_ENDPOINTS:&[$crate::common::api::Endpoint]=&[$(
-            $crate::common::api::Endpoint{operation_id:$operation,method:$crate::api_routes!(@method $method),path:concat!($prefix,$path),group:$group,label:$label,access:$crate::common::api::Access::$access,required_permissions:$permissions,notes:concat!($($notes)?)},
+            $crate::common::api::Endpoint{operation_id:$operation,method:$crate::api_routes!(@method $method),path:concat!($prefix,$path),group:$group,label:$label,access:$crate::common::api::Access::$access,required_permissions:$permissions,required_scopes:$crate::api_routes!(@scopes $($scopes)?),notes:concat!($($notes)?)},
         )*];
         pub fn routes()->axum::Router<$crate::state::AppState> {
             let router=axum::Router::new();

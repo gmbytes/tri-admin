@@ -147,4 +147,18 @@
 - `GET/PATCH/DELETE /users/{id}`：固定 appId/id 交叉校验，属于其他应用的合法用户 ID 也返回 404。修改 version 和 username/displayName/scopes/status，删除须 query version。子用户写入不改变应用的公开 version，父记录内部栅栏保护与应用停用/Scope 修改并发。
 - `POST /users/{id}/password`：version/password；更新密码、内部认证代际、撤销目标用户会话及成功审计同事务，返回 204。其他应用、其他用户和应用服务会话不受该操作影响。
 - 父应用软删除后用户接口返回 404，用户记录保留；用户软删除后旧 ID 不再读取，同名新用户 ID 不同，旧会话不能重新绑定。用户状态切换和删除撤销其会话，重新启用不恢复旧会话。
-- 自身 open-access v1→v2 只扩展应用、用户、操作回执和开放会话集合/索引，不重写 Token 或调用日志，不增加旧系统运行时兼容分支。开放认证与真实令牌隔离仍属于下一阶段验收。
+- 自身 open-access v1→v2 扩展应用、用户、操作回执和开放会话集合/索引；v3 引入独立开放认证，不重写既有 Token、应用密钥或用户密码，不增加旧系统运行时兼容分支。
+
+## 开放认证与本人资料
+
+此命名空间不接受管理 JWT 或管理员 API Token；开放 JWT 也不能访问管理 API。目录 schema v2 用 `requiredScopes` 与管理 `requiredPermissions` 分开描述，显示应用服务、应用用户和开放刷新凭据访问类型。
+
+- `POST /open/v1/auth/application`：applicationId/secret、可省略 scopes；验证一次性应用密钥，返回应用服务访问令牌，refreshToken 为 null。访问会话 15 分钟，过期后重新证明服务密钥，不用用户刷新令牌替代。
+- `POST /open/v1/auth/login`：applicationId/username/password、可省略 scopes；用户名在应用内规范化查找。返回访问令牌、轮换刷新凭据、expiresIn、applicationId、principalKind 和授权 scopes，不返回管理员角色。访问最多 15 分钟、会话绝对期限 7 天。
+- `POST /open/v1/auth/refresh`：applicationId/refreshToken；刷新凭据为 tri_orf1 类型随机秘密，仅保存摘要。校验当前会话与用户状态、认证代际、原授权上限及当前用户/应用 Scope；并发或旧凭据重用提交会话撤销后返回 401，不通过刷新扩大权限。
+- `POST /open/v1/auth/logout`：同刷新凭据证明，注销对应用户会话，不依赖未过期访问 JWT。`POST /open/v1/auth/application/logout`：只接受应用服务访问 JWT，幂等撤销其自身会话。两类注销不被业务预算用尽阻止，不授予业务访问。
+- `GET /open/v1/me`：仅应用用户、open.profile.read；`PATCH /me`：仅应用用户、open.profile.write，body 只允许 version/displayName。旧版本 409，未知字段 422。资料与管理用户集合独立；返回应用用户安全资料，不含密码或认证代际。
+- 应用/用户会话的调用共享应用分钟/UTC 日预算和来源策略；服务身份访问用户本人资料即使有同名 Scope 仍 403，Scope 拒绝计入业务预算。调用记录只包含真实 applicationId/principalKind/userId/sessionId，不伪装为应用创建管理员。认证尝试有独立 IP/账号限流；登录/刷新和注销不消费业务请求预算。
+- 新鲜登录或刷新授权与当前父应用状态在事务中核对，用户密码证明的认证代际也重新核对，防止密码重置后迟到的旧证明创建有效会话。过期判断不依赖 TTL，应用停用/删除不复活，服务密钥轮换不误撤销用户会话。
+
+当前 `/open/v1/users` 服务业务 CRUD 与应用调用日志的管理查询仍在后续子步骤，四项 Scope 的完整业务验收和管理界面尚未完成。

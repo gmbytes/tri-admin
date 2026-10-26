@@ -28,7 +28,11 @@ fn random_token() -> Result<String, AppError> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-async fn enforce_login_rate(database: &Database, key: &str, limit: i64) -> Result<(), AppError> {
+pub(crate) async fn enforce_login_rate(
+    database: &Database,
+    key: &str,
+    limit: i64,
+) -> Result<(), AppError> {
     let now = DateTime::now();
     let reset = DateTime::from_millis(now.timestamp_millis() + 60_000);
     let attempts=database.collection::<Document>("login_attempts").find_one_and_update(doc!{"_id":token_hash(key)},vec![doc!{"$set":{

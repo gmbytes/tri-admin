@@ -12,6 +12,7 @@
   "scripts": {
     "dev:env": "node tools/init-dev-env.mjs",
     "dev:settings-key": "node tools/init-settings-key.mjs",
+    "dev:open-key": "node tools/init-open-key.mjs",
     "test:tools": "node --test tools/tests/*.test.mjs",
     "test:desktop": "npm --workspace @tri-admin/desktop test",
     "test": "npm run test:tools && npm run test:desktop",

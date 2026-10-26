@@ -18,7 +18,7 @@ const apiFiltered = computed(() =>
   (catalog.value?.endpoints ?? []).filter(
     (item) =>
       (!apiMethod.value || item.method === apiMethod.value) &&
-      `${item.operationId} ${item.path} ${item.label} ${item.requiredPermissions.join(' ')} ${item.group} ${item.notes}`
+      `${item.operationId} ${item.path} ${item.label} ${item.requiredPermissions.join(' ')} ${item.requiredScopes.join(' ')} ${item.group} ${item.notes}`
         .toLowerCase()
         .includes(apiSearch.value.toLowerCase()),
   ),
@@ -43,6 +43,9 @@ function accessLabel(access: string) {
         authenticated: '登录',
         refreshCredential: '刷新凭证',
         permission: '操作权限',
+        openApplication: '应用服务身份',
+        openUser: '应用用户身份',
+        openRefreshCredential: '开放刷新凭证',
       } as Record<string, string>
     )[access] ?? access
   )
@@ -154,6 +157,9 @@ onMounted(load)
             ><span>{{ accessLabel(row.access) }}</span
             ><small v-for="code in row.requiredPermissions" :key="code" class="table-secondary">{{
               code
+            }}</small
+            ><small v-for="scope in row.requiredScopes" :key="scope" class="table-secondary">{{
+              scope
             }}</small
             ><small v-if="row.notes" class="table-secondary">{{ row.notes }}</small></template
           ></el-table-column

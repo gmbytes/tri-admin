@@ -20,6 +20,11 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
     vec![
         ApiModule {
+            prefix: open_access::router::API_PREFIX,
+            endpoints: open_access::router::API_ENDPOINTS,
+            routes: open_access::router::configured_routes,
+        },
+        ApiModule {
             prefix: applications::router::API_PREFIX,
             endpoints: applications::router::API_ENDPOINTS,
             routes: applications::router::configured_routes,

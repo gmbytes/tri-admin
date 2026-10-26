@@ -70,6 +70,8 @@ pub enum AppError {
     NotReady,
     #[error("配置密钥库暂不可用")]
     SecretStoreUnavailable,
+    #[error("开放认证未配置独立签名密钥")]
+    OpenAuthUnavailable,
     #[error("文件存储暂不可用，请查询上传状态后重试")]
     FileStorageUnavailable,
     #[error("{0}")]
@@ -106,6 +108,7 @@ impl IntoResponse for AppError {
             Self::SecretStoreUnavailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, "SECRET_STORE_UNAVAILABLE")
             }
+            Self::OpenAuthUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "OPEN_AUTH_UNAVAILABLE"),
             Self::FileStorageUnavailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, "FILE_STORAGE_UNAVAILABLE")
             }

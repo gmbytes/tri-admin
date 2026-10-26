@@ -71,8 +71,16 @@ export interface ApiEndpoint {
   path: string
   group: string
   label: string
-  access: 'public' | 'authenticated' | 'refreshCredential' | 'permission'
+  access:
+    | 'public'
+    | 'authenticated'
+    | 'refreshCredential'
+    | 'permission'
+    | 'openApplication'
+    | 'openUser'
+    | 'openRefreshCredential'
   requiredPermissions: string[]
+  requiredScopes: string[]
   notes: string
 }
 export interface ApiCatalog {

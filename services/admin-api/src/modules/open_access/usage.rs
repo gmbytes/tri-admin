@@ -22,8 +22,9 @@ pub struct Descriptor {
     pub route: &'static str,
 }
 #[derive(Clone)]
-pub struct Ticket {
-    pub id: ObjectId,
+pub enum Ticket {
+    AdminToken { id: ObjectId },
+    Open { id: ObjectId },
 }
 pub struct CallStart<'a> {
     pub owner: ObjectId,
@@ -55,7 +56,11 @@ pub async fn finish(
     code: &str,
     duration: i64,
 ) -> Result<(), AppError> {
-    database.collection::<Document>("api_call_logs").update_one(doc!{"_id":ticket.id,"state":"started"},doc!{"$set":{"state":"finished","status":i32::from(status),"errorCode":if status>=400{Some(code)}else{None},"durationMs":duration,"finishedAt":DateTime::now()}}).await?;
+    let (collection, id) = match ticket {
+        Ticket::AdminToken { id } => ("api_call_logs", *id),
+        Ticket::Open { id } => ("application_call_logs", *id),
+    };
+    database.collection::<Document>(collection).update_one(doc!{"_id":id,"state":"started"},doc!{"$set":{"state":"finished","status":i32::from(status),"errorCode":if status>=400{Some(code)}else{None},"durationMs":duration,"finishedAt":DateTime::now()}}).await?;
     Ok(())
 }
 fn first() -> u64 {
@@ -265,12 +270,15 @@ pub struct CleanupReport {
 pub async fn maintenance_once(database: &Database) -> Result<CleanupReport, AppError> {
     let mut report = CleanupReport::default();
     let now = DateTime::now();
-    for (collection, target) in [
-        ("api_call_logs", &mut report.calls),
-        ("api_usage_buckets", &mut report.buckets),
-        ("open_auth_attempts", &mut report.attempts),
+    for collection in [
+        "api_call_logs",
+        "application_call_logs",
+        "api_usage_buckets",
+        "application_usage_buckets",
+        "open_auth_attempts",
     ] {
-        let eligible = if collection == "api_call_logs" {
+        let logs = collection.ends_with("call_logs");
+        let eligible = if logs {
             doc! {"createdAt":{"$lte":DateTime::from_millis(now.timestamp_millis()-RETENTION_MS)}}
         } else {
             doc! {"expireAt":{"$lte":now}}
@@ -287,11 +295,18 @@ pub async fn maintenance_once(database: &Database) -> Result<CleanupReport, AppE
             .map(|mut row| row.remove("_id").ok_or(AppError::NotReady))
             .collect::<Result<Vec<_>, _>>()?;
         if !ids.is_empty() {
-            *target = database
+            let count = database
                 .collection::<Document>(collection)
                 .delete_many(doc! {"$and":[eligible,{"_id":{"$in":ids}}]})
                 .await?
                 .deleted_count;
+            if logs {
+                report.calls += count;
+            } else if collection.ends_with("buckets") {
+                report.buckets += count;
+            } else {
+                report.attempts += count;
+            }
         }
     }
     Ok(report)

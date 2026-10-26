@@ -54,7 +54,7 @@ async fn catalog_has_stable_unique_operations_and_a_verifiable_checksum() {
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
     let data = catalog(&app, token).await;
-    assert_eq!(data["schemaVersion"], 1);
+    assert_eq!(data["schemaVersion"], 2);
     let entries = data["endpoints"].as_array().unwrap();
     assert!(entries.len() > 30);
     let mut ids = HashSet::new();
@@ -228,13 +228,13 @@ async fn catalog_access_classes_match_actual_unauthenticated_behavior() {
             )
             .await;
         match entry["access"].as_str().unwrap() {
-            "permission" | "authenticated" => assert_eq!(
+            "permission" | "authenticated" | "openApplication" | "openUser" => assert_eq!(
                 status,
                 StatusCode::UNAUTHORIZED,
                 "{} {body}",
                 entry["operationId"]
             ),
-            "public" | "refreshCredential" => assert!(
+            "public" | "refreshCredential" | "openRefreshCredential" => assert!(
                 !matches!(
                     status,
                     StatusCode::FORBIDDEN

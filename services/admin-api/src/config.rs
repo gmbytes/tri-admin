@@ -12,6 +12,7 @@ pub struct Config {
     pub login_limit_per_ip: i64,
     mongodb_uri: Option<String>,
     jwt_signing_key: String,
+    open_jwt_signing_key: Option<Zeroizing<String>>,
     settings_keys: BTreeMap<String, Zeroizing<[u8; 32]>>,
     settings_active_key: Option<String>,
     pub storage_root: String,
@@ -34,6 +35,15 @@ impl Config {
             lookup("TRI_JWT_SIGNING_KEY").ok_or(ConfigError("请设置 TRI_JWT_SIGNING_KEY"))?;
         if jwt_signing_key.len() < 32 {
             return Err(ConfigError("TRI_JWT_SIGNING_KEY 至少需要 32 字节"));
+        }
+        let open_jwt_signing_key = lookup("TRI_OPEN_JWT_SIGNING_KEY").map(Zeroizing::new);
+        if open_jwt_signing_key
+            .as_ref()
+            .is_some_and(|key| key.len() < 32 || key.as_str() == jwt_signing_key)
+        {
+            return Err(ConfigError(
+                "开放签名密钥至少 32 字节且必须独立于管理员密钥",
+            ));
         }
         let mongodb_uri = lookup("TRI_MONGODB_URI").filter(|value| !value.trim().is_empty());
         if mongodb_uri
@@ -145,6 +155,7 @@ impl Config {
             login_limit_per_ip,
             mongodb_uri,
             jwt_signing_key,
+            open_jwt_signing_key,
             settings_keys,
             settings_active_key,
             storage_root,
@@ -158,6 +169,9 @@ impl Config {
     }
     pub fn jwt_signing_key(&self) -> &str {
         &self.jwt_signing_key
+    }
+    pub fn open_jwt_signing_key(&self) -> Option<&str> {
+        self.open_jwt_signing_key.as_ref().map(|key| key.as_str())
     }
     pub fn settings_key_ids(&self) -> Vec<String> {
         self.settings_keys.keys().cloned().collect()
@@ -183,6 +197,10 @@ impl fmt::Debug for Config {
                 &self.mongodb_uri.as_ref().map(|_| "<redacted>"),
             )
             .field("jwt_signing_key", &"<redacted>")
+            .field(
+                "open_jwt_signing_key",
+                &self.open_jwt_signing_key.as_ref().map(|_| "<redacted>"),
+            )
             .field("settings_key_ids", &self.settings_key_ids())
             .finish()
     }

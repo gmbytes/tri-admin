@@ -50,7 +50,7 @@ impl Policy {
         self.allowed_ips.dedup();
         Ok(self)
     }
-    fn allows(&self, peer: Option<std::net::IpAddr>) -> bool {
+    pub(crate) fn allows(&self, peer: Option<std::net::IpAddr>) -> bool {
         self.allowed_ips.is_empty()
             || peer.is_some_and(|peer| {
                 self.allowed_ips.iter().any(|value| {
@@ -183,7 +183,7 @@ pub async fn reserve(
     )
     .await?;
     Ok(Reservation {
-        ticket: Ticket { id: call_id },
+        ticket: Ticket::AdminToken { id: call_id },
         denial,
     })
 }

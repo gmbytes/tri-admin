@@ -32,7 +32,7 @@ pub fn manifest() -> Result<Catalog, AppError> {
     let entries = endpoints();
     let json = crate::common::canonical::json(&entries)?;
     Ok(Catalog {
-        schema_version: 1,
+        schema_version: 2,
         checksum: crate::common::canonical::checksum(json.as_bytes()),
         endpoints: entries,
     })

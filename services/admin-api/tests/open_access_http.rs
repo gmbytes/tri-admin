@@ -35,6 +35,10 @@ async fn real_http_token_calls_enforce_scope_and_socket_ip_and_main_runs_usage_m
         )
         .env("TRI_MONGODB_DATABASE", app.database.name())
         .env("TRI_JWT_SIGNING_KEY", support::KEY)
+        .env(
+            "TRI_OPEN_JWT_SIGNING_KEY",
+            "separate-open-http-fixture-signing-key-2026",
+        )
         .env("TRI_SETTINGS_KEYS", format!("fixture:{}", "11".repeat(32)))
         .env("TRI_SETTINGS_ACTIVE_KEY", "fixture")
         .env("TRI_STORAGE_ROOT", root.path())
@@ -165,6 +169,44 @@ async fn real_http_token_calls_enforce_scope_and_socket_ip_and_main_runs_usage_m
     let account: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
     assert_eq!(account["data"]["applicationId"], application);
     assert!(!account.to_string().contains("passwordHash"));
+    let response=client.post(format!("{base}/open/v1/auth/login")).header("content-type","application/json").body(json!({"applicationId":application,"username":"http.user","password":support::PASSWORD}).to_string()).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    let open: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let access = open["data"]["accessToken"].as_str().unwrap();
+    assert_eq!(
+        client
+            .get(format!("{base}/open/v1/me"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/v1/auth/me"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        401
+    );
+    let response = client
+        .post(format!("{base}/open/v1/auth/refresh"))
+        .header("content-type", "application/json")
+        .body(
+            json!({"applicationId":application,"refreshToken":open["data"]["refreshToken"]})
+                .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
     drop(child);
     let mut maintenance = std::process::Command::new(env!("CARGO_BIN_EXE_admin-api"));
     maintenance

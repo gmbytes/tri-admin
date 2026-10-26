@@ -213,6 +213,8 @@ docs/                        规范、进度和运维
 - [ ] 测试 15 分钟访问/7 天刷新、复用与并发刷新撤销、应用禁用/密钥轮换/用户重置即时失效、当前 Scope 收缩、跨应用同名身份隔离；缺少开放签名密钥时明确拒绝，不回退管理员密钥。
 - [ ] 使用真实 HTTP/副本集运行三类身份允许/拒绝、IP/CIDR、跨会话共享应用预算和安全日志分页，Expected：业务变化、日志及限额行为均与设计一致；运行适当完整回归、Clippy 和格式检查后提交。
 
+Task 8 C 当前分阶段继续：已接入独立密钥、应用/用户认证、访问/刷新/注销、本人资料、真实身份区分和共享应用预算核心；应用服务 `/users` 业务操作、应用调用日志管理查询以及完整四 Scope 验收尚待后续子步骤，不关闭 C。API 目录 v2 的开放身份与 `requiredScopes` 已与管理权限分离。
+
 ### Task 8 D：管理界面与客户端验收
 
 **文件：** 新增 `apps/desktop/src/core/open-access.ts`、`views/ApiTokensView.vue`、`views/ApplicationsView.vue`、`views/ApplicationCallsView.vue` 与客户端/页面测试，注册新页面和菜单；保留现有桌面会话存储边界。
