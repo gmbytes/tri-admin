@@ -7,18 +7,22 @@ use super::{
 use crate::{
     common::{
         error::AppError,
+        pagination::{Page, PageInput},
         request,
         response::ApiResponse,
         transaction::{self, Failure, fail},
+        validation,
     },
     modules::applications::{
+        dto::{CreateUser, DeleteQuery, PasswordInput, PatchUser},
         models::{UserMeta, UserView},
+        user_authority::Authority,
         users,
     },
     state::AppState,
 };
 use axum::{
-    extract::{ConnectInfo, Request, State},
+    extract::{ConnectInfo, Path, Query, Request, State, rejection::QueryRejection},
     http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
     middleware::Next,
     response::Response,
@@ -35,6 +39,12 @@ crate::api_routes! {
     post "/open/v1/auth/application/logout"=>application_logout,"open.auth.applicationLogout","openAuth","注销应用服务会话",OpenApplication,&[];
     get "/open/v1/me"=>me,"open.profile.get","openProfile","应用用户本人资料",OpenUser,&[],scopes=&["open.profile.read"];
     patch "/open/v1/me"=>patch_me,"open.profile.update","openProfile","修改本人显示名称",OpenUser,&[],scopes=&["open.profile.write"];
+    get "/open/v1/users"=>list_users,"open.users.list","openUsers","应用服务用户列表",OpenApplication,&[],scopes=&["open.users.read"];
+    post "/open/v1/users"=>create_user,"open.users.create","openUsers","应用服务创建用户",OpenApplication,&[],scopes=&["open.users.write"],"授予 profile Scope 不得超过本令牌与应用集合";
+    get "/open/v1/users/{id}"=>get_user,"open.users.get","openUsers","应用服务用户资料",OpenApplication,&[],scopes=&["open.users.read"];
+    patch "/open/v1/users/{id}"=>update_user,"open.users.update","openUsers","应用服务修改用户",OpenApplication,&[],scopes=&["open.users.write"];
+    delete "/open/v1/users/{id}"=>delete_user,"open.users.delete","openUsers","应用服务删除用户",OpenApplication,&[],scopes=&["open.users.write"];
+    post "/open/v1/users/{id}/password"=>reset_password,"open.users.resetPassword","openUsers","应用服务重置密码",OpenApplication,&[],scopes=&["open.users.write"],"凭据授予不得超过本令牌的 profile Scope";
 }
 pub fn configured_routes() -> axum::Router<AppState> {
     routes().layer(axum::middleware::from_fn(private))
@@ -133,4 +143,103 @@ async fn patch_me(
     let database = state.require_database()?;
     let user=transaction::run(database,(database.clone(),context,name),|session,(database,context,name)|async move{let(record,_)=context::authorize(database,session,context,PrincipalKind::User,Scope::ProfileWrite).await?;let id=record.user_id.ok_or_else(||fail(Failure::Unauthorized))?;let changed=database.collection::<Document>("application_users").update_one(doc!{"_id":id,"applicationId":record.application_id,"version":input.version,"deletedAt":null,"status":"active"},doc!{"$set":{"displayName":name.as_str(),"updatedAt":DateTime::now()},"$inc":{"version":1i64}}).session(&mut *session).await?;if changed.matched_count!=1{return Err(fail(Failure::Conflict("用户版本已改变")));}super::sessions::audit(database,session,&record,"open.profile.update","success").await?;database.collection::<UserMeta>("application_users").find_one(doc!{"_id":id,"applicationId":record.application_id}).projection(crate::modules::applications::models::user_projection()).session(session).await?.ok_or_else(||fail(Failure::NotReady))}.boxed()).await?;
     Ok(ApiResponse::success(user.view()?))
+}
+async fn list_users(
+    State(state): State<AppState>,
+    context: OpenContext,
+    query: Result<Query<PageInput>, QueryRejection>,
+) -> Result<Page<UserView>, AppError> {
+    context.require(PrincipalKind::Application, Scope::UsersRead)?;
+    let Query(input) = query.map_err(|_| AppError::Validation("用户查询参数无效".into()))?;
+    users::list(state.require_database()?, context.application_id(), input).await
+}
+async fn get_user(
+    State(state): State<AppState>,
+    context: OpenContext,
+    Path(id): Path<String>,
+) -> Result<ApiResponse<UserView>, AppError> {
+    context.require(PrincipalKind::Application, Scope::UsersRead)?;
+    Ok(ApiResponse::success(
+        users::get(
+            state.require_database()?,
+            context.application_id(),
+            validation::object_id(&id)?,
+        )
+        .await?,
+    ))
+}
+async fn create_user(
+    State(state): State<AppState>,
+    context: OpenContext,
+    request: Request,
+) -> Result<(StatusCode, ApiResponse<UserView>), AppError> {
+    let authority = Authority::application(&context)?;
+    let input = request::json::<CreateUser>(request, &state).await?;
+    Ok((
+        StatusCode::CREATED,
+        ApiResponse::success(
+            users::create(
+                state.require_database()?,
+                authority,
+                context.application_id(),
+                input,
+            )
+            .await?,
+        ),
+    ))
+}
+async fn update_user(
+    State(state): State<AppState>,
+    context: OpenContext,
+    Path(id): Path<String>,
+    request: Request,
+) -> Result<ApiResponse<UserView>, AppError> {
+    let authority = Authority::application(&context)?;
+    let input = request::json::<PatchUser>(request, &state).await?;
+    Ok(ApiResponse::success(
+        users::patch(
+            state.require_database()?,
+            authority,
+            context.application_id(),
+            validation::object_id(&id)?,
+            input,
+        )
+        .await?,
+    ))
+}
+async fn delete_user(
+    State(state): State<AppState>,
+    context: OpenContext,
+    Path(id): Path<String>,
+    query: Result<Query<DeleteQuery>, QueryRejection>,
+) -> Result<StatusCode, AppError> {
+    let authority = Authority::application(&context)?;
+    let Query(input) = query.map_err(|_| AppError::Validation("版本参数无效".into()))?;
+    users::delete(
+        state.require_database()?,
+        authority,
+        context.application_id(),
+        validation::object_id(&id)?,
+        input.version,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn reset_password(
+    State(state): State<AppState>,
+    context: OpenContext,
+    Path(id): Path<String>,
+    request: Request,
+) -> Result<StatusCode, AppError> {
+    let authority = Authority::application(&context)?;
+    let input = request::json::<PasswordInput>(request, &state).await?;
+    users::reset_password(
+        state.require_database()?,
+        authority,
+        context.application_id(),
+        validation::object_id(&id)?,
+        input,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

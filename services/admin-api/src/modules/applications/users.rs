@@ -2,6 +2,7 @@ use super::{
     dto::{self, CreateUser, PasswordInput, PatchUser},
     models::{self, UserMeta, UserRecord, UserView},
     service,
+    user_authority::{Action, Authority},
 };
 use crate::{
     common::{
@@ -11,35 +12,13 @@ use crate::{
         transaction::{self, Failure, fail},
         validation,
     },
-    modules::{
-        auth::{AuthContext, repository},
-        open_access::scopes,
-        rbac::shared::{self, Actor},
-    },
+    modules::open_access::scopes,
 };
 use futures_util::{FutureExt, TryStreamExt};
 use mongodb::{
     ClientSession, Database,
     bson::{DateTime, Document, doc, oid::ObjectId},
 };
-const WRITE: &[&str] = &[
-    "applications.read",
-    "applicationUsers.read",
-    "applicationUsers.write",
-];
-fn subset(
-    scopes: &[scopes::Scope],
-    app: &super::models::ApplicationMeta,
-) -> mongodb::error::Result<()> {
-    if scopes
-        .iter()
-        .all(|scope| app.allowed_scopes.contains(scope))
-    {
-        Ok(())
-    } else {
-        Err(fail(Failure::Validation("用户 Scope 超出应用允许集合")))
-    }
-}
 async fn current(
     database: &Database,
     session: &mut ClientSession,
@@ -56,12 +35,10 @@ async fn current(
 }
 pub async fn create(
     database: &Database,
-    context: &AuthContext,
+    authority: Authority,
     application: ObjectId,
     input: CreateUser,
 ) -> Result<UserView, AppError> {
-    let sid = context.require_session()?;
-    let actor = Actor::new(context)?;
     let username = input.username.trim().to_owned();
     let display = input.display_name.trim().to_owned();
     validation::username(&username)?;
@@ -89,22 +66,19 @@ pub async fn create(
     };
     transaction::run(
         database,
-        (database.clone(), actor, record),
-        |session, (database, actor, record)| {
+        (database.clone(), authority, record),
+        |session, (database, authority, record)| {
             async move {
-                shared::lock(database, "rbac", session).await?;
-                let permissions =
-                    repository::interactive_permissions(database, session, actor.id, sid, WRITE)
-                        .await?;
-                let app = service::lock_app(database, session, application).await?;
-                subset(&record.meta.scopes, &app)?;
-                service::grant(&permissions, &record.meta.scopes)?;
+                let authorized = authority.authorize(database, session, application).await?;
+                authorized.check_grant(&record.meta.scopes)?;
                 database
                     .collection::<UserRecord>("application_users")
                     .insert_one(&*record)
                     .session(&mut *session)
                     .await?;
-                shared::audit(database, actor, "applicationUsers.create", id, session).await?;
+                authorized
+                    .audit(database, session, Action::Create, id)
+                    .await?;
                 Ok(record.meta.clone())
             }
             .boxed()
@@ -183,13 +157,11 @@ pub async fn list(
 }
 pub async fn patch(
     database: &Database,
-    context: &AuthContext,
+    authority: Authority,
     application: ObjectId,
     id: ObjectId,
     input: PatchUser,
 ) -> Result<UserView, AppError> {
-    let sid = context.require_session()?;
-    let actor = Actor::new(context)?;
     dto::version(input.version)?;
     if input.username.is_none()
         && input.display_name.is_none()
@@ -216,21 +188,16 @@ pub async fn patch(
         .transpose()?;
     transaction::run(
         database,
-        (database.clone(), actor, username, display, scopes),
-        |session, (database, actor, username, display, scopes)| {
+        (database.clone(), authority, username, display, scopes),
+        |session, (database, authority, username, display, scopes)| {
             async move {
-                shared::lock(database, "rbac", session).await?;
-                let permissions =
-                    repository::interactive_permissions(database, session, actor.id, sid, WRITE)
-                        .await?;
-                let app = service::lock_app(database, session, application).await?;
+                let authorized = authority.authorize(database, session, application).await?;
                 let mut user = current(database, session, application, id).await?;
                 if user.version != input.version {
                     return Err(fail(Failure::Conflict("应用用户版本已改变")));
                 }
                 if let Some(scopes) = scopes {
-                    service::grant(&permissions, scopes)?;
-                    subset(scopes, &app)?;
+                    authorized.check_grant(scopes)?;
                     user.scopes = scopes.clone();
                 }
                 if let Some(username) = username {
@@ -241,6 +208,9 @@ pub async fn patch(
                     user.display_name = display.clone();
                 }
                 let status_changed = input.status.is_some_and(|status| status != user.status);
+                if input.status == Some(dto::UserStatus::Active) && status_changed {
+                    authorized.check_grant(&user.scopes)?;
+                }
                 if let Some(status) = input.status {
                     user.status = status;
                 }
@@ -266,7 +236,9 @@ pub async fn patch(
                     .update_one(doc! {"_id":id,"applicationId":application}, update)
                     .session(&mut *session)
                     .await?;
-                shared::audit(database, actor, "applicationUsers.update", id, session).await?;
+                authorized
+                    .audit(database, session, Action::Update, id)
+                    .await?;
                 Ok(user)
             }
             .boxed()
@@ -277,26 +249,30 @@ pub async fn patch(
 }
 pub async fn delete(
     database: &Database,
-    context: &AuthContext,
+    authority: Authority,
     application: ObjectId,
     id: ObjectId,
     version: i64,
 ) -> Result<(), AppError> {
-    let sid = context.require_session()?;
-    let actor = Actor::new(context)?;
     dto::version(version)?;
-    transaction::run(database,(database.clone(),actor),|session,(database,actor)|async move{shared::lock(database,"rbac",session).await?;repository::interactive_permissions(database,session,actor.id,sid,WRITE).await?;service::lock_app(database,session,application).await?;let user=current(database,session,application,id).await?;if user.version!=version{return Err(fail(Failure::Conflict("应用用户版本已改变")));}let now=DateTime::now();database.collection::<Document>("application_users").update_one(doc!{"_id":id,"applicationId":application},doc!{"$set":{"deletedAt":now,"updatedAt":now,"status":"disabled"},"$inc":{"version":1i64,"authVersion":1i64}}).session(&mut *session).await?;service::revoke_sessions(database,session,application,Some("user"),Some(id)).await?;shared::audit(database,actor,"applicationUsers.delete",id,session).await?;Ok(())}.boxed()).await
+    transaction::run(database,(database.clone(),authority),|session,(database,authority)|async move{
+        let authorized=authority.authorize(database,session,application).await?;let user=current(database,session,application,id).await?;if user.version!=version{return Err(fail(Failure::Conflict("应用用户版本已改变")));}
+        let now=DateTime::now();database.collection::<Document>("application_users").update_one(doc!{"_id":id,"applicationId":application},doc!{"$set":{"deletedAt":now,"updatedAt":now,"status":"disabled"},"$inc":{"version":1i64,"authVersion":1i64}}).session(&mut *session).await?;
+        service::revoke_sessions(database,session,application,Some("user"),Some(id)).await?;authorized.audit(database,session,Action::Delete,id).await?;Ok(())
+    }.boxed()).await
 }
 pub async fn reset_password(
     database: &Database,
-    context: &AuthContext,
+    authority: Authority,
     application: ObjectId,
     id: ObjectId,
     input: PasswordInput,
 ) -> Result<(), AppError> {
-    let sid = context.require_session()?;
-    let actor = Actor::new(context)?;
     dto::version(input.version)?;
     let hash = password::hash(input.password).await?;
-    transaction::run(database,(database.clone(),actor,hash),|session,(database,actor,hash)|async move{shared::lock(database,"rbac",session).await?;let permissions=repository::interactive_permissions(database,session,actor.id,sid,WRITE).await?;let app=service::lock_app(database,session,application).await?;let user=current(database,session,application,id).await?;if user.version!=input.version{return Err(fail(Failure::Conflict("应用用户版本已改变")));}service::grant(&permissions,&user.scopes)?;subset(&user.scopes,&app)?;database.collection::<Document>("application_users").update_one(doc!{"_id":id,"applicationId":application},doc!{"$set":{"passwordHash":hash.as_str(),"updatedAt":DateTime::now()},"$inc":{"version":1i64,"authVersion":1i64}}).session(&mut *session).await?;service::revoke_sessions(database,session,application,Some("user"),Some(id)).await?;shared::audit(database,actor,"applicationUsers.resetPassword",id,session).await?;Ok(())}.boxed()).await
+    transaction::run(database,(database.clone(),authority,hash),|session,(database,authority,hash)|async move{
+        let authorized=authority.authorize(database,session,application).await?;let user=current(database,session,application,id).await?;if user.version!=input.version{return Err(fail(Failure::Conflict("应用用户版本已改变")));}authorized.check_grant(&user.scopes)?;
+        database.collection::<Document>("application_users").update_one(doc!{"_id":id,"applicationId":application},doc!{"$set":{"passwordHash":hash.as_str(),"updatedAt":DateTime::now()},"$inc":{"version":1i64,"authVersion":1i64}}).session(&mut *session).await?;
+        service::revoke_sessions(database,session,application,Some("user"),Some(id)).await?;authorized.audit(database,session,Action::ResetPassword,id).await?;Ok(())
+    }.boxed()).await
 }

@@ -161,4 +161,19 @@
 - 应用/用户会话的调用共享应用分钟/UTC 日预算和来源策略；服务身份访问用户本人资料即使有同名 Scope 仍 403，Scope 拒绝计入业务预算。调用记录只包含真实 applicationId/principalKind/userId/sessionId，不伪装为应用创建管理员。认证尝试有独立 IP/账号限流；登录/刷新和注销不消费业务请求预算。
 - 新鲜登录或刷新授权与当前父应用状态在事务中核对，用户密码证明的认证代际也重新核对，防止密码重置后迟到的旧证明创建有效会话。过期判断不依赖 TTL，应用停用/删除不复活，服务密钥轮换不误撤销用户会话。
 
-当前 `/open/v1/users` 服务业务 CRUD 与应用调用日志的管理查询仍在后续子步骤，四项 Scope 的完整业务验收和管理界面尚未完成。
+## 开放应用服务用户业务
+
+`/open/v1/users` 不接收 applicationId 参数，父应用始终取已验证的服务身份。管理员 JWT/API Token 返回 401，应用用户身份返回 403，即使出现同名 Scope 也不成为服务主体。
+
+- `GET /users`、`GET /users/{id}`：应用服务身份与 open.users.read，使用应用内用户名、分页和安全资料 DTO。属于其他应用的有效用户 ID 仍 404。
+- `POST /users`、`PATCH/DELETE /users/{id}`、`POST /users/{id}/password`：应用服务身份与 open.users.write，沿用管理端字段、版本、Argon2id、唯一性和会话撤销规则。创建、授予 Scope、重新启用或重置密码时，目标 profile Scope 必须同时属于当前应用和当前令牌的有效授权；仅持有 users.write 不能发放额外 profile 权限。
+- 管理端与服务端共用写事务，但分别用真实管理员/应用授权。应用写入在业务事务内重新加载父应用、会话与有效 Scope，不能依赖请求开始时的缓存证明；权限已收缩时不提交。应用审计记录真实 app/session/target，actorId 为空，不借用创建管理员。
+- 密码变更、认证代际、会话撤销、数据与成功审计同事务；审计失败回滚业务，开始调用日志失败不执行业务。结束调用记录失败则保留 started/空结果，不能把已成功业务重做或伪装确认。
+
+## 应用调用管理查询
+
+`GET /api/v1/applications/{id}/calls` 要求 applications.read + applicationLogs.read。page/pageSize（1–100）、principalKind（application/user）、userId、state（started/finished）、status（100–599）、from/to（RFC3339）为受控查询。先按路径 applicationId 和 30 天保留期限过滤，再在同一快照计数/分页，按 createdAt/ID 倒序。
+
+返回真实 applicationId/principalKind/userId/sessionId、请求 ID、已登记操作/方法/路由、socket IP、安全 HTTP 状态/错误码/耗时与时间。没有管理员 ownerId、请求/响应正文或凭据。应用软删除后仍允许有权限者按原 ID 查询保留期内历史；其他应用日志不会混入。自身 open-access v4 扩展相应索引，保留既有凭据和回执。
+
+四项 Scope 的服务端业务已接入；管理界面仍按 D 实施，不以 API 骨架或目录文字代替使用验收。

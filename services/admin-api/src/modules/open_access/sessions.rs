@@ -4,17 +4,19 @@ use crate::{
         observability,
         transaction::{Failure, fail},
     },
-    modules::applications::{
-        dto::UserStatus,
-        models::{ApplicationMeta, UserRecord},
-        service,
-    },
+    modules::applications::{models::ApplicationMeta, service},
 };
 use mongodb::{
     ClientSession, Database,
     bson::{DateTime, Document, doc, oid::ObjectId},
 };
 use serde::{Deserialize, Serialize};
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserAuthorization {
+    scopes: Vec<Scope>,
+    auth_version: i64,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PrincipalKind {
@@ -108,19 +110,18 @@ pub async fn resolve(
                 return Err(invalid());
             }
             let user = database
-                .collection::<UserRecord>("application_users")
+                .collection::<UserAuthorization>("application_users")
                 .find_one(
                     doc! {"_id":user_id,"applicationId":app_id,"deletedAt":null,"status":"active"},
                 )
+                .projection(doc! {"scopes":1,"authVersion":1})
                 .session(&mut *session)
                 .await?
                 .ok_or_else(invalid)?;
-            if user.meta.status != UserStatus::Active
-                || Some(user.auth_version) != record.user_auth_version
-            {
+            if Some(user.auth_version) != record.user_auth_version {
                 return Err(invalid());
             }
-            effective.retain(|scope| user.meta.scopes.contains(scope) && scope.is_profile());
+            effective.retain(|scope| user.scopes.contains(scope) && scope.is_profile());
         }
     }
     database

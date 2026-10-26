@@ -4,7 +4,9 @@ use super::{
         RotateSecret,
     },
     models::{ActionView, ApplicationView, IssuedApplication, RotatedApplication, UserView},
-    service, users,
+    service,
+    user_authority::Authority,
+    users,
 };
 use crate::{
     common::{
@@ -29,6 +31,7 @@ crate::api_routes! {
     post "/api/v1/applications"=>create,"applications.create","applications","创建开放应用",Permission,&["applications.write"],"仅交互会话；Scope 需相应应用用户权限，密钥仅首次展示";
     get "/api/v1/applications/by-request/{requestId}"=>by_request,"applications.byRequest","applications","按请求查询本人创建的应用",Permission,&["applications.read"];
     get "/api/v1/applications/{id}"=>get,"applications.get","applications","开放应用资料",Permission,&["applications.read"];
+    get "/api/v1/applications/{id}/calls"=>calls,"applications.calls","applications","应用调用日志",Permission,&["applicationLogs.read","applications.read"];
     patch "/api/v1/applications/{id}"=>patch,"applications.update","applications","修改开放应用",Permission,&["applications.write"],"仅交互会话；策略授权不得超过当前权限";
     delete "/api/v1/applications/{id}"=>delete,"applications.delete","applications","删除开放应用",Permission,&["applications.write"],"仅交互会话";
     post "/api/v1/applications/{id}/secret"=>rotate,"applications.rotateSecret","applications","轮换应用密钥",Permission,&["applications.write"],"仅交互会话；Scope 需相应应用用户权限";
@@ -213,7 +216,7 @@ async fn create_user(
         ApiResponse::success(
             users::create(
                 state.require_database()?,
-                &context,
+                Authority::administrator(&context)?,
                 validation::object_id(&application)?,
                 input,
             )
@@ -247,7 +250,7 @@ async fn patch_user(
     Ok(ApiResponse::success(
         users::patch(
             state.require_database()?,
-            &context,
+            Authority::administrator(&context)?,
             validation::object_id(&application)?,
             validation::object_id(&id)?,
             input,
@@ -265,7 +268,7 @@ async fn delete_user(
     let Query(input) = query.map_err(|_| AppError::Validation("版本参数无效".into()))?;
     users::delete(
         state.require_database()?,
-        &context,
+        Authority::administrator(&context)?,
         validation::object_id(&application)?,
         validation::object_id(&id)?,
         input.version,
@@ -283,11 +286,27 @@ async fn password(
     let input = request::json::<PasswordInput>(body, &state).await?;
     users::reset_password(
         state.require_database()?,
-        &context,
+        Authority::administrator(&context)?,
         validation::object_id(&application)?,
         validation::object_id(&id)?,
         input,
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+async fn calls(
+    State(state): State<AppState>,
+    context: AuthContext,
+    Path(id): Path<String>,
+    query: Result<Query<crate::modules::open_access::calls::Input>, QueryRejection>,
+) -> Result<Page<crate::modules::open_access::calls::View>, AppError> {
+    context.require("applications.read")?;
+    context.require("applicationLogs.read")?;
+    let Query(input) = query.map_err(|_| AppError::Validation("应用调用查询无效".into()))?;
+    crate::modules::open_access::calls::list(
+        state.require_database()?,
+        validation::object_id(&id)?,
+        input,
+    )
+    .await
 }

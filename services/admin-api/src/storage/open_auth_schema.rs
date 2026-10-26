@@ -31,6 +31,14 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
             doc! {"applicationId":1,"userId":1,"createdAt":-1,"_id":-1},
         ),
         ("application_call_logs", doc! {"createdAt":1,"_id":1}),
+        (
+            "application_call_logs",
+            doc! {"applicationId":1,"principalKind":1,"status":1,"createdAt":-1,"_id":-1},
+        ),
+        (
+            "application_call_logs",
+            doc! {"applicationId":1,"state":1,"createdAt":-1,"_id":-1},
+        ),
     ] {
         database
             .collection::<Document>(name)

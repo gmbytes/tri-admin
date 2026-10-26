@@ -10,6 +10,11 @@ pub struct Permission {
 
 pub const CATALOG: &[Permission] = &[
     Permission {
+        code: "applicationLogs.read",
+        label: "查看应用调用日志",
+        group: "applications",
+    },
+    Permission {
         code: "applications.read",
         label: "查看开放应用配置",
         group: "applications",

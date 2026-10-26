@@ -149,7 +149,7 @@ async fn real_http_token_calls_enforce_scope_and_socket_ip_and_main_runs_usage_m
             .all(|row| row["ip"] == "127.0.0.1")
     );
     assert!(!page.to_string().contains(token));
-    let response=client.post(format!("{base}/api/v1/applications")).bearer_auth(session).header("content-type","application/json").body(json!({"requestId":uuid::Uuid::new_v4().to_string(),"name":"HTTP application","code":"http-application","allowedScopes":["open.profile.read","open.profile.write"]}).to_string()).send().await.unwrap();
+    let response=client.post(format!("{base}/api/v1/applications")).bearer_auth(session).header("content-type","application/json").body(json!({"requestId":uuid::Uuid::new_v4().to_string(),"name":"HTTP application","code":"http-application","allowedScopes":["open.profile.read","open.profile.write","open.users.read","open.users.write"]}).to_string()).send().await.unwrap();
     assert_eq!(response.status().as_u16(), 201);
     assert_eq!(response.headers()["cache-control"], "private, no-store");
     let created: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
@@ -207,6 +207,68 @@ async fn real_http_token_calls_enforce_scope_and_socket_ip_and_main_runs_usage_m
         .await
         .unwrap();
     assert_eq!(response.status().as_u16(), 200);
+    let response = client
+        .post(format!("{base}/open/v1/auth/application"))
+        .header("content-type", "application/json")
+        .body(json!({"applicationId":application,"secret":created["data"]["secret"]}).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let service: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let service = service["data"]["accessToken"].as_str().unwrap();
+    let response=client.post(format!("{base}/open/v1/users")).bearer_auth(service).header("content-type","application/json").body(json!({"username":"wire.provisioned","displayName":"Service wire user","password":support::PASSWORD,"scopes":["open.profile.read"]}).to_string()).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 201);
+    let provisioned: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let subject = provisioned["data"]["id"].as_str().unwrap();
+    assert_eq!(provisioned["data"]["applicationId"], application);
+    assert_eq!(
+        client
+            .get(format!("{base}/open/v1/users"))
+            .bearer_auth(service)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/open/v1/users"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/open/v1/users/{subject}/password"))
+            .bearer_auth(service)
+            .header("content-type", "application/json")
+            .body(json!({"version":1,"password":"WireResetPassword-2026"}).to_string())
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16(),
+        204
+    );
+    let response = client
+        .get(format!(
+            "{base}/api/v1/applications/{application}/calls?principalKind=application"
+        ))
+        .bearer_auth(session)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let history: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    assert_eq!(history["meta"]["total"], 3);
+    assert!(!history.to_string().contains(service));
     drop(child);
     let mut maintenance = std::process::Command::new(env!("CARGO_BIN_EXE_admin-api"));
     maintenance
