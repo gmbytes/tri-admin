@@ -74,7 +74,7 @@ fn created<T: serde::Serialize>(result: (T, bool)) -> (StatusCode, ApiResponse<T
 async fn list(
     State(state): State<AppState>,
     context: AuthContext,
-    input: Result<Query<PageInput>, QueryRejection>,
+    input: Result<Query<LibraryQuery>, QueryRejection>,
 ) -> Result<Page<ExtensionView>, AppError> {
     read(&context)?;
     service::list(state.require_database()?, &context, query(input)?).await

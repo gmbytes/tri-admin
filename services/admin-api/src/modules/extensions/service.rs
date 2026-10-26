@@ -502,12 +502,22 @@ fn prefix(value: &str) -> String {
 pub async fn list(
     database: &Database,
     context: &AuthContext,
-    input: PageInput,
+    query: dto::LibraryQuery,
 ) -> Result<Page<ExtensionView>, AppError> {
+    let uninstalled = matches!(query.status, dto::LibraryStatus::Uninstalled);
+    let input = PageInput {
+        page: query.page,
+        page_size: query.page_size,
+        search: query.search,
+        sort: query.sort,
+    };
     let skip = input.validate()?;
     let sort = input.sort_document(&["createdAt", "name"])?;
     let limit = input.page_size;
     let mut filter = doc! {"deletedAt":null};
+    if uninstalled {
+        filter.insert("deletedAt", doc! {"$ne":bson::Bson::Null});
+    }
     if let Some(search) = input
         .search
         .as_deref()

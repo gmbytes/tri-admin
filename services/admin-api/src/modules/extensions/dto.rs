@@ -136,3 +136,28 @@ pub struct ConstraintInput {
     pub version: i64,
     pub content: String,
 }
+fn first() -> u64 {
+    1
+}
+fn size() -> u64 {
+    20
+}
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LibraryStatus {
+    #[default]
+    Active,
+    Uninstalled,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LibraryQuery {
+    #[serde(default = "first")]
+    pub page: u64,
+    #[serde(default = "size")]
+    pub page_size: u64,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    #[serde(default)]
+    pub status: LibraryStatus,
+}

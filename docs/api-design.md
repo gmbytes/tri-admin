@@ -194,9 +194,9 @@
 
 ## Skills 与插件扩展库
 
-此模块使用 `skills.read/write` 和当前 all/self/roles 范围。写入需要 read+write；JWT 会话与 API Token 都在事务中重新核对有效凭据、角色、Scope 和记录归属。响应禁止缓存并设置 nosniff；JSON 请求上限 6 MiB，不接受服务端文件路径或任意命令。自身 extensions schema v1 将就绪标记总数增至 14，升级需要停服 migrate。
+此模块使用 `skills.read/write` 和当前 all/self/roles 范围。写入需要 read+write；JWT 会话与 API Token 都在事务中重新核对有效凭据、角色、Scope 和记录归属。响应禁止缓存并设置 nosniff；JSON 请求上限 6 MiB，不接受服务端文件路径或任意命令。自身 extensions schema v2 支持从本项目 v1 升级并加入导航，就绪标记总数保持 14，升级需要停服 migrate；没有旧标记数量或旧项目接口回退。
 
-- `GET/POST /api/v1/extensions`：按名称字面前缀、page/pageSize（1–100）与 createdAt/name 排序查询；范围在计数/分页前过滤。安装输入规范 UUID requestId 和 source，首次 201，同操作者/UUID/输入重放 200，异参 409。活动的 ownerId/kind/name 唯一；初始停用。
+- `GET/POST /api/v1/extensions`：按名称字面前缀、page/pageSize（1–100）与 createdAt/name 排序查询；status 仅接受 active（默认）或 uninstalled，分别列出已安装或已卸载的原记录。范围在计数/分页前过滤。安装输入规范 UUID requestId 和 source，首次 201，同操作者/UUID/输入重放 200，异参 409。活动的 ownerId/kind/name 唯一；初始停用。
 - source 的 kind 为 `archive` 时提供 contentBase64（原 ZIP 最大 4 MiB）；为 `skill` 时提供 Agent Skills meta、markdown 和可选 files。文件包含 path/contentBase64/mode（默认 420，即 0644）；只保存内容，不执行脚本。包必须有单个规范名称根目录，根内为 SKILL.md 或 tri-plugin.json。格式及路径预算见扩展设计。
 - `GET/PATCH/DELETE /extensions/{id}`：读取、以 version/enabled 启停、以 query version 卸载。旧版本返回 409，外部范围 ID 返回 404。启用前核对原包和摘要；内容更新默认停用。当前 MCP/工具绑定能力尚未接入，含这类贡献的插件启用返回明确冲突。
 - `POST /extensions/{id}/revisions`：requestId/version/source 创建新内容修订，保留名称/类型及旧修订。source 可为新原包、完整 Skill，或 `files`；files 提供 write 文件列表与 remove 路径列表，拒绝重复、穿越、无效的必需文件和超限展开。成功增加记录版本和修订号，停用扩展；写入、原包、请求回执及审计同事务。
@@ -204,4 +204,4 @@
 - `GET /extensions/{id}/revisions` 与 `GET /revisions/{revisionId}`：有界分页和原修订元数据。卸载后保留原 ID 下可授权的历史。`GET /revisions/{revisionId}/preview?path=...` 返回原包内有界 UTF-8 文本的 path/content/sha256/size，二进制或超过 256 KiB 的文件不能文本预览。`GET /revisions/{revisionId}/download` 核对并下载原字节，返回 ZIP 媒体类型、长度、SHA-256 ETag 与 X-Content-Sha256。
 - `GET/PATCH /api/v1/skill-constraints`：读取或以 version/content 更新全局约束（UTF-8 内容最大 64 KiB）。更新额外要求 skills.constraints.write 和当前 all 范围，版本冲突返回 409；`GET /skill-constraints/revisions` 分页读取独立历史。约束和审计原子提交。
 
-扩展库接口已经实现；管理页面和 MCP 发现、工具调用及真实进程生命周期仍按 Task 9 B 后续交付，不能把接口注册等同于完整功能验收。
+扩展库接口和管理页面已经实现；MCP 发现、工具调用及真实进程生命周期仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整 MCP 或插件能力验收。

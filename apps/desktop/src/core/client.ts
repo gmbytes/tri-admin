@@ -370,7 +370,7 @@ export class ApiClient {
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
   ): Promise<T> {
-    return this.downloadContent('file', fileId, expected, sink, options)
+    return this.downloadContent({ kind: 'file', id: fileId }, expected, sink, options)
   }
   async downloadExport<T>(
     jobId: string,
@@ -378,7 +378,7 @@ export class ApiClient {
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
   ): Promise<T> {
-    return this.downloadContent('export', jobId, expected, sink, options)
+    return this.downloadContent({ kind: 'export', id: jobId }, expected, sink, options)
   }
   async downloadGeneratedProject<T>(
     generationId: string,
@@ -386,11 +386,26 @@ export class ApiClient {
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
   ): Promise<T> {
-    return this.downloadContent('generated', generationId, expected, sink, options)
+    return this.downloadContent({ kind: 'generated', id: generationId }, expected, sink, options)
+  }
+  async downloadExtension<T>(
+    extensionId: string,
+    revisionId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ): Promise<T> {
+    return this.downloadContent(
+      { kind: 'extension', id: revisionId, extensionId },
+      expected,
+      sink,
+      options,
+    )
   }
   private async downloadContent<T>(
-    kind: 'file' | 'export' | 'generated',
-    fileId: string,
+    destination:
+      | { kind: 'file' | 'export' | 'generated'; id: string }
+      | { kind: 'extension'; id: string; extensionId: string },
     expected: FileContentSpec,
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void },
@@ -406,17 +421,25 @@ export class ApiClient {
       abort,
     }
     try {
+      const kind = destination.kind,
+        fileId = destination.id
       if (!/^[a-f0-9]{24}$/.test(fileId)) throw new ApiError('INVALID_FILE', '文件标识无效')
+      if (destination.kind === 'extension' && !/^[a-f0-9]{24}$/.test(destination.extensionId))
+        throw new ApiError('INVALID_FILE', '扩展标识无效')
       validateFileSpec(expected)
       if (kind === 'generated' && (expected.size === 0 || expected.size > 1024 * 1024))
         throw new ApiError('INVALID_GENERATED_PACKAGE', '生成包长度无效或超过 1 MiB')
+      if (kind === 'extension' && (expected.size === 0 || expected.size > 4 * 1024 * 1024))
+        throw new ApiError('INVALID_EXTENSION_PACKAGE', '扩展包长度无效或超过 4 MiB')
       const spec = Object.freeze({ size: expected.size, sha256: expected.sha256 })
       const result = await this.authorized<T>(
-        kind === 'generated'
-          ? `/codegen/generations/${fileId}/download`
-          : kind === 'export'
-            ? `/data-tools/exports/${fileId}/content`
-            : `/files/${fileId}/content`,
+        destination.kind === 'extension'
+          ? `/extensions/${destination.extensionId}/revisions/${fileId}/download`
+          : kind === 'generated'
+            ? `/codegen/generations/${fileId}/download`
+            : kind === 'export'
+              ? `/data-tools/exports/${fileId}/content`
+              : `/files/${fileId}/content`,
         {
           signal: options.signal,
           timeoutMs: 30 * 60 * 1000,
@@ -425,7 +448,10 @@ export class ApiClient {
           data: await readFileContent(response, spec, target, {
             signal,
             onProgress: options.onProgress,
-            mediaType: kind === 'generated' ? 'application/zip' : 'application/octet-stream',
+            mediaType:
+              kind === 'generated' || kind === 'extension'
+                ? 'application/zip'
+                : 'application/octet-stream',
           }),
         }),
       )

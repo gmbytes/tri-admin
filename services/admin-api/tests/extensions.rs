@@ -178,6 +178,17 @@ async fn skill_revisions_are_immutable_disabled_on_update_and_recoverable_by_req
         .await;
     assert_eq!(history["meta"]["total"], 2);
     let replacement = create(&app, token, "record-helper").await;
+    let (status, archived) = app
+        .send(
+            "GET",
+            "/api/v1/extensions?status=uninstalled",
+            Value::Null,
+            Some(token),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(archived["meta"]["total"], 1);
+    assert_eq!(archived["data"][0]["id"], id);
     assert_ne!(replacement["id"], id);
     assert_eq!(
         app.send(
@@ -608,6 +619,36 @@ async fn model_migration_preserves_managed_content_and_constraints_and_rejects_u
     assert_eq!(
         app.send("GET", "/health/ready", Value::Null, None).await.0,
         StatusCode::SERVICE_UNAVAILABLE
+    );
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn extension_navigation_upgrade_preserves_custom_and_uninstalled_entries() {
+    let app = TestApp::new().await;
+    let menus = app.database.collection::<Document>("menus");
+    let menu = menus.find_one(doc! {"path":"/skills"}).await.unwrap();
+    assert!(menu.is_some(), "new library navigation must be seeded");
+    let id = menu.unwrap().get_object_id("_id").unwrap();
+    menus.update_one(doc!{"_id":id},doc!{"$set":{"label":"Custom library","sort":17i32,"deletedAt":mongodb::bson::DateTime::now()}}).await.unwrap();
+    app.database
+        .collection::<Document>("_schema_migrations")
+        .update_one(doc! {"_id":"extensions"}, doc! {"$set":{"version":1}})
+        .await
+        .unwrap();
+    admin_api::storage::schema::migrate_database(&app.database)
+        .await
+        .unwrap();
+    let kept = menus.find_one(doc! {"_id":id}).await.unwrap().unwrap();
+    assert_eq!(kept.get_str("label").unwrap(), "Custom library");
+    assert_eq!(kept.get_i32("sort").unwrap(), 17);
+    assert!(kept.get_datetime("deletedAt").is_ok());
+    assert_eq!(
+        menus
+            .count_documents(doc! {"path":"/skills"})
+            .await
+            .unwrap(),
+        1
     );
     app.cleanup().await;
 }

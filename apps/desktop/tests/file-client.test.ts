@@ -49,6 +49,42 @@ const id = '0123456789abcdef01234567'
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 describe('authenticated binary file requests', () => {
+  it('downloads the selected extension revision with ZIP integrity and bounded IDs', async () => {
+    const bytes = Buffer.from('extension-original-zip'),
+      spec = { size: bytes.length, sha256: digest(bytes) },
+      revision = '1123456789abcdef01234567'
+    let downloads = 0,
+      media = 'application/zip'
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url === `/api/v1/extensions/${id}/revisions/${revision}/download`) {
+        downloads++
+        res.writeHead(200, {
+          'content-type': media,
+          'content-disposition': 'attachment; filename="extension.zip"',
+          'content-length': bytes.length,
+          etag: `"${spec.sha256}"`,
+        })
+        res.end(bytes)
+      } else send(res, 404, { error: { code: 'NOT_FOUND', message: 'missing' } })
+    })
+    const client = new ApiClient({ endpoint, vault })
+    await client.login('operator', 'fixture', false)
+    const blob = await client.downloadExtension(id, revision, spec, createBrowserFileSink(spec))
+    expect(await blob.text()).toBe(bytes.toString())
+    media = 'application/octet-stream'
+    await expect(
+      client.downloadExtension(id, revision, spec, createBrowserFileSink(spec)),
+    ).rejects.toMatchObject({ code: 'FILE_RESPONSE_INVALID' })
+    await expect(
+      client.downloadExtension('../bad', revision, spec, createBrowserFileSink(spec)),
+    ).rejects.toMatchObject({ code: 'INVALID_FILE' })
+    const large = { size: 4 * 1024 * 1024 + 1, sha256: spec.sha256 }
+    await expect(
+      client.downloadExtension(id, revision, large, createBrowserFileSink(large)),
+    ).rejects.toMatchObject({ code: 'INVALID_EXTENSION_PACKAGE' })
+    expect(downloads).toBe(2)
+  })
   it('downloads generated ZIP packages with exact media type and integrity through the session', async () => {
     const bytes = Buffer.from('generated-zip-fixture'),
       spec = { size: bytes.length, sha256: digest(bytes) }

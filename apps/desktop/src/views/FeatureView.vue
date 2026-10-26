@@ -20,6 +20,7 @@ const views: Record<string, unknown> = {
   tokens: defineAsyncComponent(() => import('./ApiTokensView.vue')),
   apps: defineAsyncComponent(() => import('./ApplicationsView.vue')),
   codegen: defineAsyncComponent(() => import('./CodegenView.vue')),
+  skills: defineAsyncComponent(() => import('./ExtensionsView.vue')),
 }
 const page = computed(() => views[session.findMenu(route.path)?.viewKey ?? ''])
 </script>

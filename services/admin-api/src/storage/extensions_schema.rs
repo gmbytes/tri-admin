@@ -5,13 +5,13 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 1;
+pub const VERSION: i32 = 2;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     let old = metadata.find_one(doc! {"_id":"extensions"}).await?;
     if old
         .as_ref()
-        .is_some_and(|row| row.get_i32("version").ok() != Some(VERSION))
+        .is_some_and(|row| !matches!(row.get_i32("version").ok(), Some(1 | 2)))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -94,10 +94,27 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .update_one(doc! {"version":1i64}, doc! {"$setOnInsert":initial})
         .upsert(true)
         .await?;
+    if old.as_ref().and_then(|row| row.get_i32("version").ok()) != Some(VERSION) {
+        let path = "/skills";
+        if database
+            .collection::<Document>("menus")
+            .find_one(doc! {"path":path})
+            .await?
+            .is_none()
+        {
+            use sha2::{Digest, Sha256};
+            let hash = Sha256::digest(format!("tri-admin:menu:{path}"));
+            let mut bytes = [0; 12];
+            bytes.copy_from_slice(&hash[..12]);
+            let id = mongodb::bson::oid::ObjectId::from_bytes(bytes);
+            let now = DateTime::now();
+            database.collection::<Document>("menus").update_one(doc!{"_id":id},doc!{"$setOnInsert":{"label":"Skills 与插件","path":path,"viewKey":"skills","permission":"skills.read","icon":null,"parentId":null,"sort":150i32,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).await?;
+        }
+    }
     metadata
         .update_one(
             doc! {"_id":"extensions"},
-            doc! {"$setOnInsert":{"version":VERSION,"createdAt":DateTime::now()}},
+            doc! {"$set":{"version":VERSION},"$setOnInsert":{"createdAt":DateTime::now()}},
         )
         .upsert(true)
         .await?;
