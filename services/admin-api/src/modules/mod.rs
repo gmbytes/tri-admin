@@ -5,6 +5,7 @@ pub mod auth;
 pub mod codegen;
 pub mod data_tools;
 pub mod dictionaries;
+pub mod extensions;
 pub mod files;
 pub mod health;
 pub mod logs;
@@ -20,6 +21,11 @@ pub mod versions;
 pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
     vec![
+        ApiModule {
+            prefix: extensions::router::API_PREFIX,
+            endpoints: extensions::router::API_ENDPOINTS,
+            routes: extensions::router::configured_routes,
+        },
         ApiModule {
             prefix: codegen::router::API_PREFIX,
             endpoints: codegen::router::API_ENDPOINTS,

@@ -129,3 +129,5 @@ cargo test -p desktop-core --test files native_large_disk_streams_five_gib --loc
 开发配置对锁定的 sha2 0.10.9 单独启用优化，避免调试构建的大文件摘要过慢；更新该依赖时同步检查两处 profile。无窗口 IPC 测试使用 Common Controls v6 测试清单；实际打开/保存对话框、安装包及原生页面验收单独执行。
 
 桌面 UI、权限和其他业务模块的进度见实施记录；健康检查通过不代表全部产品功能已完成。
+
+扩展包格式见 [扩展包说明](extension-packages.md)。包核心测试可用 `cargo test -p tri-extension-package --locked`，扩展库数据库测试可用 `cargo test -p admin-api --test extensions --locked`；后者覆盖创建、修订、范围、去重、审计回滚、原包导出、损坏保护与模型迁移。升级到 extensions v1 后需要 14 项就绪标记，先停服运行 migrate，再启动服务。扩展管理界面及 MCP 生命周期仍按子计划继续实现。

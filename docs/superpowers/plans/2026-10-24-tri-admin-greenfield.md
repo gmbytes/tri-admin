@@ -227,6 +227,8 @@ Task 8 C 服务端已按阶段完成：独立密钥、应用/用户认证、刷�
 
 代码生成按 [Task 9 A 子计划](2026-10-26-tri-admin-code-generation.md) 和 [设计合同](../../design-code-generation.md) 完成：独立 Rust/MongoDB/Vue 工程、ZIP 产物构建、主后台定义/不可变历史/预览/下载及实际页面验收均通过。继续扩展/MCP、AI、持久工作流；整个 Task 9 尚未完成。
 
+Skills/插件按 [Task 9 B 子计划](2026-10-27-tri-admin-extensions-mcp.md) 推进，包核心和扩展库后端已接入；安装/修订/历史/文件编辑/原包导出、全局约束及实际数据库升级验证通过。管理界面、MCP 能力绑定与真实生命周期仍未完成，不将停用包存储计为完整插件或 MCP 交付。
+
 - [ ] 先按 `docs/product-spec.md` 为每个能力建立可观察测试，禁止空壳接口计为完成。
 - [x] 仅提供新 Rust/MongoDB/Vue 模板，生成工程实际 ZIP 解包、锁定依赖构建/测试、HTTP 与页面验证通过。
 - [ ] Skills/插件安装、MCP 工具及生命周期、AI 上游和工作流持久任务/取消/导出使用新 Rust 实现。

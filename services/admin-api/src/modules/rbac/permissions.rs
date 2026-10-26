@@ -185,6 +185,11 @@ pub const CATALOG: &[Permission] = &[
         group: "skills",
     },
     Permission {
+        code: "skills.constraints.write",
+        label: "管理 Skill 全局约束",
+        group: "skills",
+    },
+    Permission {
         code: "mcp.read",
         label: "查看 MCP",
         group: "mcp",

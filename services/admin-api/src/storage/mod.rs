@@ -4,6 +4,7 @@ pub mod codegen_schema;
 pub mod data_tools_schema;
 pub mod dictionary_schema;
 pub mod export_job_schema;
+pub mod extensions_schema;
 pub mod files_schema;
 pub mod logs_schema;
 pub mod open_access_navigation;
