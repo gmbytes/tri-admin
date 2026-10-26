@@ -1,0 +1,28 @@
+[package]
+name = "tri-resource-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[dependencies]
+axum = "=0.8.9"
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "sync"] }
+tower-http = { version = "=0.6.11", features = ["cors"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+mongodb = { version = "=3.9.1", default-features = false, features = ["compat-3-3-0", "bson-3", "rustls-tls", "dns-resolver"] }
+futures-util = "=0.3.34"
+chrono = { version = "=0.4.45", features = ["serde"] }
+argon2 = "=0.5.3"
+rand_core = { version = "=0.6.4", features = ["getrandom"] }
+jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["rust_crypto"] }
+sha2 = "=0.10.9"
+uuid = { version = "=1.29.0", features = ["v4", "serde"] }
+thiserror = "=2.0.21"
+dotenvy = "=0.15.7"
+rpassword = "=7.5.4"
+url = "=2.5.8"
+
+[lints.rust]
+unsafe_code = "forbid"

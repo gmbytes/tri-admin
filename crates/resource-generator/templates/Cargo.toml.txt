@@ -1,0 +1,3 @@
+[workspace]
+members = ["runtime", "server"]
+resolver = "3"

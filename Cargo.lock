@@ -3565,6 +3565,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "tri-resource-generator"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "tri-resource-runtime",
+ "zip",
+]
+
+[[package]]
+name = "tri-resource-runtime"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "http-body-util",
+ "jsonwebtoken",
+ "mongodb",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rpassword",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

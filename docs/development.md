@@ -56,6 +56,26 @@ Token 预算和调用日志自动维护，也可用 `cargo run -p admin-api -- m
 
 自身 open-access v3 添加开放刷新摘要、共享应用预算和调用日志，v4 扩展服务用户业务及日志查询索引；升级先停服 migrate。v2 管理阶段没有签发开放令牌，缺少严格开放会话版本的记录在升级时撤销，不当作有效旧身份。`/open/v1` 已提供认证、刷新、注销、本人资料和应用服务用户管理；管理员可在应用页面按身份、用户 ID、结果状态、HTTP 状态、时间和分页查询日志。日志保留 30 天，“待确认”不代表成功或失败。
 
+## 代码生成核心验证
+
+当前已提供独立 Rust/MongoDB/Vue 工程生成核心，主后台的生成器菜单和管理流程继续接入。资源描述合同见 `docs/design-code-generation.md`，生成内容不包含现有账号、签名密钥或数据库配置。
+
+本机已有测试 MongoDB 副本集时，在停止开发 API 后用 PowerShell 7 执行：
+
+```powershell
+pwsh -File tools/test-generated-project.ps1
+```
+
+此门禁创建隔离样例，生成 ZIP 后实际解包并逐文件核对摘要，再运行 Rust 格式检查、锁定依赖构建/真实 HTTP 测试、前端客户端测试和类型/生产构建。结果和日志保存在 `.superpowers/generated-projects/<run-id>`，输出 ZIP 路径和 SHA-256；成功后清理样例的依赖目录，测试数据库使用随机 `tri_generated_test_` 名称并在成功后删除。测试连接只从环境或忽略的开发配置读入内存，不复制到产物。
+
+开发者也可显式生成一个新目录及可选 ZIP：
+
+```powershell
+cargo run -p tri-resource-generator --example render -- schema.json new-project new-project.zip
+```
+
+目标目录与 ZIP 必须不存在。生成工程附带独立 README、依赖锁和随机签名配置初始化工具；运行时另行配置专用副本集并交互创建管理员，没有默认密码。该产物只含新 Rust/MongoDB/Vue 实现，读写与 all/self 范围在其服务端核对。
+
 ## 启动桌面客户端
 
 在另一终端运行：
