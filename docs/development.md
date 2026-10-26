@@ -38,6 +38,8 @@ cargo run -p admin-api -- serve
 
 任务显示“存储拒绝写入”时，确认存储配置和权限后可明确重试。已发出的写入结果不明或候选读取失败时仍显示待确认，服务先查询原候选，不自动再次上传。S3 专项验证使用 `npm run test:s3`；只运行 SeaweedFS 内容/发布/导出故障门禁可用 `node tools/test-s3-content.mjs`，只运行持久导出故障可加 `--exports-only`。测试容器仅绑定本机随机端口，使用临时凭据，并校验归属后清理。
 
+导出专项同时验证真实服务在 S3 PUT 中被终止后的恢复。常规 `cargo test -p admin-api --test export_service` 还包含生成中终止及数据库成功 COMMIT 响应丢失：仅对隔离测试数据库的子进程连接注入故障，确认同一结果与审计不重复。Windows 上这些测试与其他 Rust/S3/E2E 构建串行执行，避免已运行 EXE 锁定链接目标。
+
 当前开发 Compose 仅绑定本机，使用无认证测试副本集。正式部署需要单独的认证/TLS 配置，开发配置不作为生产配置。
 
 ## 启动桌面客户端

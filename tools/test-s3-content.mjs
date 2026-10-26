@@ -156,6 +156,28 @@ try {
     )
     exitCode = exports.status ?? 1
   }
+  if (exitCode === 0) {
+    const processRecovery = spawnSync(
+      'cargo',
+      [
+        'test',
+        '-p',
+        'admin-api',
+        '--test',
+        'export_service',
+        'real_s3_main',
+        '--',
+        '--ignored',
+        '--test-threads=1',
+      ],
+      {
+        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
+        stdio: 'inherit',
+        windowsHide: true,
+      },
+    )
+    exitCode = processRecovery.status ?? 1
+  }
 } finally {
   if (id) {
     const inspected = docker(['inspect', id])

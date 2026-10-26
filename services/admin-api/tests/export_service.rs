@@ -1,3 +1,7 @@
+#[path = "support/mongo_faults.rs"]
+mod mongo_faults;
+#[path = "support/s3_faults.rs"]
+mod s3_faults;
 mod support;
 use axum::http::StatusCode;
 use mongodb::bson::{DateTime, Document, doc, oid::ObjectId};
@@ -45,12 +49,23 @@ fn command(database: &mongodb::Database, root: &std::path::Path) -> std::process
     command
 }
 fn server(database: &mongodb::Database, root: &std::path::Path) -> (Server, String) {
+    server_with_uri(database, root, None)
+}
+fn server_with_uri(
+    database: &mongodb::Database,
+    root: &std::path::Path,
+    uri: Option<&str>,
+) -> (Server, String) {
     let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = reservation.local_addr().unwrap();
     drop(reservation);
     let log_path = root.join(format!("export-service-{}.log", uuid::Uuid::new_v4()));
     let log = std::fs::File::create(&log_path).unwrap();
-    let child = command(database, root)
+    let mut command = command(database, root);
+    if let Some(uri) = uri {
+        command.env("TRI_MONGODB_URI", uri);
+    }
+    let child = command
         .arg("serve")
         .env("TRI_ADMIN_BIND", address.to_string())
         .stdout(std::process::Stdio::from(log.try_clone().unwrap()))
@@ -435,6 +450,236 @@ async fn killed_main_during_xlsx_generation_retires_partial_workspace_and_rebuil
             .await
             .unwrap(),
         0
+    );
+    drop(second);
+    app.cleanup().await;
+}
+
+#[tokio::test]
+#[ignore = "requires isolated real S3; run npm run test:s3"]
+async fn real_s3_main_killed_during_put_recovers_original_late_object_without_another_write() {
+    use s3_faults::{Fault, S3FaultProxy};
+    let definition: Value = serde_json::from_slice(
+        &std::fs::read(
+            std::env::var("TRI_S3_FIXTURE_FILE")
+                .expect("run node tools/test-s3-content.mjs --exports-only"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let proxy = S3FaultProxy::start(&definition, Fault::WriteAfterRelease).await;
+    let (app, auth) = fixture().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let (code, profile) = app.send("POST", "/api/v1/settings/profiles", json!({"name":"main-process-s3","code":"main-process-s3","enabled":true,"configuration":{"kind":"s3","endpoint":proxy.endpoint,"bucket":definition["bucket"],"region":definition["region"],"prefix":format!("process-{}",uuid::Uuid::new_v4()),"pathStyle":true},"secret":{"kind":"s3","accessKeyId":definition["accessKeyId"],"secretAccessKey":definition["secretAccessKey"]}}), Some(token)).await;
+    assert_eq!(code, StatusCode::CREATED);
+    let (_, settings) = app
+        .send("GET", "/api/v1/settings/service", Value::Null, Some(token))
+        .await;
+    assert_eq!(
+        app.send(
+            "PATCH",
+            "/api/v1/settings/service",
+            json!({"version":settings["data"]["version"],"storageProfileId":profile["data"]["id"]}),
+            Some(token)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let id = job(&app, token, "csv").await;
+    let object_id = ObjectId::parse_str(&id).unwrap();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let (mut first, base) = server(&app.database, root.path());
+    ready(&mut first, &client, &base).await;
+    proxy.wait_for_write().await;
+    let before = app
+        .database
+        .collection::<Document>("data_exports")
+        .find_one(doc! {"_id":object_id})
+        .await
+        .unwrap()
+        .unwrap();
+    let candidate = app
+        .database
+        .collection::<Document>("data_export_attempts")
+        .find_one(doc! {"_id":before.get_object_id("candidateId").unwrap()})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(before.get_str("state").unwrap(), "publishing");
+    assert_eq!(candidate.get_str("state").unwrap(), "putting");
+    assert!(candidate.get_bool("writeStarted").unwrap());
+    assert!(!candidate.get_bool("blobKnown").unwrap());
+    assert!(matches!(first.0.try_wait(), Ok(None)));
+    first.0.kill().unwrap();
+    assert!(!first.0.wait().unwrap().success());
+    drop(first);
+    app.database
+        .collection::<Document>("parameters")
+        .update_many(doc! {}, doc! {"$set":{"valueJson":"false"}})
+        .await
+        .unwrap();
+    proxy.release_late_write().await;
+    proxy.set_fault(Fault::None);
+    app.database.collection::<Document>("data_exports").update_one(doc!{"_id":object_id},doc!{"$set":{"leaseExpiresAt":DateTime::from_millis(0),"nextRunAt":DateTime::from_millis(0)}}).await.unwrap();
+    let (mut second, base) = server(&app.database, root.path());
+    ready(&mut second, &client, &base).await;
+    wait_job(&app, token, &id, "completed", true).await;
+    let response = client
+        .get(format!("{base}/api/v1/data-tools/exports/{id}/content"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let bytes = response.bytes().await.unwrap();
+    assert_eq!(
+        String::from_utf8(bytes.to_vec())
+            .unwrap()
+            .trim_start_matches('\u{feff}'),
+        "key,value\nservice.export.one,true\n"
+    );
+    let after = app
+        .database
+        .collection::<Document>("data_exports")
+        .find_one(doc! {"_id":object_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after.get_object_id("candidateId").unwrap(),
+        before.get_object_id("candidateId").unwrap()
+    );
+    assert_eq!(
+        after.get_i64("generation").unwrap(),
+        before.get_i64("generation").unwrap()
+    );
+    assert_eq!(proxy.puts(), 1);
+    assert!(proxy.reads() >= 2);
+    assert_eq!(
+        app.database
+            .collection::<Document>("audit_events")
+            .count_documents(doc! {"action":"dataTools.export.complete","targetId":object_id})
+            .await
+            .unwrap(),
+        1
+    );
+    drop(second);
+    app.cleanup().await;
+}
+
+#[tokio::test]
+async fn main_retries_a_confirmed_but_lost_completion_commit_reply_without_reexecuting_publication()
+{
+    let (app, auth) = fixture().await;
+    let token = auth["accessToken"].as_str().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let id = job(&app, token, "csv").await;
+    let object_id = ObjectId::parse_str(&id).unwrap();
+    let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let environment = dotenvy::from_path_iter(project.join(".env"))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect::<std::collections::HashMap<_, _>>();
+    let proxy = mongo_faults::MongoCommitFault::start(
+        environment.get("TRI_MONGODB_URI").unwrap(),
+        app.database.name(),
+        object_id,
+    )
+    .await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let (mut first, base) = server_with_uri(&app.database, root.path(), Some(&proxy.uri));
+    ready(&mut first, &client, &base).await;
+    proxy.wait_for_lost_commit().await;
+    wait_job(&app, token, &id, "completed", true).await;
+    assert_eq!(proxy.dropped(), 1);
+    assert!(
+        proxy.commits() >= 2,
+        "the same committed transaction must be confirmed again"
+    );
+    assert_eq!(
+        proxy.repeated_body(),
+        0,
+        "the completion transaction body must not be repeated after commit success"
+    );
+    let before = app
+        .database
+        .collection::<Document>("data_exports")
+        .find_one(doc! {"_id":object_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        app.database
+            .collection::<Document>("data_export_attempts")
+            .count_documents(doc! {"jobId":object_id})
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        app.database
+            .collection::<Document>("audit_events")
+            .count_documents(doc! {"action":"dataTools.export.complete","targetId":object_id})
+            .await
+            .unwrap(),
+        1
+    );
+    drop(first);
+    app.database
+        .collection::<Document>("parameters")
+        .update_many(doc! {}, doc! {"$set":{"valueJson":"false"}})
+        .await
+        .unwrap();
+    let (mut second, base) = server_with_uri(&app.database, root.path(), Some(&proxy.uri));
+    ready(&mut second, &client, &base).await;
+    wait_job(&app, token, &id, "completed", true).await;
+    let response = client
+        .get(format!("{base}/api/v1/data-tools/exports/{id}/content"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        String::from_utf8(response.bytes().await.unwrap().to_vec())
+            .unwrap()
+            .trim_start_matches('\u{feff}'),
+        "key,value\nservice.export.one,true\n"
+    );
+    let after = app
+        .database
+        .collection::<Document>("data_exports")
+        .find_one(doc! {"_id":object_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after.get_object_id("candidateId").unwrap(),
+        before.get_object_id("candidateId").unwrap()
+    );
+    assert_eq!(
+        after.get_i64("generation").unwrap(),
+        before.get_i64("generation").unwrap()
+    );
+    assert_eq!(proxy.dropped(), 1);
+    assert_eq!(proxy.repeated_body(), 0);
+    assert_eq!(
+        app.database
+            .collection::<Document>("audit_events")
+            .count_documents(doc! {"action":"dataTools.export.complete","targetId":object_id})
+            .await
+            .unwrap(),
+        1
     );
     drop(second);
     app.cleanup().await;

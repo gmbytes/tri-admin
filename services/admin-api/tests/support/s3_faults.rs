@@ -24,6 +24,7 @@ pub enum Fault {
     ExistingWithDeniedRead,
     RejectAfterRelease,
     CorruptRead,
+    WriteAfterRelease,
 }
 struct State {
     upstream: String,
@@ -102,7 +103,7 @@ impl S3FaultProxy {
         self.state.release.cancel();
     }
     pub async fn release_late_write(&self) {
-        self.state.release.cancel();
+        self.release();
         tokio::time::timeout(
             std::time::Duration::from_secs(10),
             self.state.committed.cancelled(),
@@ -211,6 +212,14 @@ async fn handle(mut socket: TcpStream, state: Arc<State>) {
     if candidate && request.method == Method::PUT {
         state.puts.fetch_add(1, Ordering::SeqCst);
         state.received.cancel();
+        if fault == Fault::WriteAfterRelease as usize {
+            state.release.cancelled().await;
+            let (code, body) = forward(&state, &request).await;
+            assert!(code.is_success(), "S3 write after process death failed");
+            state.committed.cancel();
+            respond(&mut socket, code, &body).await;
+            return;
+        }
         if fault == Fault::RejectAfterRelease as usize {
             state.release.cancelled().await;
         }
