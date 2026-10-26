@@ -112,3 +112,18 @@
 - `POST /data-tools/exports/{id}/retry` 接收新的操作 requestId（规范 UUID），需要 exports.write 和资源读取权限，仅 failed/unknown 可新建重试意图。首次接受 202，同一操作重放 200 并返回当前任务；即使上次重试已经再次失败，也不重复启动。每项任务最多保留 128 条操作回执，激活失败任务时重新检查活动配额，操作、意图与审计同事务。
 - `GET /data-tools/exports/{id}/actions/{requestId}` 仅原操作者在当前资源权限下查询，返回 jobId/requestId/kind/generation/createdAt。回执确认的是重试意图已接受，任务执行结果仍从详情查询。取消/过期任务不能被新重试复活，源配置和创建范围不被修改。
 - 存在已写候选时，包括 failed 状态，也先查询原候选：正确且仍授权可读则复用；只在明确重试后，确认缺失或范围变化才允许新代际。旧未知候选保留清理定位和配置引用；读取鉴权/网络失败不等同于缺失。有效清理租约期间返回冲突，由调用方查询后再决定重试。
+
+## 管理员 API Token
+
+自身 `open-access` schema v1 为第 12 项就绪标记。所有 Token 管理响应为 `private, no-store`，仅管理本人记录，其他 Owner 也不能读取或撤销。
+
+- `POST /api/v1/api-tokens`：交互会话和 apiTokens.write；输入 requestId（规范 UUID）、name、scopes，以及 expiresInDays（默认 30，1–365）、allowedIps（最多 32 条 CIDR）、minuteLimit（默认 600，1–10000）、dailyQuota（默认 100000，1–10000000）。Scope 为已实现操作权限，不能含 `*`、重复项或超过当前用户权限。
+- 首次返回 201 的 `data:{token,secret}`，secret 是完整不透明 Bearer 凭据，只在这次响应返回。相同 UUID/规范输入重放为 200、同一 token、secret:null；异参 409。每人最多 32 个活动 Token，签发、并发额度及审计同事务。默认字段、省略字段、CIDR 网络地址和 Scope 顺序归一化后绑定指纹。
+- `GET /api/v1/api-tokens`：apiTokens.read；page/pageSize、名称字面前缀 search、createdAt/name 排序；返回 Page。`GET /{id}`、`GET /by-request/{requestId}` 只返回元数据，包含状态、Scope、IP/额度、创建/过期/撤销/最近使用时间，不含摘要或秘密。
+- `POST /api/v1/api-tokens/{id}/revoke`：交互会话、apiTokens.write 和空对象；可重放，只登记一次成功审计。过期、撤销、所属用户禁用/删除或凭据重置后，Token 新调用均被拒绝。
+- Token 调用使用 `Authorization: Bearer tri_at1.<id>.<secret>`；每次与所属用户最新权限相交，数据范围使用当前账号策略。管理员账号写入、本人改密和 Token 签发/撤销要求交互会话，不能通过有限 Token 取得新的管理员凭据。API 目录中的 Scope 不免除额外的交互会话条件。
+- 调用额度为固定 UTC 分钟/日期窗口，跨实例原子预留，Scope 拒绝也计数；来源拒绝仅记录，错误秘密走认证 IP 限制且不扣目标额度。429 预算拒绝提供 Retry-After；来源只取 socket IP，不信任任意转发头，IPv4 映射地址规范化。
+- `GET /api/v1/api-tokens/calls`：apiTokens.read，本人调用记录；page/pageSize、tokenId、status、from/to（RFC3339）。开始日志和预算同事务，结束记录安全 HTTP 状态/错误码/耗时；结束日志失败保留 started/空状态，不伪造确认结果。只含已登记路由与请求 ID 等元数据，不含正文、原查询或凭据。
+- 调用日志 30 天后立即不返回；主服务启动及约每分钟有界清理，每类最多 100 项。`maintain-access` CLI 单独运行一轮，返回 calls/buckets/attempts，不执行任何业务请求。TTL 不作为授权或内容可见性的依据。
+
+本阶段是 Task 8 的管理员 Token API；开放应用、应用用户认证与管理界面仍按后续步骤实施，不以管理 Token 作为玩家令牌。

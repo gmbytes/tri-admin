@@ -11,6 +11,7 @@ pub async fn active_user(database: &Database, id: ObjectId) -> Result<Option<Doc
     Ok(database
         .collection::<Document>("users")
         .find_one(doc! {"_id":id,"status":"active","deletedAt":null})
+        .projection(doc! {"_id":1,"username":1,"displayName":1,"roleIds":1})
         .await?)
 }
 

@@ -60,6 +60,8 @@ pub enum AppError {
     InvalidCredentials,
     #[error("请求过于频繁，请稍后重试")]
     RateLimited,
+    #[error("请求过于频繁，请稍后重试")]
+    RateLimitedFor(u64),
     #[error("权限不足")]
     Forbidden,
     #[error("资源不存在")]
@@ -95,7 +97,9 @@ impl IntoResponse for AppError {
             }
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"),
             Self::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"),
-            Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
+            Self::RateLimited | Self::RateLimitedFor(_) => {
+                (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED")
+            }
             Self::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::NotReady => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_NOT_READY"),
@@ -118,6 +122,13 @@ impl IntoResponse for AppError {
         )
             .into_response();
         response.extensions_mut().insert(ResponseError { code });
+        if let Self::RateLimitedFor(seconds) = self {
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_str(&seconds.max(1).to_string())
+                    .expect("integer is a valid header"),
+            );
+        }
         response
     }
 }

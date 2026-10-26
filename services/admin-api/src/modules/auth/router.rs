@@ -19,7 +19,7 @@ crate::api_routes! {
     post "/refresh" => refresh, "auth.refresh", "auth", "刷新会话", RefreshCredential, &[];
     post "/logout" => logout, "auth.logout", "auth", "注销会话", RefreshCredential, &[];
     get "/me" => me, "auth.me", "auth", "当前用户", Authenticated, &[];
-    post "/password" => change_password, "auth.changePassword", "auth", "修改本人密码", Authenticated, &[];
+    post "/password" => change_password, "auth.changePassword", "auth", "修改本人密码", Authenticated, &[], "仅交互会话";
 }
 
 async fn login(

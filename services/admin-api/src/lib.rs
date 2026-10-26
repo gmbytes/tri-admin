@@ -31,6 +31,7 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::HeaderName::from_static("x-request-id"),
             axum::http::header::CONTENT_DISPOSITION,
             axum::http::header::ETAG,
+            axum::http::header::RETRY_AFTER,
         ]);
     let mut router = Router::new();
     for module in modules::registry() {

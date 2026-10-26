@@ -1,4 +1,5 @@
 pub mod api_catalog;
+pub mod api_tokens;
 pub mod auth;
 pub mod data_tools;
 pub mod dictionaries;
@@ -6,6 +7,7 @@ pub mod files;
 pub mod health;
 pub mod logs;
 pub mod menus;
+pub mod open_access;
 pub mod parameters;
 pub mod rbac;
 pub mod roles;
@@ -16,6 +18,11 @@ pub mod versions;
 pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
     vec![
+        ApiModule {
+            prefix: api_tokens::router::API_PREFIX,
+            endpoints: api_tokens::router::API_ENDPOINTS,
+            routes: api_tokens::router::configured_routes,
+        },
         ApiModule {
             prefix: health::API_PREFIX,
             endpoints: health::API_ENDPOINTS,

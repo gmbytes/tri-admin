@@ -170,6 +170,14 @@ pub async fn revoke_sessions(
             doc! {"userId":user_id,"status":"active"},
             doc! {"$set":{"status":"revoked","revokedAt":DateTime::now()}},
         )
+        .session(&mut *session)
+        .await?;
+    database
+        .collection::<Document>("api_tokens")
+        .update_many(
+            doc! {"ownerId":user_id,"revokedAt":null},
+            doc! {"$set":{"revokedAt":DateTime::now()}},
+        )
         .session(session)
         .await?;
     Ok(())

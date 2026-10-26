@@ -29,11 +29,11 @@ pub struct DeleteQuery {
 crate::api_routes! {
     prefix "";
     get "/api/v1/users" => list, "users.list", "users", "用户列表", Permission, &["users.read"];
-    post "/api/v1/users" => create, "users.create", "users", "创建用户", Permission, &["roles.assign", "users.write"], "新成员须在可管理范围内";
+    post "/api/v1/users" => create, "users.create", "users", "创建用户", Permission, &["roles.assign", "users.write"], "仅交互会话；新成员须在可管理范围内";
     get "/api/v1/users/{id}" => detail, "users.get", "users", "用户资料", Permission, &["users.read"];
-    patch "/api/v1/users/{id}" => update, "users.update", "users", "修改用户", Permission, &["users.write"], "修改角色时还需 roles.assign，授权不得超出当前权限及数据范围";
-    delete "/api/v1/users/{id}" => delete, "users.delete", "users", "删除用户", Permission, &["users.write"];
-    post "/api/v1/users/{id}/password" => reset_password, "users.resetPassword", "users", "重置用户密码", Permission, &["users.resetPassword"];
+    patch "/api/v1/users/{id}" => update, "users.update", "users", "修改用户", Permission, &["users.write"], "仅交互会话；修改角色时还需 roles.assign，授权不得超出当前权限及数据范围";
+    delete "/api/v1/users/{id}" => delete, "users.delete", "users", "删除用户", Permission, &["users.write"], "仅交互会话";
+    post "/api/v1/users/{id}/password" => reset_password, "users.resetPassword", "users", "重置用户密码", Permission, &["users.resetPassword"], "仅交互会话";
 }
 async fn list(
     State(state): State<AppState>,
@@ -65,6 +65,7 @@ async fn create(
     body: Request,
 ) -> Result<(StatusCode, ApiResponse<UserView>), AppError> {
     context.require("users.write")?;
+    context.require_session()?;
     let input = request::json::<CreateUser>(body, &state).await?;
     Ok((
         StatusCode::CREATED,
@@ -80,6 +81,7 @@ async fn update(
     body: Request,
 ) -> Result<ApiResponse<UserView>, AppError> {
     context.require("users.write")?;
+    context.require_session()?;
     let input = request::json::<PatchUser>(body, &state).await?;
     Ok(ApiResponse::success(
         service::patch(
@@ -98,6 +100,7 @@ async fn delete(
     query: Result<Query<DeleteQuery>, QueryRejection>,
 ) -> Result<StatusCode, AppError> {
     context.require("users.write")?;
+    context.require_session()?;
     let Query(input) = query.map_err(|_| AppError::Validation("版本参数无效".into()))?;
     service::delete(
         state.require_database()?,
@@ -115,6 +118,7 @@ async fn reset_password(
     body: Request,
 ) -> Result<StatusCode, AppError> {
     context.require("users.resetPassword")?;
+    context.require_session()?;
     let input = request::json::<PasswordInput>(body, &state).await?;
     service::reset_password(
         state.require_database()?,

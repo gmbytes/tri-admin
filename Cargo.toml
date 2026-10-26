@@ -47,6 +47,8 @@ rust_xlsxwriter = { version = "=0.101.0", features = ["constant_memory"] }
 zip = { version = "=9.0.0", default-features = false, features = ["deflate"] }
 quick-xml = "0.42"
 base64 = "0.22"
+subtle = "=2.6.1"
+ipnet = "=2.12.2"
 rustls-pemfile = "2"
 
 [workspace.lints.rust]

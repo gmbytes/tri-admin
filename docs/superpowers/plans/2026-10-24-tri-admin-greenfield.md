@@ -187,15 +187,15 @@ docs/                        规范、进度和运维
 
 ### Task 8 A：管理员 API Token、预算与安全日志
 
-**文件：** 新增 `modules/api_tokens/{mod,dto,models,service,router}.rs`、`modules/open_access/{mod,credential,limits,usage}.rs`、`storage/open_access_schema.rs`；修改 `auth/{mod,service,router}.rs`、`rbac/permissions.rs`、模块注册与 schema。测试为 `tests/api_tokens.rs`、`tests/open_access_limits.rs`。
+**文件：** 新增 `modules/api_tokens/{mod,dto,models,service,router}.rs`、`modules/open_access/{mod,credential,limits,usage}.rs`、`storage/open_access_schema.rs`；修改 `auth/{mod,service,router}.rs`、RBAC、模块注册、schema、观测与主服务。测试为 `tests/api_tokens.rs`、`tests/open_access_limits.rs`、`tests/open_access_http.rs`。
 
-**接口：** `AdminCredential::{Session{session_id},ApiToken{token_id}}` 替代 AuthContext 的单一会话字段；`api_tokens::authenticate(state,raw,peer)->AuthContext` 仅返回固定 Scope 与最新用户权限交集。`open_access::credential` 负责类型化秘密生成/严格解析/摘要核对；`limits::reserve(database,identity,policy,peer,request)->UsageTicket` 原子计数并登记安全开始日志，完成更新由现有观测中间件调用，任何日志 DTO 不含秘密。
+**接口：** `AdminCredential::{Session{session_id},ApiToken{token_id}}` 替代 AuthContext 的单一会话字段；`api_tokens::service::authenticate(state,raw,peer)->AuthContext` 仅返回固定 Scope 与最新用户权限交集。`open_access::credential` 负责类型化秘密生成/严格解析/摘要核对；当前 `limits::reserve(database,owner,token,policy,peer,descriptor)->Reservation` 原子计数并登记安全开始日志，携带 Ticket 和拒绝结果，完成更新由现有观测中间件调用。应用预算身份在 C 接入真实应用时扩展，不传伪造 Token ID；任何日志 DTO 不含秘密。
 
-- [ ] 先写 `api_token_is_shown_once_and_same_request_cannot_issue_twice`：首次 201 有秘密，重放 200 无秘密，数据库只有摘要/一个记录，同键异参 409，并发只一个 201；运行 `cargo test -p admin-api --test api_tokens` 观察缺失路由失败。
-- [ ] 实现上述创建/分页/详情/按请求查询/撤销，自己所有权、32 活跃上限、30/365 天边界、交互会话限制与事务审计；测试审计失败回滚及失去原权限不能签发越权 Scope。
-- [ ] 接入真正管理 API 鉴权，测试固定 Scope、最新权限/数据范围、过期/撤销/用户重置密码/禁用，以及 PAT 不能签发 PAT/改密/成为开放身份；禁止伪造 Session。
-- [ ] 先写并运行限额并发/IP/未知来源/伪造转发头/日志失败测试，再实现原子预算、Retry-After 和安全开始/完成日志；同一请求身份提取仅扣一次。运行两个测试目标，Expected：全部通过，再运行适当认证/RBAC 回归和严格 Clippy。
-- [ ] 提交已验证的可用 API Token 功能；本步骤不宣称整个 Task 8 完成。
+- [x] 先写 `api_token_is_shown_once_and_same_request_cannot_issue_twice`：首次 201 有秘密，重放 200 无秘密，数据库只有摘要/一个记录，同键异参 409，并发只一个 201；运行 `cargo test -p admin-api --test api_tokens` 观察缺失路由失败。
+- [x] 实现上述创建/分页/详情/按请求查询/撤销，自己所有权、32 活跃上限、30/365 天边界、交互会话限制与事务审计；测试审计失败回滚及失去原权限不能签发越权 Scope。
+- [x] 接入真正管理 API 鉴权，测试固定 Scope、最新权限/数据范围、过期/撤销/用户重置密码/禁用，以及 PAT 不能签发 PAT/操作管理员账号或改密；禁止伪造 Session。开放身份互斥在 C 的真实开放接口接入后继续验收。
+- [x] 先写并运行限额并发/IP/未知来源/伪造转发头/日志失败测试，再实现原子预算、Retry-After 和安全开始/完成日志；同一请求身份提取仅扣一次。14 项专用流程、完整 Rust 324 项、严格 Clippy、现有客户端及 41 项页面回归通过，8 项真实 S3 也复核通过。
+- [x] 保存已验证的可用 API Token 功能；本步骤不宣称整个 Task 8 完成，Token 管理界面仍在 D 实施，不提前加入无页面菜单。
 
 ### Task 8 B：应用配置、一次性密钥与应用用户
 

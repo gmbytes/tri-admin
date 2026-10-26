@@ -164,7 +164,7 @@ pub async fn authenticate(state: &AppState, raw: &str) -> Result<AuthContext, Ap
         .ok_or(AppError::Unauthorized)?;
     Ok(AuthContext {
         user: repository::summary(database, &user).await?,
-        session_id,
+        credential: super::AdminCredential::Session { session_id },
     })
 }
 
@@ -274,6 +274,7 @@ pub async fn change_password(
     context: &AuthContext,
     input: super::dto::ChangePasswordInput,
 ) -> Result<(), AppError> {
+    context.require_session()?;
     use serde::Deserialize;
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]

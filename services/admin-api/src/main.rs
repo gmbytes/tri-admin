@@ -76,6 +76,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::data_tools::export_jobs::maintenance::run_once(&state).await?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        "maintain-access" => {
+            if !admin_api::storage::schema::is_initialized(state.require_database()?).await? {
+                return Err("开放访问维护需要先完成数据库迁移和初始化".into());
+            }
+            let report =
+                admin_api::modules::open_access::usage::maintenance_once(state.require_database()?)
+                    .await?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         "serve" => {
             let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
             tracing::info!(address=%listener.local_addr()?,"admin service listening");
@@ -84,6 +93,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::data_tools::retention::start_service(state.clone());
             let export_workers =
                 admin_api::modules::data_tools::export_jobs::worker::start_service(state.clone());
+            let access_workers =
+                admin_api::modules::open_access::usage::start_service(state.clone());
             let shutdown_state = state.clone();
             let worker_state = state.clone();
             let result = axum::serve(
@@ -95,19 +106,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::files::jobs::stop_service(&shutdown_state);
                 admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
                 admin_api::modules::data_tools::export_jobs::worker::stop_service(&shutdown_state);
+                admin_api::modules::open_access::usage::stop_service(&shutdown_state);
             })
             .await;
             admin_api::modules::files::jobs::stop_service(&worker_state);
             admin_api::modules::data_tools::retention::stop_service(&worker_state);
             admin_api::modules::data_tools::export_jobs::worker::stop_service(&worker_state);
+            admin_api::modules::open_access::usage::stop_service(&worker_state);
             let _ = workers.await;
             let _ = data_workers.await;
             let _ = export_workers.await;
+            let _ = access_workers.await;
             result?;
         }
         _ => {
             return Err(
-                "Usage: admin-api [serve|migrate|bootstrap|maintain-files|maintain-data-tools|maintain-exports]"
+                "Usage: admin-api [serve|migrate|bootstrap|maintain-files|maintain-data-tools|maintain-exports|maintain-access]"
                     .into(),
             );
         }

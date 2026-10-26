@@ -7,6 +7,7 @@ use mongodb::{
 
 #[derive(Debug, Clone)]
 pub enum Failure {
+    Unauthorized,
     NotFound,
     Forbidden,
     NotReady,
@@ -23,6 +24,7 @@ pub fn fail(reason: Failure) -> Error {
 pub fn map_error(error: Error) -> AppError {
     if let Some(reason) = error.get_custom::<Failure>() {
         return match reason {
+            Failure::Unauthorized => AppError::Unauthorized,
             Failure::NotFound => AppError::NotFound,
             Failure::Forbidden => AppError::Forbidden,
             Failure::NotReady => AppError::NotReady,

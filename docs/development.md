@@ -42,6 +42,10 @@ cargo run -p admin-api -- serve
 
 当前开发 Compose 仅绑定本机，使用无认证测试副本集。正式部署需要单独的认证/TLS 配置，开发配置不作为生产配置。
 
+新增管理员 API Token 需要自身 `open-access` schema v1；升级先停止服务并执行 `cargo run -p admin-api -- migrate`，否则就绪检查返回 503。后台 Token 管理页面尚在后续界面阶段，当前可通过 API 签发和撤销；仅交互管理会话可执行这两项操作。秘密只返回一次，响应丢失时按 requestId 查询元数据，不能取回原秘密。
+
+Token 预算和调用日志自动维护，也可用 `cargo run -p admin-api -- maintain-access` 单独清理一轮。日志记录 HTTP 处理结果；流式文件的正文传输故障继续使用现有错误日志与相同请求 ID 追踪，下载端仍须完成长度/摘要校验。
+
 ## 启动桌面客户端
 
 在另一终端运行：
