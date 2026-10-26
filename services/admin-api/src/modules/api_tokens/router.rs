@@ -28,6 +28,7 @@ crate::api_routes! {
     prefix "";
     get "/api/v1/api-tokens"=>list,"apiTokens.list","apiTokens","我的 API Token",Permission,&["apiTokens.read"];
     post "/api/v1/api-tokens"=>create,"apiTokens.create","apiTokens","签发 API Token",Permission,&["apiTokens.write"],"仅交互会话；秘密仅首次响应展示";
+    get "/api/v1/api-tokens/scopes"=>scopes,"apiTokens.scopes","apiTokens","本人可签发的自动化 Scope",Permission,&["apiTokens.write"],"仅交互会话";
     get "/api/v1/api-tokens/calls"=>calls,"apiTokens.calls","apiTokens","我的 Token 调用日志",Permission,&["apiTokens.read"];
     get "/api/v1/api-tokens/by-request/{requestId}"=>by_request,"apiTokens.byRequest","apiTokens","按请求查询 Token",Permission,&["apiTokens.read"];
     get "/api/v1/api-tokens/{id}"=>get,"apiTokens.get","apiTokens","Token 元数据",Permission,&["apiTokens.read"];
@@ -35,6 +36,25 @@ crate::api_routes! {
 }
 pub fn configured_routes() -> axum::Router<AppState> {
     routes().layer(axum::middleware::from_fn(private))
+}
+async fn scopes(
+    context: AuthContext,
+) -> Result<ApiResponse<Vec<&'static crate::modules::rbac::permissions::Permission>>, AppError> {
+    context.require("apiTokens.write")?;
+    context.require_session()?;
+    let implemented = crate::modules::api_catalog::endpoints()
+        .into_iter()
+        .filter(|entry| !entry.notes.contains("仅交互会话"))
+        .flat_map(|entry| entry.required_permissions.iter().copied())
+        .collect::<std::collections::HashSet<_>>();
+    Ok(ApiResponse::success(
+        crate::modules::rbac::permissions::CATALOG
+            .iter()
+            .filter(|permission| {
+                implemented.contains(permission.code) && context.can(permission.code)
+            })
+            .collect(),
+    ))
 }
 async fn private(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;

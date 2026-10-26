@@ -824,7 +824,7 @@ async fn own_v1_upgrade_preserves_tokens_and_users_scope_version_and_password_in
             .unwrap()
             .get_i32("version")
             .unwrap(),
-        4
+        5
     );
     let item = create(&app, token, "strict-game").await;
     let id = item["application"]["id"].as_str().unwrap();

@@ -11,6 +11,10 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AccessCallHistory: typeof import('./components/AccessCallHistory.vue')['default']
+    AccessPolicyFields: typeof import('./components/AccessPolicyFields.vue')['default']
+    ApplicationUsersPanel: typeof import('./components/ApplicationUsersPanel.vue')['default']
+    CredentialRecoveryPanel: typeof import('./components/CredentialRecoveryPanel.vue')['default']
     DataFieldMapping: typeof import('./components/DataFieldMapping.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -63,6 +67,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     RuntimeSettingsPanel: typeof import('./components/RuntimeSettingsPanel.vue')['default']
+    SecretResultDialog: typeof import('./components/SecretResultDialog.vue')['default']
     ServerDialog: typeof import('./components/ServerDialog.vue')['default']
     ServiceSettingsPanel: typeof import('./components/ServiceSettingsPanel.vue')['default']
     SideNavigation: typeof import('./components/SideNavigation.vue')['default']

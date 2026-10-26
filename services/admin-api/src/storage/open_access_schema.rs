@@ -5,13 +5,13 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 4;
+pub const VERSION: i32 = 5;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(previous) = metadata.find_one(doc! {"_id":"open-access"}).await?
         && !matches!(
             previous.get_i32("version").ok(),
-            Some(1) | Some(2) | Some(3) | Some(VERSION)
+            Some(1) | Some(2) | Some(3) | Some(4) | Some(VERSION)
         )
     {
         return Err(AppError::SchemaMismatch);
@@ -93,6 +93,13 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .await?;
     super::application_schema::migrate(database).await?;
     super::open_auth_schema::migrate(database).await?;
+    if metadata
+        .find_one(doc! {"_id":"open-access","version":VERSION})
+        .await?
+        .is_none()
+    {
+        super::open_access_navigation::migrate(database).await?;
+    }
     metadata
         .update_one(
             doc! {"_id":"open-access"},
@@ -102,7 +109,7 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .await?;
     metadata
         .update_one(
-            doc! {"_id":"open-access","version":{"$in":[1,2,3]}},
+            doc! {"_id":"open-access","version":{"$in":[1,2,3,4]}},
             doc! {"$set":{"version":VERSION,"updatedAt":DateTime::now()}},
         )
         .await?;

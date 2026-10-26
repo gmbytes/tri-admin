@@ -34,8 +34,26 @@ async function password() {
   return readFile(path, 'utf8')
 }
 async function login(page: Page, username = defaultUsername, secret?: string) {
+  const diagnostics: string[] = []
+  page.on('pageerror', (error) => diagnostics.push(error.message))
+  page.on('requestfailed', (request) =>
+    diagnostics.push(`${request.failure()?.errorText}: ${new URL(request.url()).pathname}`),
+  )
   await page.goto('/#/login')
-  await page.getByRole('textbox', { name: '账号', exact: true }).fill(username)
+  await page
+    .getByRole('textbox', { name: '账号', exact: true })
+    .fill(username)
+    .catch(async (error) => {
+      const state = await page
+        .evaluate(() => ({
+          ready: document.readyState,
+          appChildren: document.getElementById('app')?.childNodes.length ?? 0,
+        }))
+        .catch(() => null)
+      throw new Error(
+        `Login rendering failed: ${JSON.stringify({ state, diagnostics })}; ${error.message}`,
+      )
+    })
   await page.getByLabel('密码', { exact: true }).fill(secret ?? (await password()))
   const response = page.waitForResponse(
     (response) => response.url() === api + '/auth/login' && response.request().method() === 'POST',
@@ -271,6 +289,14 @@ test('role and user forms submit real create and versioned edit requests', async
     await userDialog.getByLabel('初始密码', { exact: true }).fill('UiFixturePassword-2026')
     await openSelect(userDialog, '角色')
     await page.getByRole('option', { name: roleName + '已修改', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(userDialog.getByRole('combobox', { name: '角色', exact: true })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await expect(
+      userDialog.locator('.el-select__selected-item').filter({ hasText: roleName + '已修改' }),
+    ).toBeVisible()
     const userResponse = page.waitForResponse(
       (response) => response.url() === api + '/users' && response.request().method() === 'POST',
     )

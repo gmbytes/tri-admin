@@ -6,7 +6,7 @@
 - `X-Request-Id` 使用 UUID 用于请求追踪；非法头值会重新生成，合法 UUID 会规范化。JSON camelCase，ID 为字符串，时间 RFC3339。
 - `/health/live` 表达进程存活；`/health/ready` 表达数据库、模型和初始化就绪。
 - 认证 `/auth/login`、`/auth/refresh`、`/auth/logout`、`/auth/me`；访问凭据通过 Bearer JWT。
-- 管理资源 `/users`、`/roles`、`/permissions`、`/menus`、`/dictionaries`、`/parameters`、`/files`、`/export-templates`、`/api-tokens`、`/apps`、`/game-servers`、`/game-jobs`。
+- 管理资源 `/users`、`/roles`、`/permissions`、`/menus`、`/dictionaries`、`/parameters`、`/files`、`/export-templates`、`/api-tokens`、`/applications`；游戏阶段继续实现 `/game-servers`、`/game-jobs`。
 - 分页默认 page=1/pageSize=20，上限 100；筛选与排序字段按资源白名单。
 - 更新支持 version 乐观并发检查，冲突返回 409；接口服务端依据权限操作码鉴权。
 - 本规范没有旧接口别名或旧字段转换。
@@ -118,6 +118,7 @@
 自身 `open-access` schema v1 引入第 12 项就绪标记，当前应用管理扩展为 v2，标记总数仍为 12。所有 Token 管理响应为 `private, no-store`，仅管理本人记录，其他 Owner 也不能读取或撤销。
 
 - `POST /api/v1/api-tokens`：交互会话和 apiTokens.write；输入 requestId（规范 UUID）、name、scopes，以及 expiresInDays（默认 30，1–365）、allowedIps（最多 32 条 CIDR）、minuteLimit（默认 600，1–10000）、dailyQuota（默认 100000，1–10000000）。Scope 为已实现操作权限，不能含 `*`、重复项或超过当前用户权限。
+- `GET /api/v1/api-tokens/scopes`：交互会话和 apiTokens.write；返回当前账号可授予、已实现且支持自动化的操作码/标签/分组，排除仅交互会话的凭据与账号写入操作。签发界面不需要额外取得权限目录读取权限；最终签发仍在事务中重新核对当前权限。
 - 首次返回 201 的 `data:{token,secret}`，secret 是完整不透明 Bearer 凭据，只在这次响应返回。相同 UUID/规范输入重放为 200、同一 token、secret:null；异参 409。每人最多 32 个活动 Token，签发、并发额度及审计同事务。默认字段、省略字段、CIDR 网络地址和 Scope 顺序归一化后绑定指纹。
 - `GET /api/v1/api-tokens`：apiTokens.read；page/pageSize、名称字面前缀 search、createdAt/name 排序；返回 Page。`GET /{id}`、`GET /by-request/{requestId}` 只返回元数据，包含状态、Scope、IP/额度、创建/过期/撤销/最近使用时间，不含摘要或秘密。
 - `POST /api/v1/api-tokens/{id}/revoke`：交互会话、apiTokens.write 和空对象；可重放，只登记一次成功审计。过期、撤销、所属用户禁用/删除或凭据重置后，Token 新调用均被拒绝。
@@ -176,4 +177,4 @@
 
 返回真实 applicationId/principalKind/userId/sessionId、请求 ID、已登记操作/方法/路由、socket IP、安全 HTTP 状态/错误码/耗时与时间。没有管理员 ownerId、请求/响应正文或凭据。应用软删除后仍允许有权限者按原 ID 查询保留期内历史；其他应用日志不会混入。自身 open-access v4 扩展相应索引，保留既有凭据和回执。
 
-四项 Scope 的服务端业务已接入；管理界面仍按 D 实施，不以 API 骨架或目录文字代替使用验收。
+四项 Scope 的服务端业务和相应管理页面已接入；Token/应用的实际签发结果还须通过页面和真实 HTTP 使用验收，不以 API 目录文字代替。
