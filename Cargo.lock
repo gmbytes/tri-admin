@@ -45,6 +45,8 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tri-resource-generator",
+ "tri-resource-runtime",
  "url",
  "uuid",
  "zeroize",

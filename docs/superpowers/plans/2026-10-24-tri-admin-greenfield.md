@@ -225,10 +225,10 @@ Task 8 C 服务端已按阶段完成：独立密钥、应用/用户认证、刷�
 
 ## Task 9：代码生成、Skills/MCP、AI 和工作流
 
-代码生成按 [Task 9 A 子计划](2026-10-26-tri-admin-code-generation.md) 和 [设计合同](../../design-code-generation.md) 推进。独立 Rust/MongoDB/Vue 运行核心与 ZIP 产物构建验收已完成，主后台定义/生成历史/预览/下载 API 和页面继续实施；整个 Task 9 尚未完成。
+代码生成按 [Task 9 A 子计划](2026-10-26-tri-admin-code-generation.md) 和 [设计合同](../../design-code-generation.md) 完成：独立 Rust/MongoDB/Vue 工程、ZIP 产物构建、主后台定义/不可变历史/预览/下载及实际页面验收均通过。继续扩展/MCP、AI、持久工作流；整个 Task 9 尚未完成。
 
 - [ ] 先按 `docs/product-spec.md` 为每个能力建立可观察测试，禁止空壳接口计为完成。
-- [ ] 仅提供新 Rust/MongoDB/Vue 模板，生成工程必须能构建并通过测试。
+- [x] 仅提供新 Rust/MongoDB/Vue 模板，生成工程实际 ZIP 解包、锁定依赖构建/测试、HTTP 与页面验证通过。
 - [ ] Skills/插件安装、MCP 工具及生命周期、AI 上游和工作流持久任务/取消/导出使用新 Rust 实现。
 - [ ] 文件目录、进程和网络能力按功能限定；真实上游测试与协议夹具分开报告。
 

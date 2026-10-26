@@ -49,6 +49,41 @@ const id = '0123456789abcdef01234567'
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 describe('authenticated binary file requests', () => {
+  it('downloads generated ZIP packages with exact media type and integrity through the session', async () => {
+    const bytes = Buffer.from('generated-zip-fixture'),
+      spec = { size: bytes.length, sha256: digest(bytes) }
+    let media = 'application/zip',
+      downloads = 0
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url === `/api/v1/codegen/generations/${id}/download`) {
+        downloads++
+        res.writeHead(200, {
+          'content-type': media,
+          'content-disposition': 'attachment; filename="generated.zip"',
+          'content-length': bytes.length,
+          etag: `"${spec.sha256}"`,
+        })
+        res.end(bytes)
+      } else send(res, 404, { error: { code: 'NOT_FOUND', message: 'missing' } })
+    })
+    const client = new ApiClient({ endpoint, vault })
+    await client.login('operator', 'fixture', false)
+    const blob = await client.downloadGeneratedProject(id, spec, createBrowserFileSink(spec))
+    expect(await blob.text()).toBe('generated-zip-fixture')
+    media = 'application/octet-stream'
+    await expect(
+      client.downloadGeneratedProject(id, spec, createBrowserFileSink(spec)),
+    ).rejects.toMatchObject({ code: 'FILE_RESPONSE_INVALID' })
+    await expect(
+      client.downloadGeneratedProject(
+        id,
+        { size: 1024 * 1024 + 1, sha256: spec.sha256 },
+        createBrowserFileSink({ size: 1024 * 1024 + 1, sha256: spec.sha256 }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_GENERATED_PACKAGE' })
+    expect(downloads).toBe(2)
+  })
   it('does not replay a file write when a refresh returns a different actor', async () => {
     let writes = 0,
       revocations = 0

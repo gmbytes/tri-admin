@@ -50,7 +50,7 @@ fn full_project_is_deterministic_safe_and_has_matching_manifests() {
         .unwrap()
         .content;
     let manifest: serde_json::Value = serde_json::from_str(manifest).unwrap();
-    assert_eq!(manifest["templateVersion"], 1);
+    assert_eq!(manifest["templateVersion"], 2);
     assert_eq!(manifest["schemaChecksum"], schema.checksum().unwrap());
     let cursor = std::io::Cursor::new(&a.archive);
     let archive = zip::ZipArchive::new(cursor).unwrap();

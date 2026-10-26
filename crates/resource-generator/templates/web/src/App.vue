@@ -26,7 +26,7 @@ const endpoint = ref('http://127.0.0.1:18089'),
   search = ref(''),
   open = ref(false),
   editing = ref<Row | null>(null),
-  draft = reactive<Record<string, string>>({})
+  draft = reactive<Record<string, string | number>>({})
 let sequence = 0
 function failure(value: unknown) {
   if (!client.user) {
@@ -130,7 +130,7 @@ function edit(row: Row | null) {
 function values() {
   const result: Record<string, unknown> = {}
   for (const field of schema.fields) {
-    const value = draft[field.name] ?? ''
+    const value = String(draft[field.name] ?? '')
     if (!value.trim() && !field.required) {
       result[field.name] = null
       continue

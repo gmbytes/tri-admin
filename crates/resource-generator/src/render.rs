@@ -7,7 +7,7 @@ use std::{
 };
 use tri_resource_runtime::schema::{Kind, Schema};
 use zip::{ZipWriter, write::SimpleFileOptions};
-pub const TEMPLATE_VERSION: u32 = 1;
+pub const TEMPLATE_VERSION: u32 = 2;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]

@@ -34,6 +34,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     data_tool_fixtures::seed(&state, &password).await?;
+    let mut resource_stop = None;
+    let mut resource_task = None;
+    let mut resource_api = None;
+    if let Ok(path) = std::env::var("TRI_E2E_RESOURCE_SCHEMA_FILE") {
+        let descriptor = std::fs::read(path)?;
+        if descriptor.len() > 64 * 1024 {
+            return Err("Generated fixture schema too large".into());
+        }
+        let schema =
+            tri_resource_runtime::schema::Schema::parse(serde_json::from_slice(&descriptor)?)?;
+        let config = tri_resource_runtime::Config::new(
+            std::env::var("TRI_E2E_RESOURCE_KEY")?,
+            std::env::var("TRI_E2E_RESOURCE_ORIGIN")?,
+        )?;
+        let resource =
+            tri_resource_runtime::State::new(state.require_database()?.clone(), schema, config)?;
+        resource.migrate().await?;
+        resource
+            .provision_admin("generated-admin", &password, true, true)
+            .await?;
+        resource
+            .provision_admin("generated-reader", &password, false, true)
+            .await?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        resource_api = Some(format!("http://{}/api/v1", listener.local_addr()?));
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        resource_stop = Some(stop);
+        resource_task = Some(tokio::spawn(async move {
+            axum::serve(
+                listener,
+                tri_resource_runtime::router(resource)
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+        }));
+    }
     // Backdated immutable events exist only in this isolated E2E database.
     let old = DateTime::from_millis(DateTime::now().timestamp_millis() - 3 * 86_400_000);
     state.require_database()?.collection::<Document>("audit_events").insert_many((0..3).map(|_|doc!{"kind":"operation","category":"administration","action":"fixture.old","outcome":"success","createdAt":old})).await?;
@@ -41,7 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = listener.local_addr()?;
     std::fs::write(
         std::env::var("TRI_E2E_META_FILE")?,
-        serde_json::to_vec(&serde_json::json!({"api":format!("http://{address}/api/v1")}))?,
+        serde_json::to_vec(
+            &serde_json::json!({"api":format!("http://{address}/api/v1"),"resourceApi":resource_api}),
+        )?,
     )?;
     println!("Isolated E2E service ready on {}", listener.local_addr()?);
     let database = state.require_database()?.clone();
@@ -63,6 +104,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = workers.await;
     let _ = data_workers.await;
     let _ = export_workers.await;
+    if let Some(stop) = resource_stop {
+        let _ = stop.send(());
+    }
+    if let Some(task) = resource_task {
+        task.await??;
+    }
     result?;
     database.drop().await?;
     Ok(())

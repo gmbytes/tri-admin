@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { openSync, closeSync } from 'node:fs'
 import { resolve, join, sep } from 'node:path'
+import { generatedFrontend } from './generated-fixture'
 
 export default async function setup() {
   const root = resolve('.superpowers/e2e')
@@ -12,6 +13,9 @@ export default async function setup() {
     metadata = join(directory, 'server.json')
   await writeFile(passwordFile, randomBytes(24).toString('hex'), { mode: 0o600 })
   const log = openSync(join(directory, 'server.log'), 'w')
+  const generated = process.env.TRI_E2E_GENERATED_PROJECT
+    ? await generatedFrontend(process.env.TRI_E2E_GENERATED_PROJECT)
+    : null
   const environment = {
     ...process.env,
     CARGO_INCREMENTAL: '0',
@@ -23,6 +27,13 @@ export default async function setup() {
     TRI_SETTINGS_KEYS: `fixture:${randomBytes(32).toString('hex')}`,
     TRI_SETTINGS_ACTIVE_KEY: 'fixture',
     TRI_STORAGE_ROOT: join(directory, 'storage'),
+    ...(generated
+      ? {
+          TRI_E2E_RESOURCE_SCHEMA_FILE: generated.schemaPath,
+          TRI_E2E_RESOURCE_ORIGIN: generated.origin,
+          TRI_E2E_RESOURCE_KEY: randomBytes(32).toString('hex'),
+        }
+      : {}),
   }
   const build = spawnSync('cargo', ['build', '-p', 'admin-api', '--example', 'e2e_server'], {
     env: environment,
@@ -30,6 +41,7 @@ export default async function setup() {
     stdio: ['ignore', log, log],
   })
   if (build.status !== 0) {
+    await generated?.close()
     closeSync(log)
     throw new Error('UI 测试服务编译失败，日志：' + directory)
   }
@@ -58,17 +70,31 @@ export default async function setup() {
       }
     }
     closeSync(log)
+    await generated?.close()
   }
   try {
     let api = '',
+      resourceApi = '',
       ready = false
     const deadline = Date.now() + 30_000
     while (Date.now() < deadline) {
       if (exited) throw new Error('UI 测试服务提前退出，日志：' + directory)
       try {
-        api = (JSON.parse(await readFile(metadata, 'utf8')) as { api: string }).api
+        const info = JSON.parse(await readFile(metadata, 'utf8')) as {
+          api: string
+          resourceApi?: string
+        }
+        api = info.api
+        resourceApi = info.resourceApi ?? ''
         if (
-          (await fetch(new URL('/health/ready', api), { signal: AbortSignal.timeout(1000) })).ok
+          (await fetch(new URL('/health/ready', api), { signal: AbortSignal.timeout(1000) })).ok &&
+          (!generated ||
+            (resourceApi &&
+              (
+                await fetch(new URL('/health/ready', resourceApi), {
+                  signal: AbortSignal.timeout(1000),
+                })
+              ).ok))
         ) {
           ready = true
           break
@@ -91,10 +117,16 @@ export default async function setup() {
     process.env.TRI_E2E_OWNER_ROLE = auth.user.roleIds[0]
     process.env.TRI_E2E_API = api
     process.env.TRI_E2E_PASSWORD_FILE = passwordFile
+    if (generated) {
+      process.env.TRI_E2E_GENERATED_ORIGIN = generated.origin
+      process.env.TRI_E2E_GENERATED_API = resourceApi
+    }
     return async () => {
       await stop()
       delete process.env.TRI_E2E_PROVISIONING_TOKEN
       delete process.env.TRI_E2E_OWNER_ROLE
+      delete process.env.TRI_E2E_GENERATED_ORIGIN
+      delete process.env.TRI_E2E_GENERATED_API
       const target = resolve(directory)
       if (!target.startsWith(root + sep)) throw new Error('Refusing out-of-scope test cleanup')
       await rm(target, { recursive: true, force: true })

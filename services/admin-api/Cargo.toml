@@ -44,6 +44,8 @@ base64.workspace = true
 subtle.workspace = true
 ipnet.workspace = true
 rustls-pemfile.workspace = true
+tri-resource-runtime = { path = "../../crates/resource-runtime" }
+tri-resource-generator = { path = "../../crates/resource-generator" }
 
 [dev-dependencies]
 tower.workspace = true

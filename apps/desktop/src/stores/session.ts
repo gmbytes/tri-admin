@@ -200,6 +200,7 @@ export const useSession = defineStore('session', () => {
     return client.downloadExport(jobId, expected, sink, options)
   }
   return {
+    downloadGeneratedProject,
     user,
     navigation,
     application,
@@ -226,5 +227,17 @@ export const useSession = defineStore('session', () => {
     loadApplication,
     passwordChanged,
     native: platform.native,
+  }
+  async function downloadGeneratedProject<T>(
+    generationId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ) {
+    if (!client) {
+      await sink.abort().catch(() => undefined)
+      throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    }
+    return client.downloadGeneratedProject(generationId, expected, sink, options)
   }
 })

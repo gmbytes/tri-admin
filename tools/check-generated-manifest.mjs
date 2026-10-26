@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto'
 const root = resolve(process.argv[2] ?? ''),
   manifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'))
 if (
-  manifest.templateVersion !== 1 ||
+  !Number.isSafeInteger(manifest.templateVersion) ||
+  manifest.templateVersion < 1 ||
+  manifest.templateVersion > 2 ||
   !/^[a-f0-9]{64}$/.test(manifest.schemaChecksum) ||
   !Array.isArray(manifest.files) ||
   manifest.files.length > 64

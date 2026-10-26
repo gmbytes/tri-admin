@@ -158,6 +158,7 @@ export async function readFileContent<T>(
     signal?: AbortSignal
     onProgress?: (bytes: number) => void
     idleTimeoutMs?: number
+    mediaType?: 'application/octet-stream' | 'application/zip'
   } = {},
 ): Promise<T> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
@@ -182,7 +183,7 @@ export async function readFileContent<T>(
       response.headers.get('etag') !== `"${spec.sha256}"` ||
       !/^attachment(?:;|$)/i.test(response.headers.get('content-disposition') ?? '') ||
       response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !==
-        'application/octet-stream' ||
+        (options.mediaType ?? 'application/octet-stream') ||
       !response.body
     )
       throw new FileTransferError('FILE_RESPONSE_INVALID', '文件下载响应与资料不一致')

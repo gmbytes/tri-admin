@@ -380,8 +380,16 @@ export class ApiClient {
   ): Promise<T> {
     return this.downloadContent('export', jobId, expected, sink, options)
   }
+  async downloadGeneratedProject<T>(
+    generationId: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ): Promise<T> {
+    return this.downloadContent('generated', generationId, expected, sink, options)
+  }
   private async downloadContent<T>(
-    kind: 'file' | 'export',
+    kind: 'file' | 'export' | 'generated',
     fileId: string,
     expected: FileContentSpec,
     sink: FileSink<T>,
@@ -400,9 +408,15 @@ export class ApiClient {
     try {
       if (!/^[a-f0-9]{24}$/.test(fileId)) throw new ApiError('INVALID_FILE', '文件标识无效')
       validateFileSpec(expected)
+      if (kind === 'generated' && (expected.size === 0 || expected.size > 1024 * 1024))
+        throw new ApiError('INVALID_GENERATED_PACKAGE', '生成包长度无效或超过 1 MiB')
       const spec = Object.freeze({ size: expected.size, sha256: expected.sha256 })
       const result = await this.authorized<T>(
-        kind === 'export' ? `/data-tools/exports/${fileId}/content` : `/files/${fileId}/content`,
+        kind === 'generated'
+          ? `/codegen/generations/${fileId}/download`
+          : kind === 'export'
+            ? `/data-tools/exports/${fileId}/content`
+            : `/files/${fileId}/content`,
         {
           signal: options.signal,
           timeoutMs: 30 * 60 * 1000,
@@ -411,6 +425,7 @@ export class ApiClient {
           data: await readFileContent(response, spec, target, {
             signal,
             onProgress: options.onProgress,
+            mediaType: kind === 'generated' ? 'application/zip' : 'application/octet-stream',
           }),
         }),
       )

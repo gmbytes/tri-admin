@@ -178,3 +178,16 @@
 返回真实 applicationId/principalKind/userId/sessionId、请求 ID、已登记操作/方法/路由、socket IP、安全 HTTP 状态/错误码/耗时与时间。没有管理员 ownerId、请求/响应正文或凭据。应用软删除后仍允许有权限者按原 ID 查询保留期内历史；其他应用日志不会混入。自身 open-access v4 扩展相应索引，保留既有凭据和回执。
 
 四项 Scope 的服务端业务和相应管理页面已接入；Token/应用的实际签发结果还须通过页面和真实 HTTP 使用验收，不以 API 目录文字代替。
+
+## 代码生成定义与不可变产物
+
+此模块使用 `codegen.read/write` 与当前 all/self/roles 范围。定义和生成历史均按创建者归属，范围在分页前过滤；写入同时要求 read+write。管理 API Token 可在固定 Scope 与所属用户当前权限交集内操作，事务中重新核对有效凭据、角色和范围，不伪造交互会话。请求正文最多 64 KiB，所有响应禁止共享缓存。
+
+- `GET/POST /api/v1/codegen/definitions`：列表支持 page/pageSize（1–100）、资源标识字面前缀 search 和 createdAt 排序。创建输入规范 UUID requestId 和 schema；schema 为 resource/label/fields，字段约束见代码生成设计。首次 201，同一创建者/UUID/描述重放 200，异参 409。活动资源标识按创建者唯一。
+- `GET/PATCH/DELETE /definitions/{id}`：读取、以 version 和完整 schema 编辑、以 query version 软删除。外部范围 ID 返回 404，旧版本 409。`GET /definitions/by-request/{requestId}` 仅原创建者查询，删除后的创建回执仍返回同一 ID 与 deletedAt，不复活定义。
+- `GET/POST /api/v1/codegen/generations`：历史支持 page/pageSize、资源标识前缀 search 与 definitionId。生成输入 requestId/definitionId/definitionVersion，首次 201、重放 200、异参或版本改变 409。渲染在受控 CPU 工作中执行固定模板，提交时再核对定义与权限；元数据、ZIP 二进制和审计同事务。
+- `GET /generations/{id}` 与 `GET /generations/by-request/{requestId}`：返回精确定义/模板版本、描述快照、schemaChecksum、ZIP sha256/size、文件清单及创建时间；请求查询限原创建者。没有二进制或私有去重指纹。旧请求先查询原回执，不因当前定义编辑/删除或模板升级而重新执行。
+- `GET /generations/{id}/preview?path=...`：只读原 ZIP 清单中的 UTF-8 文件，返回 path/content/size/sha256。拒绝相对目录穿越、驱动器、反斜杠和清单外文件，核对 ZIP 与文件摘要，单文件最多 512 KiB，不访问服务文件目录或执行源码。
+- `GET /generations/{id}/download`：重新授权并核对原包长度/摘要后返回 application/zip、Content-Length、固定 ID 文件名、带引号的 SHA-256 ETag 和 X-Content-Sha256，ZIP 最大 1 MiB。客户端使用现有会话刷新/取消与完整性写入通道，按 ZIP 精确媒体类型验证后才开始保存。
+
+历史保存原 ZIP 字节，模板 v2 的数字表单修复不会改写旧模板产物。新请求采用当前模板，旧请求和历史下载保持原结果。自身 codegen schema v1 添加定义、生成元数据、私有包和索引；主服务就绪标记由 12 项变为 13 项，升级先停服 migrate，没有旧标记数量的运行时回退。

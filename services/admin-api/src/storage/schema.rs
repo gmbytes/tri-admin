@@ -25,9 +25,10 @@ pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
             {"_id":"files","version":super::files_schema::VERSION}
             ,{"_id":"data-tools","version":super::data_tools_schema::VERSION}
             ,{"_id":"open-access","version":super::open_access_schema::VERSION}
+            ,{"_id":"codegen","version":super::codegen_schema::VERSION}
         ]})
         .await?;
-    Ok(count == 12)
+    Ok(count == 13)
 }
 
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
@@ -135,5 +136,6 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
     super::settings_schema::migrate_settings(database).await?;
     super::files_schema::migrate_files(database).await?;
     super::data_tools_schema::migrate(database).await?;
-    super::open_access_schema::migrate(database).await
+    super::open_access_schema::migrate(database).await?;
+    super::codegen_schema::migrate(database).await
 }
