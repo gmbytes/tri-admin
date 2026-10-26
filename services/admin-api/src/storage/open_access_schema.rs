@@ -5,11 +5,11 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 1;
+pub const VERSION: i32 = 2;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(previous) = metadata.find_one(doc! {"_id":"open-access"}).await?
-        && previous.get_i32("version").ok() != Some(VERSION)
+        && !matches!(previous.get_i32("version").ok(), Some(1) | Some(VERSION))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -88,12 +88,19 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         )
         .upsert(true)
         .await?;
+    super::application_schema::migrate(database).await?;
     metadata
         .update_one(
             doc! {"_id":"open-access"},
             doc! {"$setOnInsert":{"version":VERSION,"createdAt":DateTime::now()}},
         )
         .upsert(true)
+        .await?;
+    metadata
+        .update_one(
+            doc! {"_id":"open-access","version":1},
+            doc! {"$set":{"version":VERSION,"updatedAt":DateTime::now()}},
+        )
         .await?;
     Ok(())
 }

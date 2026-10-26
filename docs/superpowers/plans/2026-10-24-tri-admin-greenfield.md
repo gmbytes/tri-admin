@@ -201,9 +201,9 @@ docs/                        规范、进度和运维
 
 **文件：** 新增 `modules/applications/{mod,dto,models,service,router,users}.rs`、`tests/applications.rs`，扩展自身 open-access schema、权限/菜单和 API 目录。复用 A 的高熵凭据与事务日志，应用/用户分别绑定稳定 ID。
 
-- [ ] 先测试缺失 API，再实现应用版本化 CRUD/启停/软删除、code 不复用、UUID 创建回执/一次性密钥与轮换；同键不能二次显示秘密，审计失败回滚。
-- [ ] 实现应用内用户名唯一的用户 CRUD/Argon2id 密码/重置与会话撤销；测试同名跨应用隔离、换 applicationId 不越权、版本/唯一冲突以及读列表不含摘要。
-- [ ] 运行 `cargo test -p admin-api --test applications`，Expected：全部通过；验证 schema 重复执行、未知版本拒绝和定制导航保留，再提交。
+- [x] 先测试缺失 API，再实现应用版本化 CRUD/启停/软删除、code 不复用、UUID 创建回执/一次性密钥与轮换；同键不能二次显示秘密，审计失败回滚。轮换轻量回执持久保留，不以历史总次数阻止安全轮换。
+- [x] 实现应用内用户名唯一的用户 CRUD/Argon2id 密码/重置与会话记录撤销；测试同名跨应用隔离、换 applicationId 不越权、版本/唯一冲突以及读列表不含摘要。实际开放 JWT/刷新拒绝在 C 接入后验收，不以记录状态替代。
+- [x] `cargo test -p admin-api --test applications` 九项通过；自身 v1→v2 升级、重复执行、未知版本拒绝、既有 Token 和定制导航保留通过，真实 HTTP 管理调用通过。完整 Rust 333 项、客户端与 41 项页面回归、严格检查通过；保存本阶段实现后继续 C/D。
 
 ### Task 8 C：开放应用与用户认证、真实 Scope/IP/预算
 

@@ -115,7 +115,7 @@
 
 ## 管理员 API Token
 
-自身 `open-access` schema v1 为第 12 项就绪标记。所有 Token 管理响应为 `private, no-store`，仅管理本人记录，其他 Owner 也不能读取或撤销。
+自身 `open-access` schema v1 引入第 12 项就绪标记，当前应用管理扩展为 v2，标记总数仍为 12。所有 Token 管理响应为 `private, no-store`，仅管理本人记录，其他 Owner 也不能读取或撤销。
 
 - `POST /api/v1/api-tokens`：交互会话和 apiTokens.write；输入 requestId（规范 UUID）、name、scopes，以及 expiresInDays（默认 30，1–365）、allowedIps（最多 32 条 CIDR）、minuteLimit（默认 600，1–10000）、dailyQuota（默认 100000，1–10000000）。Scope 为已实现操作权限，不能含 `*`、重复项或超过当前用户权限。
 - 首次返回 201 的 `data:{token,secret}`，secret 是完整不透明 Bearer 凭据，只在这次响应返回。相同 UUID/规范输入重放为 200、同一 token、secret:null；异参 409。每人最多 32 个活动 Token，签发、并发额度及审计同事务。默认字段、省略字段、CIDR 网络地址和 Scope 顺序归一化后绑定指纹。
@@ -126,4 +126,25 @@
 - `GET /api/v1/api-tokens/calls`：apiTokens.read，本人调用记录；page/pageSize、tokenId、status、from/to（RFC3339）。开始日志和预算同事务，结束记录安全 HTTP 状态/错误码/耗时；结束日志失败保留 started/空状态，不伪造确认结果。只含已登记路由与请求 ID 等元数据，不含正文、原查询或凭据。
 - 调用日志 30 天后立即不返回；主服务启动及约每分钟有界清理，每类最多 100 项。`maintain-access` CLI 单独运行一轮，返回 calls/buckets/attempts，不执行任何业务请求。TTL 不作为授权或内容可见性的依据。
 
-本阶段是 Task 8 的管理员 Token API；开放应用、应用用户认证与管理界面仍按后续步骤实施，不以管理 Token 作为玩家令牌。
+管理员 Token 与开放应用管理 API 已接入；开放身份认证与管理界面仍按后续步骤实施，不以管理 Token 作为玩家令牌。
+
+## 开放应用管理
+
+当前是管理 API，开放应用/用户登录刷新在后续 `/open/v1` 阶段接入；所有响应为 private/no-store，DTO 不返回密钥摘要或密码摘要。
+
+- `POST /api/v1/applications`：交互会话、applications.write；requestId/name/code/allowedScopes，以及 enabled（默认 true）、allowedIps/minuteLimit/dailyQuota（同 Token 策略默认值和边界）。code 规范化为小写，3–64 个 ASCII 标识字符，以字母开头；创建后固定，软删除也不复用。Scope 仅四项 open.profile.read/write、open.users.read/write，并检查相应 applicationUsers.read/write 授权。
+- 首次 201 返回 `data:{application,secret}`，密钥格式 tri_app1，32 字节随机秘密；同操作者/UUID/规范输入重放 200，同一应用元数据和 secret:null，异参 409。不存在获取已签发秘密的接口。
+- `GET /api/v1/applications`：applications.read，Page、按 code 字面前缀 search、createdAt/code/name 排序。`GET /{id}` 返回活动配置；`GET /by-request/{requestId}` 只查本人创建回执，可返回软删除元数据，不复活配置。
+- `PATCH /{id}`：交互会话、applications.write 和 version，可修改 name/enabled/allowedScopes/allowedIps/minuteLimit/dailyQuota，未知或空修改字段 422，旧版本 409。策略/Scope/启用核对用户数据授权；名称修改不要求取得服务密钥权限。`DELETE /{id}?version=` 软删除，撤销该应用会话并保留 code/创建回执。
+- `POST /{id}/secret`：交互会话、applications.write、相应 Scope 的用户权限；输入独立 requestId/version。成功 200 返回当前 application、首次 secret 和固定 receipt（applicationId/requestId/kind/version/credentialVersion/createdAt）。同请求只确认原操作，空秘密；异参或其他过期版本 409。`GET /{id}/actions/{requestId}` 仅原操作者在 applications.read 下查询，其他 Owner 也不能读取其操作回执。
+- 轮换、应用版本、凭据版本、会话撤销、回执和成功审计同事务。回执不存秘密，不用历史总次数限制后续安全轮换；读写/查询仍有固定字段与分页边界。
+
+## 应用用户管理
+
+`/api/v1/applications/{applicationId}/users` 始终绑定父应用。读取要求 applications.read + applicationUsers.read，管理端写入还要求 applicationUsers.write 与交互会话。管理员数据范围和应用用户身份不混用；应用配置是共享管理资源，应用数据隔离在每个 applicationId 条件内执行。
+
+- `GET/POST /users`：分页/创建；创建 username/displayName/password，scopes 默认 open.profile.read，只允许应用当前范围内的 profile.read/write；status 默认为 active，也可 disabled。用户名 3–64 个字符，应用内大小写规范化唯一；同名跨应用允许。密码使用 Argon2id，最短 12 字符，不使用快速密码指纹。
+- `GET/PATCH/DELETE /users/{id}`：固定 appId/id 交叉校验，属于其他应用的合法用户 ID 也返回 404。修改 version 和 username/displayName/scopes/status，删除须 query version。子用户写入不改变应用的公开 version，父记录内部栅栏保护与应用停用/Scope 修改并发。
+- `POST /users/{id}/password`：version/password；更新密码、内部认证代际、撤销目标用户会话及成功审计同事务，返回 204。其他应用、其他用户和应用服务会话不受该操作影响。
+- 父应用软删除后用户接口返回 404，用户记录保留；用户软删除后旧 ID 不再读取，同名新用户 ID 不同，旧会话不能重新绑定。用户状态切换和删除撤销其会话，重新启用不恢复旧会话。
+- 自身 open-access v1→v2 只扩展应用、用户、操作回执和开放会话集合/索引，不重写 Token 或调用日志，不增加旧系统运行时兼容分支。开放认证与真实令牌隔离仍属于下一阶段验收。

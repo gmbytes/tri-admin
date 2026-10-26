@@ -145,6 +145,26 @@ async fn real_http_token_calls_enforce_scope_and_socket_ip_and_main_runs_usage_m
             .all(|row| row["ip"] == "127.0.0.1")
     );
     assert!(!page.to_string().contains(token));
+    let response=client.post(format!("{base}/api/v1/applications")).bearer_auth(session).header("content-type","application/json").body(json!({"requestId":uuid::Uuid::new_v4().to_string(),"name":"HTTP application","code":"http-application","allowedScopes":["open.profile.read","open.profile.write"]}).to_string()).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 201);
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    let created: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    let application = created["data"]["application"]["id"].as_str().unwrap();
+    let response = client
+        .post(format!("{base}/api/v1/applications/{application}/users"))
+        .bearer_auth(session)
+        .header("content-type", "application/json")
+        .body(
+            json!({"username":"http.user","displayName":"HTTP user","password":support::PASSWORD})
+                .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 201);
+    let account: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    assert_eq!(account["data"]["applicationId"], application);
+    assert!(!account.to_string().contains("passwordHash"));
     drop(child);
     let mut maintenance = std::process::Command::new(env!("CARGO_BIN_EXE_admin-api"));
     maintenance

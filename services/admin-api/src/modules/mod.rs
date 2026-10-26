@@ -1,5 +1,6 @@
 pub mod api_catalog;
 pub mod api_tokens;
+pub mod applications;
 pub mod auth;
 pub mod data_tools;
 pub mod dictionaries;
@@ -18,6 +19,11 @@ pub mod versions;
 pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
     vec![
+        ApiModule {
+            prefix: applications::router::API_PREFIX,
+            endpoints: applications::router::API_ENDPOINTS,
+            routes: applications::router::configured_routes,
+        },
         ApiModule {
             prefix: api_tokens::router::API_PREFIX,
             endpoints: api_tokens::router::API_ENDPOINTS,

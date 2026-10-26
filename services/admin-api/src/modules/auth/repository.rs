@@ -2,10 +2,57 @@ use super::dto::UserSummary;
 use crate::common::error::AppError;
 use futures_util::TryStreamExt;
 use mongodb::{
-    Database,
+    ClientSession, Database,
     bson::{Bson, Document, doc, oid::ObjectId},
 };
 use std::collections::BTreeSet;
+
+/// Revalidates interactive management authority inside the caller's transaction.
+pub async fn interactive_permissions(
+    database: &Database,
+    session: &mut ClientSession,
+    owner: ObjectId,
+    session_id: ObjectId,
+    required: &[&str],
+) -> mongodb::error::Result<std::collections::HashSet<String>> {
+    use crate::common::transaction::{Failure, fail};
+    if database.collection::<Document>("sessions").find_one(doc!{"_id":session_id,"userId":owner,"status":"active","revokedAt":null,"expiresAt":{"$gt":mongodb::bson::DateTime::now()}}).session(&mut *session).await?.is_none(){return Err(fail(Failure::Unauthorized));}
+    let user = database
+        .collection::<Document>("users")
+        .find_one(doc! {"_id":owner,"status":"active","deletedAt":null})
+        .projection(doc! {"roleIds":1})
+        .session(&mut *session)
+        .await?
+        .ok_or_else(|| fail(Failure::Unauthorized))?;
+    let ids = user
+        .get_array("roleIds")
+        .map_err(|_| fail(Failure::NotReady))?;
+    let mut cursor = database
+        .collection::<Document>("roles")
+        .find(doc! {"_id":{"$in":ids},"deletedAt":null})
+        .projection(doc! {"permissions":1})
+        .session(&mut *session)
+        .await?;
+    let roles = cursor.stream(session).try_collect::<Vec<_>>().await?;
+    let mut permissions = std::collections::HashSet::new();
+    for role in roles {
+        for value in role
+            .get_array("permissions")
+            .map_err(|_| fail(Failure::NotReady))?
+        {
+            permissions.insert(
+                value
+                    .as_str()
+                    .ok_or_else(|| fail(Failure::NotReady))?
+                    .to_owned(),
+            );
+        }
+    }
+    if !permissions.contains("*") && required.iter().any(|code| !permissions.contains(*code)) {
+        return Err(fail(Failure::Forbidden));
+    }
+    Ok(permissions)
+}
 
 pub async fn active_user(database: &Database, id: ObjectId) -> Result<Option<Document>, AppError> {
     Ok(database

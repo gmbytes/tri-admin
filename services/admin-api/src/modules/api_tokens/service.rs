@@ -26,42 +26,14 @@ async fn permissions(
     owner: ObjectId,
     session_id: ObjectId,
 ) -> mongodb::error::Result<std::collections::HashSet<String>> {
-    if database.collection::<Document>("sessions").find_one(doc!{"_id":session_id,"userId":owner,"status":"active","revokedAt":null,"expiresAt":{"$gt":DateTime::now()}}).session(&mut *session).await?.is_none(){return Err(fail(Failure::Unauthorized));}
-    let user = database
-        .collection::<Document>("users")
-        .find_one(doc! {"_id":owner,"status":"active","deletedAt":null})
-        .projection(doc! {"roleIds":1})
-        .session(&mut *session)
-        .await?
-        .ok_or_else(|| fail(Failure::Unauthorized))?;
-    let ids = user
-        .get_array("roleIds")
-        .map_err(|_| fail(Failure::NotReady))?;
-    let mut cursor = database
-        .collection::<Document>("roles")
-        .find(doc! {"_id":{"$in":ids},"deletedAt":null})
-        .projection(doc! {"permissions":1})
-        .session(&mut *session)
-        .await?;
-    let roles = cursor.stream(session).try_collect::<Vec<_>>().await?;
-    let mut permissions = std::collections::HashSet::new();
-    for role in roles {
-        for value in role
-            .get_array("permissions")
-            .map_err(|_| fail(Failure::NotReady))?
-        {
-            permissions.insert(
-                value
-                    .as_str()
-                    .ok_or_else(|| fail(Failure::NotReady))?
-                    .to_owned(),
-            );
-        }
-    }
-    if !permissions.contains("*") && !permissions.contains("apiTokens.write") {
-        return Err(fail(Failure::Forbidden));
-    }
-    Ok(permissions)
+    auth::repository::interactive_permissions(
+        database,
+        session,
+        owner,
+        session_id,
+        &["apiTokens.write"],
+    )
+    .await
 }
 pub async fn create(
     database: &Database,

@@ -1,3 +1,4 @@
+pub mod application_schema;
 pub mod auth_schema;
 pub mod data_tools_schema;
 pub mod dictionary_schema;

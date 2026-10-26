@@ -10,6 +10,26 @@ pub struct Permission {
 
 pub const CATALOG: &[Permission] = &[
     Permission {
+        code: "applications.read",
+        label: "查看开放应用配置",
+        group: "applications",
+    },
+    Permission {
+        code: "applications.write",
+        label: "管理开放应用及服务密钥",
+        group: "applications",
+    },
+    Permission {
+        code: "applicationUsers.read",
+        label: "查看应用用户",
+        group: "applicationUsers",
+    },
+    Permission {
+        code: "applicationUsers.write",
+        label: "管理应用用户及密码",
+        group: "applicationUsers",
+    },
+    Permission {
         code: "apiTokens.read",
         label: "查看本人 API Token 与调用日志",
         group: "apiTokens",
