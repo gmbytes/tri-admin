@@ -133,3 +133,5 @@ cargo test -p desktop-core --test files native_large_disk_streams_five_gib --loc
 扩展包格式见 [扩展包说明](extension-packages.md)。包核心测试可用 `cargo test -p tri-extension-package --locked`，扩展库数据库测试可用 `cargo test -p admin-api --test extensions --locked`；后者覆盖创建、修订、范围、去重、审计回滚、原包导出、损坏保护与模型迁移。升级到 extensions v2 后需要 14 项就绪标记，先停服运行 migrate，再启动服务。扩展管理界面使用 `npx playwright test tests/e2e/extensions.spec.ts` 验收，MCP 生命周期仍按子计划继续实现。
 
 Windows 全量构建若出现分页文件不足（os error 1455），优先降低并行编译数，例如 `cargo test --workspace --locked -j 2`，不必清空依赖或修改系统配置。页面夹具的 Cargo 构建可通过当前命令环境的 `CARGO_BUILD_JOBS=2` 使用相同限制；Rust、S3 和页面夹具仍串行运行，避免可执行文件锁冲突。
+
+MCP 运行核心的实际子进程测试为 `cargo test -p tri-mcp-runtime --locked -j 2`。Windows 使用 Job Object，Linux 使用进程组及退出确认；`tools/test-mcp-linux.ps1` 在固定摘要的官方 Rust 1.94.0 容器中运行相同测试和严格检查。容器只读取源码/锁文件，不挂载主配置或数据，不修改 WSL 工具链。主后台 MCP 连接、持久调用、HTTP、业务工具和界面仍在实现中，不能把核心测试计为整模块交付。
