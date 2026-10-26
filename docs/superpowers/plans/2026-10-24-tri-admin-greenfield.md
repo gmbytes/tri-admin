@@ -178,10 +178,48 @@ docs/                        规范、进度和运维
 
 ## Task 8：API Token 与开放应用
 
+实施细化依据 [开放访问设计](../../design-open-access.md)，继续内联执行本 V3 计划，不新建目标或引入旧协议适配。
+
 - [ ] 测试 Token 摘要/一次性签发/过期/撤销，应用隔离、Scope 与并发唯一性。
 - [ ] 新 REST API、独立应用/用户身份和刷新策略；管理员 Token 不作为玩家 Token。
 - [ ] 日志、配额、限流、IP/Scope 限制由服务端执行。
 - [ ] 管理页面和真实客户端调用完成允许/拒绝验证。
+
+### Task 8 A：管理员 API Token、预算与安全日志
+
+**文件：** 新增 `modules/api_tokens/{mod,dto,models,service,router}.rs`、`modules/open_access/{mod,credential,limits,usage}.rs`、`storage/open_access_schema.rs`；修改 `auth/{mod,service,router}.rs`、`rbac/permissions.rs`、模块注册与 schema。测试为 `tests/api_tokens.rs`、`tests/open_access_limits.rs`。
+
+**接口：** `AdminCredential::{Session{session_id},ApiToken{token_id}}` 替代 AuthContext 的单一会话字段；`api_tokens::authenticate(state,raw,peer)->AuthContext` 仅返回固定 Scope 与最新用户权限交集。`open_access::credential` 负责类型化秘密生成/严格解析/摘要核对；`limits::reserve(database,identity,policy,peer,request)->UsageTicket` 原子计数并登记安全开始日志，完成更新由现有观测中间件调用，任何日志 DTO 不含秘密。
+
+- [ ] 先写 `api_token_is_shown_once_and_same_request_cannot_issue_twice`：首次 201 有秘密，重放 200 无秘密，数据库只有摘要/一个记录，同键异参 409，并发只一个 201；运行 `cargo test -p admin-api --test api_tokens` 观察缺失路由失败。
+- [ ] 实现上述创建/分页/详情/按请求查询/撤销，自己所有权、32 活跃上限、30/365 天边界、交互会话限制与事务审计；测试审计失败回滚及失去原权限不能签发越权 Scope。
+- [ ] 接入真正管理 API 鉴权，测试固定 Scope、最新权限/数据范围、过期/撤销/用户重置密码/禁用，以及 PAT 不能签发 PAT/改密/成为开放身份；禁止伪造 Session。
+- [ ] 先写并运行限额并发/IP/未知来源/伪造转发头/日志失败测试，再实现原子预算、Retry-After 和安全开始/完成日志；同一请求身份提取仅扣一次。运行两个测试目标，Expected：全部通过，再运行适当认证/RBAC 回归和严格 Clippy。
+- [ ] 提交已验证的可用 API Token 功能；本步骤不宣称整个 Task 8 完成。
+
+### Task 8 B：应用配置、一次性密钥与应用用户
+
+**文件：** 新增 `modules/applications/{mod,dto,models,service,router,users}.rs`、`tests/applications.rs`，扩展自身 open-access schema、权限/菜单和 API 目录。复用 A 的高熵凭据与事务日志，应用/用户分别绑定稳定 ID。
+
+- [ ] 先测试缺失 API，再实现应用版本化 CRUD/启停/软删除、code 不复用、UUID 创建回执/一次性密钥与轮换；同键不能二次显示秘密，审计失败回滚。
+- [ ] 实现应用内用户名唯一的用户 CRUD/Argon2id 密码/重置与会话撤销；测试同名跨应用隔离、换 applicationId 不越权、版本/唯一冲突以及读列表不含摘要。
+- [ ] 运行 `cargo test -p admin-api --test applications`，Expected：全部通过；验证 schema 重复执行、未知版本拒绝和定制导航保留，再提交。
+
+### Task 8 C：开放应用与用户认证、真实 Scope/IP/预算
+
+**文件：** 新增 `modules/open_access/{auth,jwt,context,router,sessions}.rs`、`tests/open_auth.rs`、`tests/open_calls.rs`；修改 `config.rs`、开发密钥初始化工具及其测试，使用独立开放签名密钥。
+
+- [ ] 先写管理员 JWT/PAT、应用身份、应用用户互相拒绝的失败测试，再实现 `/open/v1` 的应用交换、用户登录/刷新/注销、me 及应用用户资源；仅四项已实现开放 Scope。
+- [ ] 测试 15 分钟访问/7 天刷新、复用与并发刷新撤销、应用禁用/密钥轮换/用户重置即时失效、当前 Scope 收缩、跨应用同名身份隔离；缺少开放签名密钥时明确拒绝，不回退管理员密钥。
+- [ ] 使用真实 HTTP/副本集运行三类身份允许/拒绝、IP/CIDR、跨会话共享应用预算和安全日志分页，Expected：业务变化、日志及限额行为均与设计一致；运行适当完整回归、Clippy 和格式检查后提交。
+
+### Task 8 D：管理界面与客户端验收
+
+**文件：** 新增 `apps/desktop/src/core/open-access.ts`、`views/ApiTokensView.vue`、`views/ApplicationsView.vue`、`views/ApplicationCallsView.vue` 与客户端/页面测试，注册新页面和菜单；保留现有桌面会话存储边界。
+
+- [ ] 严格 DTO 与敏感结果内存处理先测试，再实现签发/查询恢复/撤销、应用/用户表单、Scope/IP/限额、密钥轮换和调用日志分页；秘密不写 WebStorage，丢失响应不自动重复签发。
+- [ ] 真实页面验证首次秘密、重放不还原、跨应用用户、只读控件、版本冲突和日志筛选；真实 HTTP 客户端使用签发结果执行允许/拒绝调用，不只断言界面文字。
+- [ ] 运行 `npm test`、类型/生产构建、适当完整 Rust/页面回归及实际服务验证，Expected：通过；按本设计逐项验收后才关闭 Task 8，原生窗口门禁仍按用户控制决定保留。
 
 ## Task 9：代码生成、Skills/MCP、AI 和工作流
 
