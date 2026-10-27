@@ -4048,6 +4048,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tri-ai-runtime"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "futures-util",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sse-stream",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "tri-extension-package"
 version = "0.1.0"
 dependencies = [

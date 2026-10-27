@@ -1,5 +1,5 @@
 [workspace]
-members = ["services/admin-api", "crates/desktop-core", "crates/resource-runtime", "crates/resource-generator", "crates/extension-package", "crates/mcp-runtime"]
+members = ["services/admin-api", "crates/desktop-core", "crates/resource-runtime", "crates/resource-generator", "crates/extension-package", "crates/mcp-runtime", "crates/ai-runtime"]
 exclude = ["apps/desktop/src-tauri"]
 resolver = "3"
 
@@ -19,6 +19,7 @@ jsonschema = { version = "=0.56.0", default-features = false }
 mime = "0.3"
 mongodb = { version = "3.9.1", default-features = false, features = ["compat-3-3-0", "bson-3", "rustls-tls", "dns-resolver"] }
 futures-util = "0.3"
+bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 argon2 = "0.5"
