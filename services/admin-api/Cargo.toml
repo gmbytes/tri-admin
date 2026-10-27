@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
+default-run = "admin-api"
 
 [dependencies]
 axum.workspace = true
@@ -47,6 +48,13 @@ rustls-pemfile.workspace = true
 tri-resource-runtime = { path = "../../crates/resource-runtime" }
 tri-resource-generator = { path = "../../crates/resource-generator" }
 tri-extension-package = { path = "../../crates/extension-package" }
+tri-mcp-runtime = { path = "../../crates/mcp-runtime" }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+
+[[bin]]
+name = "tri-admin-mcp-test-peer"
+path = "tests/fixtures/mcp_peer.rs"
+test = false
 
 [dev-dependencies]
 tower.workspace = true

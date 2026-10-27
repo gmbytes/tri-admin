@@ -17,6 +17,7 @@ pub struct Config {
     settings_active_key: Option<String>,
     pub storage_root: String,
     pub outbound_ca_file: Option<std::path::PathBuf>,
+    pub(crate) mcp_programs: std::sync::Arc<crate::modules::mcp::capabilities::Catalog>,
     connection_epoch: String,
 }
 
@@ -148,6 +149,9 @@ impl Config {
         {
             return Err(ConfigError("TRI_OUTBOUND_CA_FILE 无效"));
         }
+        let mcp_programs = crate::modules::mcp::capabilities::Catalog::load(
+            lookup("TRI_MCP_PROGRAMS_FILE").as_deref(),
+        )?;
         Ok(Self {
             bind,
             database_name,
@@ -160,6 +164,7 @@ impl Config {
             settings_active_key,
             storage_root,
             outbound_ca_file,
+            mcp_programs: std::sync::Arc::new(mcp_programs),
             connection_epoch: uuid::Uuid::new_v4().to_string(),
         })
     }

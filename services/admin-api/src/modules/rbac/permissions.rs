@@ -195,6 +195,11 @@ pub const CATALOG: &[Permission] = &[
         group: "mcp",
     },
     Permission {
+        code: "mcp.invoke",
+        label: "调用 MCP 工具",
+        group: "mcp",
+    },
+    Permission {
         code: "mcp.write",
         label: "管理 MCP",
         group: "mcp",

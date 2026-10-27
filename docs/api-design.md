@@ -204,4 +204,18 @@
 - `GET /extensions/{id}/revisions` 与 `GET /revisions/{revisionId}`：有界分页和原修订元数据。卸载后保留原 ID 下可授权的历史。`GET /revisions/{revisionId}/preview?path=...` 返回原包内有界 UTF-8 文本的 path/content/sha256/size，二进制或超过 256 KiB 的文件不能文本预览。`GET /revisions/{revisionId}/download` 核对并下载原字节，返回 ZIP 媒体类型、长度、SHA-256 ETag 与 X-Content-Sha256。
 - `GET/PATCH /api/v1/skill-constraints`：读取或以 version/content 更新全局约束（UTF-8 内容最大 64 KiB）。更新额外要求 skills.constraints.write 和当前 all 范围，版本冲突返回 409；`GET /skill-constraints/revisions` 分页读取独立历史。约束和审计原子提交。
 
-扩展库接口和管理页面已经实现；MCP 发现、工具调用及真实进程生命周期仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整 MCP 或插件能力验收。
+扩展库接口和管理页面已经实现；STDIO MCP 管理服务另见下节，HTTP MCP、实际业务工具及其管理界面仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整插件能力验收。
+
+## MCP 持久 STDIO 管理
+
+当前接入 STDIO 后台管理，配置格式和操作步骤见 [MCP 部署程序说明](mcp-programs.md)。自身 mcp schema v1 增加连接、实例、操作回执和加密结果集合，就绪标记由 14 项增至 15 项；升级需要停服 migrate，没有旧数量回退。HTTP MCP 传输、实际后台业务工具、插件能力激活及管理界面仍在后续范围。
+
+- `GET /api/v1/mcp/capabilities` 只公开部署能力 ID、标签和工具白名单，不返回路径、参数、环境或配置指纹。`GET/POST /mcp/connections` 支持范围内分页与创建；创建输入 requestId/name/transport/enabled，transport 当前为 kind=stdio + capabilityId。未知命令/路径/环境字段拒绝。
+- `GET/PATCH/DELETE /connections/{id}` 读取、以 version 和完整连接配置修改、按 query version 删除；未确认退出或有控制操作时不能修改/删除。部署配置指纹变化需显式重新确认绑定。`GET /connections/by-request/{requestId}` 只查询本人创建身份，原 UUID 重放不受当前能力移除影响。
+- `POST /connections/{id}/actions` 提交 requestId/version/kind（start/stop/restart），首次 202，原操作者/UUID/输入重放 200。意图、实例预留和审计先提交，实际启动在事务外执行；停止可打断启动，重启等待原实例确认退出。权限与版本在 I/O 前后核对，状态提交不重新执行外部效果。
+- `GET /connections/{id}/tools` 读取实际发现清单与部署白名单的交集；`POST /connections/{id}/calls` 输入 requestId/version/name/arguments，要求 mcp.read + mcp.invoke。管理生命周期要求 mcp.read + mcp.write。原请求恢复使用 `GET /actions/by-request/{requestId}`，读取 `GET /actions/{id}` 或范围内 `/connections/{id}/actions` 分页历史。
+- `GET /actions/{id}/result` 额外要求当前 invoke 权限、当前范围且为原调用者，返回原 JSON 的 content 文本、size、sha256 与 kind。结果加密、AAD 绑定操作/调用者/连接，最大 512 KiB，载荷保留 30 天；其他读者的元数据不含参数或结果摘要。
+- `POST /actions/{id}/cancel` 用新 requestId 记录取消意图，允许原调用者或具有全局管理权限的调用者取消。发出后超时、取消、断线的效果保留 unknown，不自动重发；发送前取消/忙碌单独记录。input_required 和 task 只保存中间响应，不自动执行更多轮。
+- `POST /connections/{id}/confirm-orphan` 要求交互会话、当前 all 范围及 write 权限，输入 requestId/version/confirmed=true/reason。它记录运维人员已清理遗留程序的声明，不根据旧 PID 终止进程，也不伪造 OS 退出证明；过期服务的未知调用仍保持 unknown。
+
+所有响应禁止缓存，连接和历史采用当前 all/self/roles，范围在计数及分页前过滤。周期维护按租约识别失联实例；主服务关闭仅停止自身注册且持有所有权的程序。结果、状态和审计同事务提交，原始 SDK 日志及 stderr 不进入主日志或公开结果。

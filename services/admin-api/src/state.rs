@@ -6,6 +6,7 @@ use std::{sync::Arc, time::Duration};
 pub struct AppState {
     pub config: Arc<Config>,
     pub database: Option<Database>,
+    pub(crate) mcp: Arc<crate::modules::mcp::registry::Registry>,
     pub(crate) connection_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) data_tool_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) data_tool_shutdown: tokio_util::sync::CancellationToken,
@@ -26,6 +27,7 @@ impl AppState {
         Self {
             config: Arc::new(config),
             database,
+            mcp: Arc::new(crate::modules::mcp::registry::Registry::new()),
             connection_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             data_tool_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             data_tool_shutdown: tokio_util::sync::CancellationToken::new(),

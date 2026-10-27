@@ -9,7 +9,8 @@ $triMounts = @(
     @('rust-toolchain.toml', '/work/rust-toolchain.toml'),
     @('crates', '/work/crates'),
     @('services/admin-api/Cargo.toml', '/work/services/admin-api/Cargo.toml'),
-    @('services/admin-api/src', '/work/services/admin-api/src')
+    @('services/admin-api/src', '/work/services/admin-api/src'),
+    @('services/admin-api/tests/fixtures', '/work/services/admin-api/tests/fixtures')
 )
 $triArgs = @('run', '--rm', '--init', '--name', $triContainer, '--label', 'tri-admin-test=mcp-linux', '--workdir', '/work', '-e', 'CARGO_HOME=/tmp/cargo', '-e', 'CARGO_TARGET_DIR=/tmp/target', '-e', 'CARGO_INCREMENTAL=0', '-e', 'CARGO_BUILD_JOBS=2', '-e', 'CARGO_PROFILE_DEV_DEBUG=0')
 foreach ($triMount in $triMounts) {

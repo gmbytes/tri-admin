@@ -6,15 +6,21 @@ use admin_api::{
     storage::schema::migrate_database,
 };
 use std::process::ExitCode;
+use tracing_subscriber::prelude::*;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let _ = tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(
+    let _ = tracing_subscriber::registry()
+        .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "admin_api=info,tower_http=info".into()),
         )
+        .with(tracing_subscriber::fmt::layer().json().with_filter(
+            tracing_subscriber::filter::filter_fn(|metadata| {
+                !metadata.target().starts_with("rmcp")
+                    && !metadata.target().starts_with("process_wrap")
+            }),
+        ))
         .try_init();
     std::panic::set_hook(Box::new(|info| {
         let request_id = admin_api::common::observability::request_id().unwrap_or_default();
@@ -85,6 +91,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .await?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        "maintain-mcp" => {
+            let report = admin_api::modules::mcp::service::maintenance_once(&state).await?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         "serve" => {
             let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
             tracing::info!(address=%listener.local_addr()?,"admin service listening");
@@ -95,6 +105,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::data_tools::export_jobs::worker::start_service(state.clone());
             let access_workers =
                 admin_api::modules::open_access::usage::start_service(state.clone());
+            let mcp_workers = admin_api::modules::mcp::service::start_service(state.clone());
             let shutdown_state = state.clone();
             let worker_state = state.clone();
             let result = axum::serve(
@@ -107,21 +118,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
                 admin_api::modules::data_tools::export_jobs::worker::stop_service(&shutdown_state);
                 admin_api::modules::open_access::usage::stop_service(&shutdown_state);
+                admin_api::modules::mcp::service::stop_service(&shutdown_state);
             })
             .await;
             admin_api::modules::files::jobs::stop_service(&worker_state);
             admin_api::modules::data_tools::retention::stop_service(&worker_state);
             admin_api::modules::data_tools::export_jobs::worker::stop_service(&worker_state);
             admin_api::modules::open_access::usage::stop_service(&worker_state);
+            admin_api::modules::mcp::service::shutdown(&worker_state).await;
             let _ = workers.await;
             let _ = data_workers.await;
             let _ = export_workers.await;
             let _ = access_workers.await;
+            let _ = mcp_workers.await;
             result?;
         }
         _ => {
             return Err(
-                "Usage: admin-api [serve|migrate|bootstrap|maintain-files|maintain-data-tools|maintain-exports|maintain-access]"
+                "Usage: admin-api [serve|migrate|bootstrap|maintain-files|maintain-data-tools|maintain-exports|maintain-access|maintain-mcp]"
                     .into(),
             );
         }

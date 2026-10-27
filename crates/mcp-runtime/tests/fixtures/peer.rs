@@ -136,6 +136,9 @@ async fn main() {
             );
         }
         if method == "server/discover" {
+            if scenario == "discovery_delay" {
+                tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+            }
             if scenario == "legacy_error" {
                 send(
                     &output,
@@ -148,7 +151,7 @@ async fn main() {
             continue;
         }
         if method == "tools/list" {
-            let names = if raw["params"]["cursor"].is_null() {
+            let mut names = if raw["params"]["cursor"].is_null() {
                 vec![
                     "increment",
                     "inspect",
@@ -159,6 +162,9 @@ async fn main() {
             } else {
                 vec!["last"]
             };
+            if scenario != "pages" && raw["params"]["cursor"].is_null() {
+                names.push("large_result");
+            }
             let next = if scenario == "cursor_loop" {
                 Some("repeat")
             } else if scenario == "pages" && raw["params"]["cursor"].is_null() {
@@ -172,6 +178,10 @@ async fn main() {
         }
         if method == "tools/call" {
             let name = raw["params"]["name"].as_str().unwrap_or("");
+            if name == "large_result" {
+                send(&output,json!({"jsonrpc":"2.0","id":id,"result":{"resultType":"complete","content":[{"type":"text","text":"L".repeat(50000)}],"isError":false}})).await;
+                continue;
+            }
             if name == "need_input" {
                 send(&output,json!({"jsonrpc":"2.0","id":id,"result":{"resultType":"input_required","requestState":"opaque-fixture-state"}})).await;
                 continue;

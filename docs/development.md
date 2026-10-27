@@ -134,4 +134,6 @@ cargo test -p desktop-core --test files native_large_disk_streams_five_gib --loc
 
 Windows 全量构建若出现分页文件不足（os error 1455），优先降低并行编译数，例如 `cargo test --workspace --locked -j 2`，不必清空依赖或修改系统配置。页面夹具的 Cargo 构建可通过当前命令环境的 `CARGO_BUILD_JOBS=2` 使用相同限制；Rust、S3 和页面夹具仍串行运行，避免可执行文件锁冲突。
 
-MCP 运行核心的实际子进程测试为 `cargo test -p tri-mcp-runtime --locked -j 2`。Windows 使用 Job Object，Linux 使用进程组及退出确认；`tools/test-mcp-linux.ps1` 在固定摘要的官方 Rust 1.94.0 容器中运行相同测试和严格检查。容器只读取源码/锁文件，不挂载主配置或数据，不修改 WSL 工具链。主后台 MCP 连接、持久调用、HTTP、业务工具和界面仍在实现中，不能把核心测试计为整模块交付。
+MCP 运行核心的实际子进程测试为 `cargo test -p tri-mcp-runtime --locked -j 2`。Windows 使用 Job Object，Linux 使用进程组及退出确认；`tools/test-mcp-linux.ps1` 在固定摘要的官方 Rust 1.94.0 容器中运行相同测试和严格检查。容器只读取源码/锁文件，不挂载主配置或数据，不修改 WSL 工具链。
+
+STDIO 持久管理已接入，测试为 `cargo test -p admin-api --test mcp_management --locked -j 2`，部署能力见 [MCP 程序说明](mcp-programs.md)。当前需要 mcp v1、15 项就绪标记，先停服 migrate，再启动 serve；`maintain-mcp` 可执行一次有界租约维护。HTTP MCP、实际后台业务工具、插件激活及管理界面仍按后续计划实现，不能把 STDIO 测试计为整模块交付。

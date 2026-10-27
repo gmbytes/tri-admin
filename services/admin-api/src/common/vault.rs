@@ -25,8 +25,11 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 fn decode(raw: &str) -> Result<Vec<u8>, AppError> {
+    decode_bounded(raw, 65536)
+}
+fn decode_bounded(raw: &str, maximum: usize) -> Result<Vec<u8>, AppError> {
     if !raw.len().is_multiple_of(2)
-        || raw.len() > 65536
+        || raw.len() > maximum
         || !raw.bytes().all(|c| c.is_ascii_hexdigit())
     {
         return Err(AppError::SecretStoreUnavailable);
@@ -78,6 +81,17 @@ pub fn open(
     aad: &[u8],
     sealed: &SealedBox,
 ) -> Result<Zeroizing<Vec<u8>>, AppError> {
+    open_bounded(config, aad, sealed, 32752)
+}
+pub fn open_bounded(
+    config: &Config,
+    aad: &[u8],
+    sealed: &SealedBox,
+    maximum_plaintext: usize,
+) -> Result<Zeroizing<Vec<u8>>, AppError> {
+    if maximum_plaintext > 512 * 1024 {
+        return Err(AppError::SecretStoreUnavailable);
+    }
     if sealed.format != "xchacha20poly1305/v1" {
         return Err(AppError::SecretStoreUnavailable);
     }
@@ -88,7 +102,10 @@ pub fn open(
         .try_into()
         .map_err(|_| AppError::SecretStoreUnavailable)?;
     let iv: XNonce = nonce.into();
-    let ciphertext = decode(&sealed.ciphertext)?;
+    let ciphertext = decode_bounded(
+        &sealed.ciphertext,
+        maximum_plaintext.saturating_add(16).saturating_mul(2),
+    )?;
     let context = context(aad, &sealed.key_id);
     let cipher =
         XChaCha20Poly1305::new_from_slice(key).map_err(|_| AppError::SecretStoreUnavailable)?;
