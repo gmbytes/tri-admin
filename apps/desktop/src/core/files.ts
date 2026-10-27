@@ -158,7 +158,7 @@ export async function readFileContent<T>(
     signal?: AbortSignal
     onProgress?: (bytes: number) => void
     idleTimeoutMs?: number
-    mediaType?: 'application/octet-stream' | 'application/zip'
+    mediaType?: 'application/octet-stream' | 'application/zip' | 'text/markdown'
   } = {},
 ): Promise<T> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined

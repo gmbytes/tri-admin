@@ -452,3 +452,29 @@ describe('authenticated binary file requests', () => {
     expect(exportReads).toBe(1)
   })
 })
+it('downloads workflow Markdown only from its private artifact route with integrity verification', async () => {
+  const id = '111111111111111111111111',
+    bytes = Buffer.from('# private workflow\n'),
+    spec = { size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+  let reads = 0
+  const endpoint = await server((req, res) => {
+    if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+    if (req.url?.endsWith(`/workflows/exports/${id}/content`)) {
+      reads++
+      res.writeHead(200, {
+        'content-type': 'text/markdown; charset=utf-8',
+        'content-length': bytes.length,
+        'content-disposition': 'attachment; filename="workflow.md"',
+        etag: `"${spec.sha256}"`,
+      })
+      res.end(bytes)
+      return
+    }
+    send(res, 404, { error: { code: 'NOT_FOUND', message: 'missing' } })
+  })
+  const client = new ApiClient({ endpoint, vault })
+  await client.login('operator', 'fixture', false)
+  const blob = await client.downloadWorkflow(id, spec, createBrowserFileSink(spec))
+  expect(await blob.text()).toBe('# private workflow\n')
+  expect(reads).toBe(1)
+})

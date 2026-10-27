@@ -161,6 +161,23 @@ export const useSession = defineStore('session', () => {
     await client?.clearSession()
     settings.value.rememberSession = false
   }
+  async function privateRequest<T>(
+    path: string,
+    parse: (value: unknown) => T | Promise<T>,
+    options: { signal?: AbortSignal } = {},
+  ) {
+    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    return client.readPrivate(path, parse, options)
+  }
+  async function downloadWorkflow<T>(
+    id: string,
+    expected: FileContentSpec,
+    sink: FileSink<T>,
+    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  ) {
+    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    return client.downloadWorkflow(id, expected, sink, options)
+  }
   async function callMcpTool<T>(
     connectionId: string,
     requestId: string,
@@ -231,6 +248,8 @@ export const useSession = defineStore('session', () => {
     changeServer,
     request,
     callMcpTool,
+    privateApi: privateRequest,
+    downloadWorkflow,
     downloadConfiguration,
     putChunk,
     downloadFile,

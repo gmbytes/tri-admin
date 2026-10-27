@@ -53,6 +53,73 @@ function tokens(accessToken = 'old-access', refreshToken = 'a'.repeat(64)) {
 }
 
 describe('new API session client', () => {
+  it('reads bounded private JSON through the shared authentication refresh', async () => {
+    const id = '111111111111111111111111'
+    let refreshes = 0,
+      reads = 0
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url?.endsWith('/refresh')) {
+        refreshes++
+        return send(res, 200, tokens('new-access'))
+      }
+      if (req.headers.authorization === 'Bearer old-access')
+        return send(res, 401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } })
+      if (req.url?.endsWith(`/ai/runs/${id}/content`)) {
+        reads++
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'cache-control': 'private, no-store',
+        })
+        res.end(JSON.stringify({ data: { text: 'PRIVATE-你好' } }))
+        return
+      }
+      send(res, 200, { data: 'ok' })
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'fixture', false)
+    const [result] = await Promise.all([
+      client.readPrivate(`/ai/runs/${id}/content`, (value) => value as { text: string }),
+      client.request('/users'),
+    ])
+    expect(result.data.text).toBe('PRIVATE-你好')
+    expect(refreshes).toBe(1)
+    expect(reads).toBe(1)
+    await expect(client.readPrivate('/ai/runs/../content', (value) => value)).rejects.toThrow()
+    expect(reads).toBe(1)
+  })
+  it('never returns late private JSON after identity changes during asynchronous verification', async () => {
+    let release: () => void = () => {},
+      seen: () => void = () => {}
+    const hold = new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      ready = new Promise<void>((resolve) => {
+        seen = resolve
+      })
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'cache-control': 'private, no-store',
+      })
+      res.end(JSON.stringify({ data: { text: 'PRIVATE-LATE' } }))
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'fixture', false)
+    const pending = client.readPrivate(
+      '/workflows/runs/111111111111111111111111/content',
+      async (value) => {
+        seen()
+        await hold
+        return value
+      },
+    )
+    await ready
+    await client.clearSession()
+    release()
+    await expect(pending).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+  })
   it('sends exact MCP argument documents through one authentication refresh without changing request identity', async () => {
     const id = '111111111111111111111111',
       uuid = '00000000-0000-4000-8000-000000000001',
