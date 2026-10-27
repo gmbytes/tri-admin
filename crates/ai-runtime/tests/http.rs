@@ -513,3 +513,22 @@ async fn total_deadline_is_unknown_after_single_submission_and_json_is_bounded()
         FailureKind::Protocol(tri_ai_runtime::Error::Limit)
     );
 }
+#[tokio::test]
+async fn resumed_reads_keep_the_cursor_but_start_a_new_wire_byte_budget() {
+    let server = start_server("resume").await;
+    let limits = Limits {
+        max_stream_bytes: 1024,
+        ..Limits::default()
+    };
+    let adapter = make_adapter(&server, limits, Policy::default());
+    let mut state = ResponseState::new(limits).unwrap();
+    state.apply_json(&serde_json::to_vec(&json!({"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture","status":"in_progress"},"padding":"x".repeat(700)})).unwrap()).unwrap();
+    let reference = Reference::new("resp_fixture", true, true).unwrap();
+    let mut exchange = adapter
+        .resume(&reference, state, CancellationToken::new())
+        .await
+        .unwrap();
+    while exchange.next().await.unwrap().is_some() {}
+    assert_eq!(exchange.into_state().finish().unwrap().text(), "流式 reply");
+    assert_eq!(server.fixture.seen.lock().unwrap().len(), 1);
+}

@@ -1,3 +1,4 @@
+pub mod ai_schema;
 pub mod application_schema;
 pub mod auth_schema;
 pub mod codegen_schema;

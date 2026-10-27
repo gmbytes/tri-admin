@@ -42,37 +42,41 @@ fn reserved(name: &HeaderName) -> bool {
             | "last-event-id"
     ) || name.as_str().starts_with("x-forwarded-")
 }
+/// Pure validation for approved host bindings; it performs no network request.
+pub fn validate_definition(raw: &str, headers: &HeaderMap) -> Result<Url, Failure> {
+    let endpoint = Url::parse(raw).map_err(|_| Failure::input())?;
+    let loopback = endpoint.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if raw.len() > 2048
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.host_str().is_none()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+        || !endpoint.path().ends_with("/responses")
+        || !(endpoint.scheme() == "https" || endpoint.scheme() == "http" && loopback)
+        || headers.len() > 16
+        || headers.keys().any(reserved)
+        || headers
+            .values()
+            .map(|value| value.as_bytes().len())
+            .sum::<usize>()
+            > 16384
+    {
+        return Err(Failure::input());
+    }
+    Ok(endpoint)
+}
 impl Adapter {
     pub fn new(mut spec: HttpSpec, limits: Limits, policy: Policy) -> Result<Self, Failure> {
         let limits = limits.validate().map_err(|_| Failure::input())?;
         let policy = policy.validate()?;
-        let endpoint = Url::parse(&spec.endpoint).map_err(|_| Failure::input())?;
-        let loopback = endpoint.host_str().is_some_and(|host| {
-            host.eq_ignore_ascii_case("localhost")
-                || host
-                    .trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
-        });
-        if spec.endpoint.len() > 2048
-            || !endpoint.username().is_empty()
-            || endpoint.password().is_some()
-            || endpoint.host_str().is_none()
-            || endpoint.query().is_some()
-            || endpoint.fragment().is_some()
-            || !endpoint.path().ends_with("/responses")
-            || !(endpoint.scheme() == "https" || endpoint.scheme() == "http" && loopback)
-            || spec.headers.len() > 16
-            || spec.headers.keys().any(reserved)
-            || spec
-                .headers
-                .values()
-                .map(|value| value.as_bytes().len())
-                .sum::<usize>()
-                > 16384
-        {
-            return Err(Failure::input());
-        }
+        let endpoint = validate_definition(&spec.endpoint, &spec.headers)?;
         for value in spec.headers.values_mut() {
             value.set_sensitive(true);
         }
@@ -200,7 +204,7 @@ impl Adapter {
         state: ResponseState,
         cancel: CancellationToken,
     ) -> Result<Exchange, Failure> {
-        let state = ResponseState::restore(
+        let mut state = ResponseState::restore(
             &state.checkpoint().map_err(|error| Failure {
                 kind: FailureKind::Protocol(error),
                 may_have_been_sent: false,
@@ -211,6 +215,7 @@ impl Adapter {
             kind: FailureKind::Protocol(error),
             may_have_been_sent: false,
         })?;
+        state.begin_read();
         if cancel.is_cancelled() {
             return Err(Failure {
                 kind: FailureKind::Cancelled,

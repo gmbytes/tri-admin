@@ -58,10 +58,16 @@ async fn multiline_data_and_comment_heartbeats_keep_sse_semantics() {
 }
 #[tokio::test]
 async fn event_and_stream_limits_apply_before_the_parser_buffers_an_unterminated_line() {
-    let events = frames(chunks(vec![vec![b'x'; 65537]]), Limits::default())
-        .unwrap()
-        .try_collect::<Vec<_>>()
-        .await;
+    let events = frames(
+        chunks(vec![vec![b'x'; 65537]]),
+        Limits {
+            max_event_bytes: 65536,
+            ..Limits::default()
+        },
+    )
+    .unwrap()
+    .try_collect::<Vec<_>>()
+    .await;
     assert!(matches!(events, Err(Error::Limit)));
     let events = frames(
         chunks(vec![b"data: a\n\ndata: b\n\n".to_vec()]),

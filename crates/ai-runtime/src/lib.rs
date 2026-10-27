@@ -17,7 +17,9 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_event_bytes: 64 * 1024,
+            // Terminal events contain the complete output snapshot. Ordinary
+            // semantic events remain capped at64KiB in ResponseState.
+            max_event_bytes: 4 * 1024 * 1024,
             max_stream_bytes: 4 * 1024 * 1024,
             max_events: 4096,
             max_parts: 32,

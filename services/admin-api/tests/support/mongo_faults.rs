@@ -26,6 +26,8 @@ struct Transaction {
 }
 struct State {
     database: String,
+    collection: &'static str,
+    terminal: &'static str,
     job: ObjectId,
     target: Mutex<Option<Transaction>>,
     armed: AtomicBool,
@@ -41,6 +43,15 @@ pub struct MongoCommitFault {
 }
 impl MongoCommitFault {
     pub async fn start(uri: &str, database: &str, job: ObjectId) -> Self {
+        Self::start_for(uri, database, job, "data_exports", "completed").await
+    }
+    pub async fn start_for(
+        uri: &str,
+        database: &str,
+        job: ObjectId,
+        collection: &'static str,
+        terminal: &'static str,
+    ) -> Self {
         assert!(database.starts_with("tri_admin_test_"));
         let mut proxied =
             url::Url::parse(uri).expect("fixture Mongo URI must be a single loopback host");
@@ -90,6 +101,8 @@ impl MongoCommitFault {
         );
         let state = Arc::new(State {
             database: database.into(),
+            collection,
+            terminal,
             job,
             target: Mutex::new(None),
             armed: AtomicBool::new(true),
@@ -239,7 +252,7 @@ fn transaction(command: &Document) -> Option<Transaction> {
 }
 async fn observe(state: &State, command: &Document) -> bool {
     let completion = command.get_str("$db").ok() == Some(state.database.as_str())
-        && command.get_str("update").ok() == Some("data_exports")
+        && command.get_str("update").ok() == Some(state.collection)
         && command.get_array("updates").ok().is_some_and(|updates| {
             updates.iter().any(|value| {
                 value.as_document().is_some_and(|update| {
@@ -251,9 +264,9 @@ async fn observe(state: &State, command: &Document) -> bool {
                         && update
                             .get_document("u")
                             .ok()
-                            .and_then(|update| update.get_document("$set").ok())
+                            .map(|update| update.get_document("$set").unwrap_or(update))
                             .and_then(|update| update.get_str("state").ok())
-                            == Some("completed")
+                            == Some(state.terminal)
                 })
             })
         });

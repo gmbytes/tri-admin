@@ -106,6 +106,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let access_workers =
                 admin_api::modules::open_access::usage::start_service(state.clone());
             let mcp_workers = admin_api::modules::mcp::service::start_service(state.clone());
+            let ai_workers = admin_api::modules::ai::worker::start_service(state.clone());
             let shutdown_state = state.clone();
             let worker_state = state.clone();
             let result = axum::serve(
@@ -119,6 +120,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 admin_api::modules::data_tools::export_jobs::worker::stop_service(&shutdown_state);
                 admin_api::modules::open_access::usage::stop_service(&shutdown_state);
                 admin_api::modules::mcp::service::stop_service(&shutdown_state);
+                admin_api::modules::ai::worker::stop_service(&shutdown_state);
             })
             .await;
             admin_api::modules::files::jobs::stop_service(&worker_state);
@@ -126,11 +128,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             admin_api::modules::data_tools::export_jobs::worker::stop_service(&worker_state);
             admin_api::modules::open_access::usage::stop_service(&worker_state);
             admin_api::modules::mcp::service::shutdown(&worker_state).await;
+            admin_api::modules::ai::worker::stop_service(&worker_state);
             let _ = workers.await;
             let _ = data_workers.await;
             let _ = export_workers.await;
             let _ = access_workers.await;
             let _ = mcp_workers.await;
+            let _ = ai_workers.await;
             result?;
         }
         _ => {

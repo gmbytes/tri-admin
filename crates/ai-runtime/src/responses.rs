@@ -135,8 +135,24 @@ impl ResponseState {
     pub fn response_id(&self) -> Option<&str> {
         self.state.response_id.as_deref()
     }
+    pub(crate) fn begin_read(&mut self) {
+        self.state.bytes = 0;
+    }
     pub fn status(&self) -> Option<Status> {
         self.state.status
+    }
+    /// Private partial output; it does not imply a validated terminal outcome.
+    pub fn text(&self) -> String {
+        let mut parts = self.state.parts.iter().collect::<Vec<_>>();
+        parts.sort_by_key(|part| (part.output_index, part.content_index));
+        parts
+            .into_iter()
+            .map(|part| part.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    pub fn refused(&self) -> bool {
+        self.state.parts.iter().any(|part| part.refused)
     }
     /// Contains private plaintext. Hosts must encrypt it with the run's identity-bound AAD.
     pub fn checkpoint(&self) -> Result<Vec<u8>, Error> {
@@ -209,6 +225,13 @@ impl ResponseState {
             return Err(Error::Limit);
         }
         let kind = field(&value, "type")?.to_owned();
+        if !matches!(
+            kind.as_str(),
+            "response.completed" | "response.failed" | "response.incomplete" | "response.cancelled"
+        ) && payload.len() > self.limits.max_event_bytes.min(64 * 1024)
+        {
+            return Err(Error::Limit);
+        }
         if let Some(id) = value
             .get("response")
             .and_then(|response| response.get("id"))
@@ -382,12 +405,11 @@ impl ResponseState {
     }
     /// Validates an explicit JSON create/retrieve/cancel response without inventing an event cursor.
     pub fn apply_snapshot(&mut self, payload: &[u8]) -> Result<Option<Status>, Error> {
-        let bytes = self
-            .state
-            .bytes
-            .checked_add(payload.len())
-            .filter(|size| *size <= self.limits.max_stream_bytes)
-            .ok_or(Error::Limit)?;
+        // Each create/retrieve/cancel JSON body is an independent HTTP read.
+        let bytes = payload.len();
+        if bytes > self.limits.max_stream_bytes {
+            return Err(Error::Limit);
+        }
         let events = self
             .state
             .events

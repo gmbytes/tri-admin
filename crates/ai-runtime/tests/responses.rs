@@ -224,3 +224,45 @@ fn interleaved_output_parts_finish_in_output_order_without_exposing_reasoning() 
     assert_eq!(reply.text(), "first\nsecond");
     assert_eq!(reply.parts.len(), 2);
 }
+#[test]
+fn a_terminal_snapshot_can_contain_text_larger_than_an_individual_delta_event() {
+    let mut state = ResponseState::new(Limits::default()).unwrap();
+    event(&mut state, created(0)).unwrap();
+    let part = "x".repeat(48 * 1024);
+    event(&mut state, delta(1, &part)).unwrap();
+    event(&mut state, delta(2, &part)).unwrap();
+    let complete = part.repeat(2);
+    event(&mut state, terminal(3, "completed", &complete)).unwrap();
+    assert_eq!(state.finish().unwrap().text(), complete);
+}
+#[test]
+fn ordinary_events_still_reject_oversized_payloads_without_moving_the_cursor() {
+    let mut state = ResponseState::new(Limits::default()).unwrap();
+    event(&mut state, created(0)).unwrap();
+    assert!(matches!(
+        event(&mut state, delta(1, &"x".repeat(70 * 1024))),
+        Err(Error::Limit)
+    ));
+    assert_eq!(state.sequence(), Some(0));
+}
+#[test]
+fn repeated_json_retrievals_have_independent_response_byte_budgets() {
+    let mut state = ResponseState::new(Limits {
+        max_stream_bytes: 512,
+        ..Limits::default()
+    })
+    .unwrap();
+    let pending = serde_json::to_vec(
+        &json!({"id":"resp_fixture","object":"response","status":"in_progress","output":[]}),
+    )
+    .unwrap();
+    for _ in 0..12 {
+        assert_eq!(state.apply_snapshot(&pending).unwrap(), None);
+    }
+    let mut complete = terminal(1, "completed", "complete")["response"].clone();
+    complete["object"] = json!("response");
+    state
+        .apply_snapshot(&serde_json::to_vec(&complete).unwrap())
+        .unwrap();
+    assert_eq!(state.finish().unwrap().text(), "complete");
+}

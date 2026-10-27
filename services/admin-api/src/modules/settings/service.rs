@@ -63,7 +63,7 @@ pub(super) fn decrypt(config: &Config, row: &Profile) -> Result<Option<Credentia
     Ok(Some(value))
 }
 // Private host use only, after the caller has authorized a saved profile binding.
-pub(crate) fn mcp_http_definition(
+pub(crate) fn http_definition(
     config: &Config,
     row: &Profile,
 ) -> Result<(String, reqwest::header::HeaderMap), AppError> {
@@ -78,11 +78,30 @@ pub(crate) fn mcp_http_definition(
     validate::credentials(&public, secret.as_ref(), true)?;
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(Credentials::Http { header_name, value }) = &secret {
-        let (name, value) = tri_mcp_runtime::http::credential_header(header_name, value)
-            .map_err(|_| AppError::Validation("HTTP 凭据头与 MCP 协议冲突".into()))?;
+        let name = reqwest::header::HeaderName::from_bytes(header_name.as_bytes())
+            .map_err(|_| AppError::SecretStoreUnavailable)?;
+        let mut value = reqwest::header::HeaderValue::from_str(value)
+            .map_err(|_| AppError::SecretStoreUnavailable)?;
+        value.set_sensitive(true);
         headers.insert(name, value);
     }
     Ok((base_url.clone(), headers))
+}
+pub(crate) fn mcp_http_definition(
+    config: &Config,
+    row: &Profile,
+) -> Result<(String, reqwest::header::HeaderMap), AppError> {
+    let (endpoint, headers) = http_definition(config, row)?;
+    for (name, value) in &headers {
+        tri_mcp_runtime::http::credential_header(
+            name.as_str(),
+            value
+                .to_str()
+                .map_err(|_| AppError::SecretStoreUnavailable)?,
+        )
+        .map_err(|_| AppError::Validation("HTTP 凭据头与 MCP 协议冲突".into()))?;
+    }
+    Ok((endpoint, headers))
 }
 pub(crate) async fn storage_definition(
     database: &Database,
@@ -298,6 +317,7 @@ async fn bound(
     shared::lock(database, "files", session).await?;
     shared::lock(database, "data-exports", session).await?;
     for (collection, filter) in [
+        ("ai_providers", doc! {"profileId":id,"deletedAt":null}),
         (
             "mcp_connections",
             doc! {"transport.kind":"http","transport.profileId":id.to_hex(),"deletedAt":null},

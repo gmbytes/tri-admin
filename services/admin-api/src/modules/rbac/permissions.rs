@@ -10,6 +10,21 @@ pub struct Permission {
 
 pub const CATALOG: &[Permission] = &[
     Permission {
+        code: "ai.read",
+        label: "查看 AI 上游与运行",
+        group: "ai",
+    },
+    Permission {
+        code: "ai.write",
+        label: "管理批准的 AI 上游",
+        group: "ai",
+    },
+    Permission {
+        code: "ai.invoke",
+        label: "执行和取消本人 AI 运行",
+        group: "ai",
+    },
+    Permission {
         code: "applicationLogs.read",
         label: "查看应用调用日志",
         group: "applications",
