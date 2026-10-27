@@ -1,18 +1,31 @@
 pub use crate::modules::codegen::dto::{request_id, version};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransportKind {
+    Stdio,
+    Http,
+}
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Transport {
     Stdio {
         #[serde(rename = "capabilityId")]
         capability_id: String,
     },
+    #[serde(rename_all = "camelCase")]
+    Http {
+        profile_id: String,
+        profile_version: i64,
+        allowed_tools: Vec<String>,
+    },
 }
 impl Transport {
-    pub fn capability(&self) -> &str {
+    pub fn kind(&self) -> TransportKind {
         match self {
-            Self::Stdio { capability_id } => capability_id,
+            Self::Stdio { .. } => TransportKind::Stdio,
+            Self::Http { .. } => TransportKind::Http,
         }
     }
 }

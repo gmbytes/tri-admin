@@ -1,4 +1,5 @@
 use super::{
+    binding::{self, Binding, HttpBinding},
     capabilities::Capability,
     models::*,
     registry::Entry,
@@ -136,7 +137,20 @@ async fn finish_retry(
     }
 }
 async fn heartbeat(db: &Database, id: ObjectId, service: &str) -> Result<(), AppError> {
-    transaction::run(db,(db.clone(),service.to_owned()),|session,(db,service)|async move{ready(db,session).await?;let now=DateTime::now();let until=lease();let update=db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"exitConfirmed":false,"state":{"$ne":"retired"},"leaseUntil":{"$gt":now}},doc!{"$set":{"leaseUntil":until,"updatedAt":now}}).session(&mut *session).await?;if update.matched_count!=1{return Err(fail(Failure::Conflict("运行实例租约已失效")))}db.collection::<Document>("mcp_connections").update_one(doc!{"runtime.id":id},doc!{"$set":{"runtime.leaseUntil":until,"runtime.updatedAt":now}}).session(session).await?;Ok(())}.boxed()).await
+    transaction::run(db,(db.clone(),service.to_owned()),|session,(db,service)|async move{
+        ready(db,session).await?;let now=DateTime::now();let until=lease();
+        let instance=db.collection::<Instance>("mcp_instances").find_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"state":{"$ne":"retired"},"leaseUntil":{"$gt":now}}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("运行实例租约已失效")))?;
+        let connection=db.collection::<Document>("mcp_connections").find_one(doc!{"_id":instance.connection_id,"enabled":true,"deletedAt":null}).projection(doc!{"runtime":1,"controlActionId":1}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("连接所有权已改变")))?;
+        if instance.state=="reserved"{
+            let action=connection.get_object_id("controlActionId").map_err(|_|fail(Failure::Conflict("重启意图已改变")))?;
+            if db.collection::<Document>("mcp_actions").count_documents(doc!{"_id":action,"instanceId":id,"kind":"restart","status":{"$in":["pending","running"]}}).session(&mut *session).await?!=1{return Err(fail(Failure::Conflict("重启意图已改变")))}
+        }else{
+            let update=db.collection::<Document>("mcp_connections").update_one(doc!{"_id":instance.connection_id,"runtime.id":id,"runtime.serviceId":&*service,"runtime.releaseConfirmed":false,"runtime.state":{"$in":["starting","running"]}},doc!{"$set":{"runtime.leaseUntil":until,"runtime.updatedAt":now}}).session(&mut *session).await?;
+            if update.matched_count!=1{return Err(fail(Failure::Conflict("连接所有权已改变")))}
+        }
+        let update=db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"leaseUntil":{"$gt":now}},doc!{"$set":{"leaseUntil":until,"updatedAt":now}}).session(session).await?;
+        if update.matched_count!=1{return Err(fail(Failure::Conflict("运行实例租约已失效")))}Ok(())
+    }.boxed()).await
 }
 async fn set_instance(
     db: &Database,
@@ -150,7 +164,7 @@ async fn set_instance(
     let service = service.to_owned();
     let state = state.to_owned();
     let error = error.map(String::from);
-    transaction::run(db,(db.clone(),action.clone()),|session,(db,action)|{let service=service.clone();let state=state.clone();let error=error.clone();async move{ready(db,session).await?;let id=action.instance_id.ok_or_else(||fail(Failure::NotReady))?;let Some(old)=db.collection::<Instance>("mcp_instances").find_one(doc!{"_id":id,"serviceId":&service}).session(&mut *session).await?else{return Ok(())};if old.state=="retired"{return Ok(())}let now=DateTime::now();let until=lease();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&service},doc!{"$set":{"state":&state,"pid":pid,"exitConfirmed":confirmed,"leaseUntil":until,"updatedAt":now,"errorCode":error.clone()}}).session(&mut *session).await?;let meta=RuntimeMeta{id,service_id:service,state:state.clone(),pid,exit_confirmed:confirmed,lease_until:until,updated_at:now,error_code:error};db.collection::<Document>("mcp_connections").update_one(doc!{"_id":action.connection_id,"runtime.id":id},doc!{"$set":{"runtime":bson::serialize_to_bson(&meta).map_err(|_|fail(Failure::NotReady))?,"updatedAt":now}}).session(&mut *session).await?;if confirmed{observer_audit(db,session,action.actor_id,id,"mcp.instance.exit").await?;}Ok(())}.boxed()}).await
+    transaction::run(db,(db.clone(),action.clone()),|session,(db,action)|{let service=service.clone();let state=state.clone();let error=error.clone();async move{ready(db,session).await?;let id=action.instance_id.ok_or_else(||fail(Failure::NotReady))?;let Some(old)=db.collection::<Instance>("mcp_instances").find_one(doc!{"_id":id,"serviceId":&service}).session(&mut *session).await?else{return Ok(())};if old.state=="retired"{return Ok(())}let now=DateTime::now();let until=lease();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&service},doc!{"$set":{"state":&state,"pid":pid,"releaseConfirmed":confirmed,"leaseUntil":until,"updatedAt":now,"errorCode":error.clone()}}).session(&mut *session).await?;let meta=RuntimeMeta{id,transport_kind:old.transport_kind,service_id:service,state:state.clone(),pid,release_confirmed:confirmed,lease_until:until,updated_at:now,error_code:error};db.collection::<Document>("mcp_connections").update_one(doc!{"_id":action.connection_id,"runtime.id":id},doc!{"$set":{"runtime":bson::serialize_to_bson(&meta).map_err(|_|fail(Failure::NotReady))?,"updatedAt":now}}).session(&mut *session).await?;if confirmed{observer_audit(db,session,action.actor_id,id,if old.transport_kind==super::dto::TransportKind::Http{"mcp.http.release"}else{"mcp.instance.exit"}).await?;}Ok(())}.boxed()}).await
 }
 async fn terminal_retry(
     db: &Database,
@@ -175,7 +189,7 @@ pub(super) fn launch_action(
     context: AuthContext,
     action: Action,
     old: Option<ObjectId>,
-    capability: Option<Capability>,
+    capability: Option<Binding>,
 ) {
     let db = state.database.as_ref().unwrap().clone();
     let config = state.config.clone();
@@ -195,7 +209,7 @@ pub(super) fn launch_action(
                     .await
                     .ok()
                     .flatten()
-                    .is_some_and(|r| r.exit_confirmed || r.state == "retired")
+                    .is_some_and(|r| r.release_confirmed || r.state == "retired")
             } else {
                 true
             };
@@ -260,7 +274,7 @@ pub(super) fn launch_action(
                     .await
                     .ok()
                     .flatten()
-                    .is_some_and(|v| v.exit_confirmed)
+                    .is_some_and(|v| v.release_confirmed)
             } else {
                 false
             };
@@ -272,7 +286,32 @@ pub(super) fn launch_action(
                     .map_err(|_| entry.stop.cancel());
             }
         }
-        let outcome = run_program(&db, &entry, &context, &action, &capability, &service_id).await;
+        let outcome = match &capability {
+            Binding::Stdio(capability) => {
+                run_program(
+                    &db,
+                    &config,
+                    &entry,
+                    &context,
+                    &action,
+                    capability,
+                    &service_id,
+                )
+                .await
+            }
+            Binding::Http(capability) => {
+                run_http(
+                    &db,
+                    &config,
+                    &entry,
+                    &context,
+                    &action,
+                    capability,
+                    &service_id,
+                )
+                .await
+            }
+        };
         lifetime.cancel();
         let _ = hb.await;
         let (state, pid, error) = outcome;
@@ -310,10 +349,11 @@ async fn activate_reserved(
     action: &Action,
     service_id: &str,
 ) -> Result<(), AppError> {
-    transaction::run(db,(db.clone(),context.clone(),action.clone(),service_id.to_owned()),|session,(db,context,action,service)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;if row.version!=action.connection_version||row.control_action_id!=Some(action.id){return Err(fail(Failure::Conflict("重启意图已改变")))}let id=action.instance_id.unwrap();let now=DateTime::now();let meta=RuntimeMeta{id,service_id:service.clone(),state:"starting".into(),pid:None,exit_confirmed:false,lease_until:lease(),updated_at:now,error_code:None};db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime":bson::serialize_to_bson(&meta).map_err(|_|fail(Failure::NotReady))?}}).session(session).await?;Ok(())}.boxed()).await
+    transaction::run(db,(db.clone(),context.clone(),action.clone(),service_id.to_owned()),|session,(db,context,action,service)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;if row.version!=action.connection_version||row.control_action_id!=Some(action.id){return Err(fail(Failure::Conflict("重启意图已改变")))}let id=action.instance_id.unwrap();let now=DateTime::now();let meta=RuntimeMeta{id,transport_kind:row.transport.kind(),service_id:service.clone(),state:"starting".into(),pid:None,release_confirmed:false,lease_until:lease(),updated_at:now,error_code:None};db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime":bson::serialize_to_bson(&meta).map_err(|_|fail(Failure::NotReady))?}}).session(session).await?;Ok(())}.boxed()).await
 }
 async fn run_program(
     db: &Database,
+    config: &Config,
     entry: &Arc<Entry>,
     context: &AuthContext,
     action: &Action,
@@ -327,7 +367,7 @@ async fn run_program(
             Some("CANCELLED_BEFORE_START".into()),
         );
     }
-    if authorize_start(db, context, action).await.is_err() {
+    if authorize_start(db, config, context, action).await.is_err() {
         return ("failed".into(), None, Some("AUTHORITY_CHANGED".into()));
     }
     let mut process = match Process::spawn(capability.spec(), capability.limits()) {
@@ -380,7 +420,7 @@ async fn run_program(
         }
     };
     *entry.client.write().await = Some(client.clone());
-    let publication = tokio::select! {_ = entry.stop.cancelled()=>false,result = publish_running(db,context,action,service_id,pid,tools)=>result.is_ok()};
+    let publication = tokio::select! {_ = entry.stop.cancelled()=>false,result = publish_running(db,config,context,action,service_id,pid,tools)=>result.is_ok()};
     let committed = if publication {
         true
     } else {
@@ -420,6 +460,96 @@ async fn running_committed(
 ) -> Result<bool, AppError> {
     transaction::run_snapshot(db,(db.clone(),action.clone(),service_id.to_owned()),|session,(db,action,service)|async move{let row=db.collection::<Action>("mcp_actions").find_one(doc!{"_id":action.id,"status":"succeeded","instanceId":action.instance_id}).session(&mut *session).await?;if row.is_none(){return Ok(false)}let connection=db.collection::<Document>("mcp_connections").find_one(doc!{"_id":action.connection_id,"version":action.connection_version,"runtime.id":action.instance_id,"runtime.serviceId":&*service,"runtime.state":"running","controlActionId":null,"enabled":true,"deletedAt":null}).session(session).await?;Ok(connection.is_some())}.boxed()).await
 }
+async fn run_http(
+    db: &Database,
+    config: &Config,
+    entry: &Arc<Entry>,
+    context: &AuthContext,
+    action: &Action,
+    capability: &HttpBinding,
+    service_id: &str,
+) -> (String, Option<i64>, Option<String>) {
+    if entry.stop.is_cancelled() {
+        return (
+            "stopped".into(),
+            None,
+            Some("CANCELLED_BEFORE_START".into()),
+        );
+    }
+    if authorize_start(db, config, context, action).await.is_err() {
+        return ("failed".into(), None, Some("AUTHORITY_CHANGED".into()));
+    }
+    let spec = tokio::select! {_=entry.stop.cancelled()=>return ("stopped".into(),None,Some("START_CANCELLED".into())),value=capability.spec(db,config)=>match value{Ok(value)=>value,Err(_)=>return ("failed".into(),None,Some("HTTP_CONFIGURATION_UNAVAILABLE".into()))}};
+    let connected = tokio::select! {_=entry.stop.cancelled()=>None,value=tri_mcp_runtime::http::connect(spec,tri_mcp_runtime::session::Limits::default())=>Some(value)};
+    let client = match connected {
+        Some(Ok(client)) => Arc::new(client),
+        value => {
+            return (
+                if entry.stop.is_cancelled() {
+                    "stopped"
+                } else {
+                    "failed"
+                }
+                .into(),
+                None,
+                Some(
+                    value
+                        .and_then(Result::err)
+                        .map(|value| code(&value))
+                        .unwrap_or("START_CANCELLED")
+                        .into(),
+                ),
+            );
+        }
+    };
+    let tools = match client.tools(entry.stop.child_token()).await {
+        Ok(tools) => tools
+            .into_iter()
+            .filter(|tool| {
+                tool["name"].as_str().is_some_and(|name| {
+                    capability.allowed_tools().iter().any(|value| value == name)
+                })
+            })
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            client.close().await;
+            return ("failed".into(), None, Some(code(&error).into()));
+        }
+    };
+    *entry.client.write().await = Some(client.clone());
+    let publication = tokio::select! {_=entry.stop.cancelled()=>false,result=publish_running(db,config,context,action,service_id,None,tools)=>result.is_ok()};
+    let committed = if publication {
+        true
+    } else {
+        tokio::select! {_=entry.stop.cancelled()=>false,result=running_committed(db,action,service_id)=>result.unwrap_or(false)}
+    };
+    if !committed {
+        entry.stop.cancel();
+        *entry.client.write().await = None;
+        client.close().await;
+        return ("failed".into(), None, Some("START_COMMIT_REJECTED".into()));
+    }
+    let mut timer = tokio::time::interval(Duration::from_secs(2));
+    let mut reason = None;
+    loop {
+        tokio::select! {_=entry.stop.cancelled()=>break,_=timer.tick()=>{
+            if client.is_closed(){reason=Some("HTTP_DISCONNECTED".into());break}
+            if !capability.current(db,config).await{reason=Some("HTTP_BINDING_CHANGED".into());entry.stop.cancel();break}
+        }}
+    }
+    *entry.client.write().await = None;
+    client.close().await;
+    (
+        if entry.stop.is_cancelled() {
+            "stopped"
+        } else {
+            "disconnected"
+        }
+        .into(),
+        None,
+        reason,
+    )
+}
 async fn stop_confirmed(process: &Process) {
     let _ = process.stop().await;
     let mut state = process.subscribe();
@@ -434,19 +564,21 @@ async fn stop_confirmed(process: &Process) {
 }
 pub(super) async fn authorize_start(
     db: &Database,
+    config: &Config,
     context: &AuthContext,
     action: &Action,
 ) -> Result<(), AppError> {
     transaction::run_snapshot(
         db,
-        (db.clone(), context.clone(), action.clone()),
-        |session, (db, context, action)| {
+        (db.clone(), config.clone(), context.clone(), action.clone()),
+        |session, (db, config, context, action)| {
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.write"), false).await?;
                 if !actor.can("mcp.write") {
                     return Err(fail(Failure::Forbidden));
                 }
                 let row = connection_tx(db, session, &actor, action.connection_id, true).await?;
+                binding::ensure(db, session, config, &row).await?;
                 if !row.enabled
                     || row.version != action.connection_version
                     || row.control_action_id != Some(action.id)
@@ -462,6 +594,7 @@ pub(super) async fn authorize_start(
 }
 async fn publish_running(
     db: &Database,
+    config: &Config,
     context: &AuthContext,
     action: &Action,
     service_id: &str,
@@ -469,7 +602,7 @@ async fn publish_running(
     tools: Vec<Value>,
 ) -> Result<(), AppError> {
     let json = serde_json::to_string(&tools).map_err(|_| AppError::NotReady)?;
-    transaction::run(db,(db.clone(),context.clone(),action.clone(),service_id.to_owned(),json),|session,(db,context,action,service,json)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;if !row.enabled||row.version!=action.connection_version||row.control_action_id!=Some(action.id)||row.runtime.as_ref().map(|r|r.id)!=action.instance_id{return Err(fail(Failure::Conflict("启动意图已改变")))}let now=DateTime::now();let until=lease();let id=action.instance_id.unwrap();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"exitConfirmed":false,"state":{"$ne":"retired"}},doc!{"$set":{"state":"running","pid":pid,"toolsJson":&*json,"updatedAt":now,"leaseUntil":until}}).session(&mut *session).await?;db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime.state":"running","runtime.pid":pid,"runtime.updatedAt":now,"runtime.leaseUntil":until,"controlActionId":null}}).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_one(doc!{"_id":action.id,"status":"pending"},doc!{"$set":{"status":"succeeded","finishedAt":now}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.running",id,session).await}.boxed()).await
+    transaction::run(db,(db.clone(),config.clone(),context.clone(),action.clone(),service_id.to_owned(),json),|session,(db,config,context,action,service,json)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;binding::ensure(db,session,config,&row).await?;if !row.enabled||row.version!=action.connection_version||row.control_action_id!=Some(action.id)||row.runtime.as_ref().map(|r|r.id)!=action.instance_id{return Err(fail(Failure::Conflict("启动意图已改变")))}let now=DateTime::now();let until=lease();let id=action.instance_id.unwrap();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"state":{"$ne":"retired"}},doc!{"$set":{"state":"running","pid":pid,"toolsJson":&*json,"updatedAt":now,"leaseUntil":until}}).session(&mut *session).await?;db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime.state":"running","runtime.pid":pid,"runtime.updatedAt":now,"runtime.leaseUntil":until,"controlActionId":null}}).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_one(doc!{"_id":action.id,"status":"pending"},doc!{"$set":{"status":"succeeded","finishedAt":now}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.running",id,session).await}.boxed()).await
 }
 pub(super) fn launch_call(
     state: &AppState,
@@ -499,7 +632,7 @@ pub(super) fn launch_call(
             .lock()
             .unwrap_or_else(|v| v.into_inner())
             .insert(action.id, cancel.clone());
-        let permitted = authorize_call(&db, &context, &action).await;
+        let permitted = authorize_call(&db, &config, &context, &action).await;
         if permitted.is_err() {
             entry
                 .calls
@@ -572,16 +705,18 @@ pub(super) fn launch_call(
 }
 async fn authorize_call(
     db: &Database,
+    config: &Config,
     context: &AuthContext,
     action: &Action,
 ) -> Result<(), AppError> {
     transaction::run(
         db,
-        (db.clone(), context.clone(), action.clone()),
-        |session, (db, context, action)| {
+        (db.clone(), config.clone(), context.clone(), action.clone()),
+        |session, (db, config, context, action)| {
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.invoke"), true).await?;
                 let row = connection_tx(db, session, &actor, action.connection_id, true).await?;
+                binding::ensure(db, session, config, &row).await?;
                 let stored = db
                     .collection::<Action>("mcp_actions")
                     .find_one(doc! {"_id":action.id,"status":"pending"})

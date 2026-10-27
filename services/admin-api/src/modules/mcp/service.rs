@@ -1,5 +1,6 @@
 use super::{
-    capabilities::{Capability, CapabilityView},
+    binding,
+    capabilities::CapabilityView,
     dto::{self, ActionInput, ActionKind, Call, Create, Patch},
     models::*,
     runtime,
@@ -58,25 +59,10 @@ fn name(value: &str) -> Result<(), AppError> {
         Ok(())
     }
 }
-pub(super) fn cap(state: &AppState, id: &str) -> Result<Capability, AppError> {
-    state
-        .config
-        .mcp_programs
-        .get(id)
-        .cloned()
-        .ok_or_else(|| AppError::Validation("部署能力未登记".into()))
-}
-fn current_cap(state: &AppState, row: &Connection) -> bool {
-    state
-        .config
-        .mcp_programs
-        .get(row.transport.capability())
-        .is_some_and(|cap| cap.fingerprint() == row.capability_fingerprint)
-}
-fn view(state: &AppState, mut row: Connection) -> Result<ConnectionView, AppError> {
-    let current = current_cap(state, &row);
+async fn view(state: &AppState, mut row: Connection) -> Result<ConnectionView, AppError> {
+    let current = binding::current(state, &row).await;
     if let Some(runtime) = row.runtime.as_mut()
-        && !runtime.exit_confirmed
+        && !runtime.release_confirmed
         && runtime.state != "retired"
         && runtime.service_id != state.mcp.service_id
     {
@@ -174,15 +160,15 @@ pub async fn create(
 ) -> Result<(ConnectionView, bool), AppError> {
     dto::request_id(&input.request_id)?;
     name(&input.name)?;
-    let catalog = state.config.mcp_programs.clone();
+    let config = state.config.clone();
     let fp = fingerprint("connection.create", None, &input)?;
     let db = state.require_database()?;
     let id = ObjectId::new();
     let now = DateTime::now();
     let (row, created) = transaction::run(
         db,
-        (db.clone(), context.clone(), input, fp, catalog),
-        |session, (db, context, input, fp, catalog)| {
+        (db.clone(), context.clone(), input, fp, config),
+        |session, (db, context, input, fp, config)| {
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.write"), true).await?;
                 if let Some(old) = db
@@ -196,9 +182,8 @@ pub async fn create(
                     }
                     return Ok((old, false));
                 }
-                let capability = catalog
-                    .get(input.transport.capability())
-                    .ok_or_else(|| fail(Failure::Validation("部署能力未登记")))?;
+                let capability =
+                    binding::bind(db, session, config, &input.transport, &actor).await?;
                 let row = Connection {
                     id,
                     owner_id: actor.id,
@@ -226,7 +211,7 @@ pub async fn create(
         },
     )
     .await?;
-    Ok((view(state, row)?, created))
+    Ok((view(state, row).await?, created))
 }
 pub async fn get(
     state: &AppState,
@@ -246,7 +231,7 @@ pub async fn get(
         },
     )
     .await?;
-    view(state, row)
+    view(state, row).await
 }
 pub async fn by_request(
     state: &AppState,
@@ -271,7 +256,7 @@ pub async fn by_request(
         },
     )
     .await?;
-    view(state, row)
+    view(state, row).await
 }
 pub async fn patch(
     state: &AppState,
@@ -281,12 +266,12 @@ pub async fn patch(
 ) -> Result<ConnectionView, AppError> {
     dto::version(input.version)?;
     name(&input.name)?;
-    let capability = cap(state, input.transport.capability())?;
+    let config = state.config.clone();
     let db = state.require_database()?;
     let row = transaction::run(
         db,
-        (db.clone(), context.clone(), input, capability),
-        |session, (db, context, input, capability)| {
+        (db.clone(), context.clone(), input, config),
+        |session, (db, context, input, config)| {
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.write"), true).await?;
                 let mut row = connection_tx(db, session, &actor, id, true).await?;
@@ -297,10 +282,15 @@ pub async fn patch(
                     || row
                         .runtime
                         .as_ref()
-                        .is_some_and(|r| !r.exit_confirmed && r.state != "retired")
+                        .is_some_and(|r| !r.release_confirmed && r.state != "retired")
                 {
                     return Err(fail(Failure::Conflict("请先确认当前实例退出")));
                 }
+                let capability = if row.transport != input.transport {
+                    binding::bind(db, session, config, &input.transport, &actor).await?
+                } else {
+                    binding::resolve(db, session, config, &input.transport).await?
+                };
                 row.name = input.name.trim().into();
                 row.transport = input.transport.clone();
                 row.capability_fingerprint = capability.fingerprint();
@@ -318,7 +308,7 @@ pub async fn patch(
         },
     )
     .await?;
-    view(state, row)
+    view(state, row).await
 }
 pub async fn delete(
     state: &AppState,
@@ -329,7 +319,7 @@ pub async fn delete(
     dto::version(version)?;
     let db = state.require_database()?;
     transaction::run(db,(db.clone(),context.clone()),|session,(db,context)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,id,true).await?;if row.version!=version{return Err(fail(Failure::Conflict("连接版本已改变")))}
-if row.control_action_id.is_some()||row.runtime.as_ref().is_some_and(|r|!r.exit_confirmed&&r.state!="retired"){return Err(fail(Failure::Conflict("请先确认当前实例退出")))}let now=DateTime::now();db.collection::<Document>("mcp_connections").update_one(doc!{"_id":id,"version":version},doc!{"$set":{"deletedAt":now,"updatedAt":now,"enabled":false},"$inc":{"version":1i64}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.connection.delete",id,session).await}.boxed()).await
+if row.control_action_id.is_some()||row.runtime.as_ref().is_some_and(|r|!r.release_confirmed&&r.state!="retired"){return Err(fail(Failure::Conflict("请先确认当前实例退出")))}let now=DateTime::now();db.collection::<Document>("mcp_connections").update_one(doc!{"_id":id,"version":version},doc!{"$set":{"deletedAt":now,"updatedAt":now,"enabled":false},"$inc":{"version":1i64}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.connection.delete",id,session).await}.boxed()).await
 }
 fn escaped_prefix(value: &str) -> String {
     let mut out = String::from("^");
@@ -365,13 +355,11 @@ pub async fn connections(
     }
     let (rows, total, _) =
         page::<Connection>(state, context, "mcp_connections", &input, filter).await?;
-    Ok(Page::new(
-        rows.into_iter()
-            .map(|row| view(state, row))
-            .collect::<Result<_, _>>()?,
-        &input,
-        total,
-    ))
+    let mut views = Vec::with_capacity(rows.len());
+    for row in rows {
+        views.push(view(state, row).await?);
+    }
+    Ok(Page::new(views, &input, total))
 }
 pub async fn actions(
     state: &AppState,
@@ -524,15 +512,7 @@ pub async fn submit_action(
                     if !row.enabled {
                         return Err(fail(Failure::Conflict("连接已停用")));
                     }
-                    let capability = state
-                        .config
-                        .mcp_programs
-                        .get(row.transport.capability())
-                        .cloned()
-                        .ok_or_else(|| fail(Failure::Validation("部署能力未登记")))?;
-                    if capability.fingerprint() != row.capability_fingerprint {
-                        return Err(fail(Failure::Conflict("部署能力已改变，请重新确认绑定")));
-                    }
+                    let capability = binding::ensure(db, session, &state.config, &row).await?;
                     Some(capability)
                 } else {
                     None
@@ -540,7 +520,7 @@ pub async fn submit_action(
                 if matches!(input.kind, ActionKind::Start)
                     && old
                         .as_ref()
-                        .is_some_and(|v| !v.exit_confirmed && v.state != "retired")
+                        .is_some_and(|v| !v.release_confirmed && v.state != "retired")
                 {
                     return Err(fail(Failure::Conflict("原实例退出尚未确认")));
                 }
@@ -548,7 +528,7 @@ pub async fn submit_action(
                     let old = old
                         .as_ref()
                         .ok_or_else(|| fail(Failure::Conflict("没有可停止的实例")))?;
-                    if old.exit_confirmed || old.state == "retired" {
+                    if old.release_confirmed || old.state == "retired" {
                         return Err(fail(Failure::Conflict("实例已经结束")));
                     }
                     if old.service_id != service_id
@@ -561,7 +541,7 @@ pub async fn submit_action(
                     }
                 }
                 if starts {
-                    let filter = doc! {"exitConfirmed":false,"state":{"$ne":"retired"}};
+                    let filter = doc! {"releaseConfirmed":false,"state":{"$ne":"retired"}};
                     let count = db
                         .collection::<Document>("mcp_instances")
                         .count_documents(filter.clone())
@@ -590,7 +570,7 @@ pub async fn submit_action(
                     runtime.state = "stopping".into();
                     db.collection::<Document>("mcp_instances")
                         .update_one(
-                            doc! {"_id":runtime.id,"exitConfirmed":false},
+                            doc! {"_id":runtime.id,"releaseConfirmed":false},
                             doc! {"$set":{"state":"stopping","updatedAt":DateTime::now()}},
                         )
                         .session(&mut *session)
@@ -614,6 +594,7 @@ pub async fn submit_action(
                 if starts {
                     let now = DateTime::now();
                     let instance = Instance {
+                        transport_kind: row.transport.kind(),
                         id: instance_id,
                         connection_id: id,
                         owner_id: row.owner_id,
@@ -626,7 +607,7 @@ pub async fn submit_action(
                         }
                         .into(),
                         pid: None,
-                        exit_confirmed: false,
+                        release_confirmed: false,
                         lease_until: DateTime::from_millis(now.timestamp_millis() + 15000),
                         tools_json: "[]".into(),
                         error_code: None,
@@ -639,11 +620,12 @@ pub async fn submit_action(
                         .await?;
                     if matches!(input.kind, ActionKind::Start) {
                         row.runtime = Some(RuntimeMeta {
+                            transport_kind: row.transport.kind(),
                             id: instance_id,
                             service_id: service_id.clone(),
                             state: "starting".into(),
                             pid: None,
-                            exit_confirmed: false,
+                            release_confirmed: false,
                             lease_until: instance.lease_until,
                             updated_at: now,
                             error_code: None,
@@ -768,19 +750,15 @@ pub async fn submit_call(
                     .as_ref()
                     .ok_or_else(|| fail(Failure::Conflict("连接尚未运行")))?;
                 if runtime.state != "running"
-                    || runtime.exit_confirmed
+                    || runtime.release_confirmed
                     || runtime.lease_until < DateTime::now()
                     || runtime.service_id != state.mcp.service_id
                 {
                     return Err(fail(Failure::Conflict("当前服务没有可用实例")));
                 }
-                let capability = state
-                    .config
-                    .mcp_programs
-                    .get(row.transport.capability())
-                    .ok_or_else(|| fail(Failure::Validation("部署能力未登记")))?;
+                let capability = binding::ensure(db, session, &state.config, &row).await?;
                 if capability.fingerprint() != row.capability_fingerprint
-                    || !capability.allowed_tools.contains(&input.name)
+                    || !capability.allowed_tools().contains(&input.name)
                 {
                     return Err(fail(Failure::Validation("工具未获部署能力批准")));
                 }
@@ -972,6 +950,7 @@ pub struct MaintenanceReport {
     pub scanned: u64,
     pub orphaned: u64,
     pub stopping: u64,
+    pub disconnected: u64,
 }
 pub async fn maintenance_once(state: &AppState) -> Result<MaintenanceReport, AppError> {
     let db = state.require_database()?;
@@ -979,7 +958,7 @@ pub async fn maintenance_once(state: &AppState) -> Result<MaintenanceReport, App
         return Err(AppError::NotReady);
     }
     let now = DateTime::now();
-    let rows=db.collection::<Instance>("mcp_instances").find(doc!{"exitConfirmed":false,"state":{"$in":["reserved","starting","running","stopping"]},"leaseUntil":{"$lte":now}}).sort(doc!{"leaseUntil":1,"_id":1}).limit(64).await?.try_collect::<Vec<_>>().await?;
+    let rows=db.collection::<Instance>("mcp_instances").find(doc!{"releaseConfirmed":false,"state":{"$in":["reserved","starting","running","stopping"]},"leaseUntil":{"$lte":now}}).sort(doc!{"leaseUntil":1,"_id":1}).limit(64).await?.try_collect::<Vec<_>>().await?;
     let mut report = MaintenanceReport {
         scanned: rows.len() as u64,
         ..Default::default()
@@ -990,9 +969,25 @@ pub async fn maintenance_once(state: &AppState) -> Result<MaintenanceReport, App
             report.stopping += 1;
             continue;
         }
-        let changed=transaction::run(db,(db.clone(),row),|session,(db,row)|async move{shared::lock(db,"mcp",session).await?;let changed=db.collection::<Document>("mcp_instances").update_one(doc!{"_id":row.id,"exitConfirmed":false,"state":{"$in":["reserved","starting","running","stopping"]},"leaseUntil":{"$lte":DateTime::now()}},doc!{"$set":{"state":"orphaned","errorCode":"SERVICE_LEASE_EXPIRED","updatedAt":DateTime::now()}}).session(&mut *session).await?;if changed.modified_count==0{return Ok(false)}db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.connection_id,"runtime.id":row.id},doc!{"$set":{"runtime.state":"orphaned","runtime.errorCode":"SERVICE_LEASE_EXPIRED","controlActionId":null}}).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_many(doc!{"instanceId":row.id,"status":{"$in":["pending","running"]}},doc!{"$set":{"status":"unknown","errorCode":"SERVICE_LEASE_EXPIRED","finishedAt":DateTime::now()}}).session(&mut *session).await?;db.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":"mcp.orphaned","actorId":row.actor_id,"targetId":row.id,"outcome":"success","observer":true,"createdAt":DateTime::now()})).session(session).await?;Ok(true)}.boxed()).await?;
+        let http = row.transport_kind == dto::TransportKind::Http;
+        let changed=transaction::run(db,(db.clone(),row),|session,(db,row)|async move{
+            shared::lock(db,"mcp",session).await?;
+            let now=DateTime::now();let state=if http{"disconnected"}else{"orphaned"};
+            let mut change=doc!{"state":state,"errorCode":"SERVICE_LEASE_EXPIRED","updatedAt":now};
+            let mut connection_change=doc!{"runtime.state":state,"runtime.errorCode":"SERVICE_LEASE_EXPIRED","controlActionId":null};
+            if http{change.insert("releaseConfirmed",true);change.insert("pid",bson::Bson::Null);connection_change.insert("runtime.releaseConfirmed",true);connection_change.insert("runtime.pid",bson::Bson::Null);}
+            let changed=db.collection::<Document>("mcp_instances").update_one(doc!{"_id":row.id,"releaseConfirmed":false,"state":{"$in":["reserved","starting","running","stopping"]},"leaseUntil":{"$lte":now}},doc!{"$set":change}).session(&mut *session).await?;
+            if changed.modified_count==0{return Ok(false)}
+            db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.connection_id,"runtime.id":row.id},doc!{"$set":connection_change}).session(&mut *session).await?;
+            db.collection::<Document>("mcp_actions").update_many(doc!{"instanceId":row.id,"status":{"$in":["pending","running"]}},doc!{"$set":{"status":"unknown","errorCode":"SERVICE_LEASE_EXPIRED","finishedAt":now}}).session(&mut *session).await?;
+            db.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":if http{"mcp.http.disconnected"}else{"mcp.orphaned"},"actorId":row.actor_id,"targetId":row.id,"outcome":"success","observer":true,"createdAt":now})).session(session).await?;Ok(true)
+        }.boxed()).await?;
         if changed {
-            report.orphaned += 1;
+            if http {
+                report.disconnected += 1
+            } else {
+                report.orphaned += 1;
+            }
         }
     }
     Ok(report)
@@ -1017,7 +1012,8 @@ pub async fn confirm_orphan(
     let action_id = ObjectId::new();
     let db = state.require_database()?;
     let result=transaction::run(db,(db.clone(),context.clone(),input,fp,state.clone()),|session,(db,context,input,fp,state)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;if actor.scope!=DataScope::All{return Err(fail(Failure::Forbidden))}
-if let Some(old)=replay_tx(db,session,&actor,&input.request_id,fp).await?{return Ok(old)}let mut row=connection_tx(db,session,&actor,id,true).await?;if row.version!=input.version{return Err(fail(Failure::Conflict("连接版本已改变")))}let old=row.runtime.as_ref().ok_or_else(||fail(Failure::Conflict("没有遗留实例")))?;if old.exit_confirmed||old.state=="retired"||old.lease_until>DateTime::now()||state.mcp.get(old.id).is_some(){return Err(fail(Failure::Conflict("实例仍有可验证的所有权或已经结束")))}let instance_id=old.id;let mut action=new_action(&actor,&row,action_id,&input.request_id,fp,"orphan.confirm",Some(instance_id));action.status="succeeded".into();action.error_code=Some("OPERATOR_CONFIRMED".into());action.finished_at=Some(DateTime::now());row.version+=1;row.control_action_id=None;row.updated_at=DateTime::now();let runtime=row.runtime.as_mut().unwrap();runtime.state="retired".into();runtime.pid=None;runtime.error_code=Some("OPERATOR_CONFIRMED".into());runtime.updated_at=DateTime::now();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":instance_id,"exitConfirmed":false},doc!{"$set":{"state":"retired","errorCode":"OPERATOR_CONFIRMED","updatedAt":DateTime::now()}}).session(&mut *session).await?;db.collection::<Connection>("mcp_connections").replace_one(doc!{"_id":id,"version":input.version},&row).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_many(doc!{"instanceId":instance_id,"status":{"$in":["pending","running"]}},doc!{"$set":{"status":"unknown","errorCode":"OPERATOR_CONFIRMED","finishedAt":DateTime::now()}}).session(&mut *session).await?;db.collection::<Action>("mcp_actions").insert_one(&action).session(&mut *session).await?;db.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":"mcp.orphan.confirm","actorId":actor.id,"targetId":instance_id,"outcome":"success","reason":&input.reason,"createdAt":DateTime::now()})).session(session).await?;Ok(action)}.boxed()).await?;
+if let Some(old)=replay_tx(db,session,&actor,&input.request_id,fp).await?{return Ok(old)}let mut row=connection_tx(db,session,&actor,id,true).await?;if row.version!=input.version{return Err(fail(Failure::Conflict("连接版本已改变")))}
+if row.transport.kind()!=dto::TransportKind::Stdio{return Err(fail(Failure::Conflict("HTTP 会话不使用遗留进程确认")))}let old=row.runtime.as_ref().ok_or_else(||fail(Failure::Conflict("没有遗留实例")))?;if old.release_confirmed||old.state=="retired"||old.lease_until>DateTime::now()||state.mcp.get(old.id).is_some(){return Err(fail(Failure::Conflict("实例仍有可验证的所有权或已经结束")))}let instance_id=old.id;let mut action=new_action(&actor,&row,action_id,&input.request_id,fp,"orphan.confirm",Some(instance_id));action.status="succeeded".into();action.error_code=Some("OPERATOR_CONFIRMED".into());action.finished_at=Some(DateTime::now());row.version+=1;row.control_action_id=None;row.updated_at=DateTime::now();let runtime=row.runtime.as_mut().unwrap();runtime.state="retired".into();runtime.pid=None;runtime.error_code=Some("OPERATOR_CONFIRMED".into());runtime.updated_at=DateTime::now();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":instance_id,"releaseConfirmed":false},doc!{"$set":{"state":"retired","errorCode":"OPERATOR_CONFIRMED","updatedAt":DateTime::now()}}).session(&mut *session).await?;db.collection::<Connection>("mcp_connections").replace_one(doc!{"_id":id,"version":input.version},&row).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_many(doc!{"instanceId":instance_id,"status":{"$in":["pending","running"]}},doc!{"$set":{"status":"unknown","errorCode":"OPERATOR_CONFIRMED","finishedAt":DateTime::now()}}).session(&mut *session).await?;db.collection::<Action>("mcp_actions").insert_one(&action).session(&mut *session).await?;db.collection::<Document>("audit_events").insert_one(crate::common::observability::event(doc!{"category":"administration","action":"mcp.orphan.confirm","actorId":actor.id,"targetId":instance_id,"outcome":"success","reason":&input.reason,"createdAt":DateTime::now()})).session(session).await?;Ok(action)}.boxed()).await?;
     result.view()
 }
 pub fn start_service(state: AppState) -> tokio::task::JoinHandle<()> {

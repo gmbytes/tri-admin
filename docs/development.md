@@ -136,6 +136,10 @@ Windows 全量构建若出现分页文件不足（os error 1455），优先降�
 
 MCP 运行核心的实际子进程测试为 `cargo test -p tri-mcp-runtime --locked -j 2`。Windows 使用 Job Object，Linux 使用进程组及退出确认；`tools/test-mcp-linux.ps1` 在固定摘要的官方 Rust 1.94.0 容器中运行相同测试和严格检查。容器只读取源码/锁文件，不挂载主配置或数据，不修改 WSL 工具链。
 
-STDIO 持久管理已接入，测试为 `cargo test -p admin-api --test mcp_management --locked -j 2`，部署能力见 [MCP 程序说明](mcp-programs.md)。当前需要 mcp v1、15 项就绪标记，先停服 migrate，再启动 serve；`maintain-mcp` 可执行一次有界租约维护。HTTP MCP 客户端、插件激活及管理界面仍按后续计划实现，不能把 STDIO 测试计为整模块交付。
+STDIO 持久管理已接入，测试为 `cargo test -p admin-api --test mcp_management --locked -j 2`，部署能力见 [MCP 程序说明](mcp-programs.md)。当前源码需要 mcp v2、15 项精确就绪标记，先停服 migrate，再启动 serve；`maintain-mcp` 可执行一次有界租约维护。HTTP 持久接入见下文，插件激活及管理界面继续实现，不能把 STDIO 测试计为整模块交付。
 
-后台业务 MCP 服务测试为 `cargo test -p admin-api --test mcp_server --locked -j 2`。实际端点 `/api/v1/mcp/server` 提供现代协议发现、权限过滤工具目录和真实字典/参数/代码生成操作，见 [服务端设计](design-mcp-server.md)。默认 MCP Host 白名单仅含本机；正式远程部署设置 `TRI_MCP_ALLOWED_HOSTS=admin.example.com:443` 等明确主机或主机端口，并让反向代理保留对应 Host。Origin 仍使用明确的 TRI_CORS_ORIGINS，管理凭据不能放在 URL、工具参数或日志中。此服务端不代表受控 HTTP MCP 客户端已交付。
+后台业务 MCP 服务测试为 `cargo test -p admin-api --test mcp_server --locked -j 2`。实际端点 `/api/v1/mcp/server` 提供现代协议发现、权限过滤工具目录和真实字典/参数/代码生成操作，见 [服务端设计](design-mcp-server.md)。默认 MCP Host 白名单仅含本机；正式远程部署设置 `TRI_MCP_ALLOWED_HOSTS=admin.example.com:443` 等明确主机或主机端口，并让反向代理保留对应 Host。Origin 仍使用明确的 TRI_CORS_ORIGINS，管理凭据不能放在 URL、工具参数或日志中。服务端与 HTTP 客户端分别验收。
+
+HTTP 持久连接接入需要自身 mcp schema v2，仍为 15 项精确就绪标记。先停止本项目后端、执行 `cargo run -p admin-api -- migrate`，再启动 `serve`；不要用旧程序读取新模型。升级显式保留本项目 v1 的 STDIO、UUID、历史和加密结果，并将进程专属 exitConfirmed 改为带传输类型的 releaseConfirmed。
+
+HTTP 配置引用与生命周期测试为 `cargo test -p admin-api --test mcp_http --test mcp_http_lifecycle --test mcp_schema --locked -j 2`。先在集成配置保存启用的 HTTP 地址及可选加密凭据，再用其 id/精确版本和工具白名单创建 HTTP 连接；绑定需要 settings.write，调用依然要求 mcp.invoke 和连接范围。保存/启用不自动连接，必须显式 start。配置变化后先确认旧会话释放，再以新版本绑定并显式启动；不重发旧未知调用。`maintain-mcp` 的报告增加 disconnected，区分 HTTP 逻辑释放与 STDIO orphaned。

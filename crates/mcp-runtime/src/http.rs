@@ -48,6 +48,15 @@ fn reserved(name: &HeaderName) -> bool {
     ) || name.as_str().starts_with("mcp-")
         || name.as_str().starts_with("x-forwarded-")
 }
+pub fn credential_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), Error> {
+    let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| Error::InvalidInput)?;
+    if reserved(&name) || value.is_empty() || value.len() > 8192 {
+        return Err(Error::InvalidInput);
+    }
+    let mut value = HeaderValue::from_str(value).map_err(|_| Error::InvalidInput)?;
+    value.set_sensitive(true);
+    Ok((name, value))
+}
 pub async fn connect(mut spec: HttpSpec, limits: Limits) -> Result<Client, Error> {
     limits.validate()?;
     let url = reqwest::Url::parse(&spec.endpoint).map_err(|_| Error::InvalidInput)?;

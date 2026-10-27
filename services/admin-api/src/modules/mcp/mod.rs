@@ -1,3 +1,4 @@
+mod binding;
 mod business;
 pub mod capabilities;
 pub mod dto;

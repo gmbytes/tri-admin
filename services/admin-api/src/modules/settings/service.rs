@@ -62,6 +62,28 @@ pub(super) fn decrypt(config: &Config, row: &Profile) -> Result<Option<Credentia
     }
     Ok(Some(value))
 }
+// Private host use only, after the caller has authorized a saved profile binding.
+pub(crate) fn mcp_http_definition(
+    config: &Config,
+    row: &Profile,
+) -> Result<(String, reqwest::header::HeaderMap), AppError> {
+    if !row.enabled {
+        return Err(AppError::Validation("HTTP 配置未启用".into()));
+    }
+    let public = row.configuration()?;
+    let Integration::Http { base_url } = &public else {
+        return Err(AppError::Validation("所选配置不是 HTTP 集成".into()));
+    };
+    let secret = decrypt(config, row)?;
+    validate::credentials(&public, secret.as_ref(), true)?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(Credentials::Http { header_name, value }) = &secret {
+        let (name, value) = tri_mcp_runtime::http::credential_header(header_name, value)
+            .map_err(|_| AppError::Validation("HTTP 凭据头与 MCP 协议冲突".into()))?;
+        headers.insert(name, value);
+    }
+    Ok((base_url.clone(), headers))
+}
 pub(crate) async fn storage_definition(
     database: &Database,
     config: &Config,
@@ -276,6 +298,10 @@ async fn bound(
     shared::lock(database, "files", session).await?;
     shared::lock(database, "data-exports", session).await?;
     for (collection, filter) in [
+        (
+            "mcp_connections",
+            doc! {"transport.kind":"http","transport.profileId":id.to_hex(),"deletedAt":null},
+        ),
         (
             "data_exports",
             doc! {"storageProfileId":id,"storageRetained":true},

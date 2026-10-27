@@ -45,4 +45,4 @@
 
 服务租约失效后标为 orphaned，其他服务实例不会凭旧 PID 终止或再启动程序。运维人员先在宿主确认遗留程序已经清理，再通过交互会话向 `/connections/{id}/confirm-orphan` 提交 requestId、version、confirmed=true 和 reason；要求全部数据范围与 mcp.write，PAT 不能执行。该操作记录人工确认，不伪装成实际观察到的退出证明。
 
-`admin-api maintain-mcp` 执行一次有界租约维护；serve 会周期维护并在关闭时停止自身持有的程序。STDIO 管理接口已接入；HTTP、实际后台业务 MCP 工具、插件能力激活及管理界面仍按 Task 9 B 后续完成。
+`admin-api maintain-mcp` 执行一次有界租约维护；serve 会周期维护并在关闭时停止自身持有的程序。当前共享 mcp v2 的运行资料包含 transportKind 和 releaseConfirmed，STDIO 仍需真实进程退出确认。HTTP 持久引用与业务服务见 [HTTP MCP 设计](design-mcp-http.md) 和 [业务服务设计](design-mcp-server.md)；插件能力激活及管理界面继续后续完成。

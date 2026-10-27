@@ -204,13 +204,13 @@
 - `GET /extensions/{id}/revisions` 与 `GET /revisions/{revisionId}`：有界分页和原修订元数据。卸载后保留原 ID 下可授权的历史。`GET /revisions/{revisionId}/preview?path=...` 返回原包内有界 UTF-8 文本的 path/content/sha256/size，二进制或超过 256 KiB 的文件不能文本预览。`GET /revisions/{revisionId}/download` 核对并下载原字节，返回 ZIP 媒体类型、长度、SHA-256 ETag 与 X-Content-Sha256。
 - `GET/PATCH /api/v1/skill-constraints`：读取或以 version/content 更新全局约束（UTF-8 内容最大 64 KiB）。更新额外要求 skills.constraints.write 和当前 all 范围，版本冲突返回 409；`GET /skill-constraints/revisions` 分页读取独立历史。约束和审计原子提交。
 
-扩展库接口和管理页面已经实现；STDIO MCP 管理服务及业务 MCP 服务另见下节，受控 HTTP MCP 客户端和管理界面仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整插件能力验收。
+扩展库接口和管理页面已经实现；STDIO、HTTP 持久连接及业务 MCP 服务另见下节，插件能力激活和 MCP 管理界面继续按 Task 9 B 交付，不能把停用内容管理等同于完整插件能力验收。
 
 ## MCP 持久 STDIO 管理
 
-当前接入 STDIO 后台管理，配置格式和操作步骤见 [MCP 部署程序说明](mcp-programs.md)。自身 mcp schema v1 增加连接、实例、操作回执和加密结果集合，就绪标记由 14 项增至 15 项；升级需要停服 migrate，没有旧数量回退。业务 MCP 服务见下节；HTTP MCP 客户端、插件能力激活及管理界面仍在后续范围。
+STDIO 配置格式和操作步骤见 [MCP 部署程序说明](mcp-programs.md)。自身 mcp schema v2 保留连接、实例、操作回执和加密结果集合，增加 HTTP 配置引用索引与明确的资源释放类型；就绪标记总数保持 15，要求精确 mcp v2。升级需要停服 migrate，没有旧数量回退。插件能力激活及管理界面继续后续范围。
 
-- `GET /api/v1/mcp/capabilities` 只公开部署能力 ID、标签和工具白名单，不返回路径、参数、环境或配置指纹。`GET/POST /mcp/connections` 支持范围内分页与创建；创建输入 requestId/name/transport/enabled，transport 当前为 kind=stdio + capabilityId。未知命令/路径/环境字段拒绝。
+- `GET /api/v1/mcp/capabilities` 只公开部署程序能力 ID、标签和工具白名单，不返回路径、参数、环境或配置指纹。`GET/POST /mcp/connections` 支持范围内分页与创建；创建输入 requestId/name/transport/enabled。STDIO 为 kind=stdio + capabilityId；HTTP 为 kind=http + profileId/profileVersion/allowedTools。未知命令、路径、环境、URL 或明文凭据字段拒绝。
 - `GET/PATCH/DELETE /connections/{id}` 读取、以 version 和完整连接配置修改、按 query version 删除；未确认退出或有控制操作时不能修改/删除。部署配置指纹变化需显式重新确认绑定。`GET /connections/by-request/{requestId}` 只查询本人创建身份，原 UUID 重放不受当前能力移除影响。
 - `POST /connections/{id}/actions` 提交 requestId/version/kind（start/stop/restart），首次 202，原操作者/UUID/输入重放 200。意图、实例预留和审计先提交，实际启动在事务外执行；停止可打断启动，重启等待原实例确认退出。权限与版本在 I/O 前后核对，状态提交不重新执行外部效果。
 - `GET /connections/{id}/tools` 读取实际发现清单与部署白名单的交集；`POST /connections/{id}/calls` 输入 requestId/version/name/arguments，要求 mcp.read + mcp.invoke。管理生命周期要求 mcp.read + mcp.write。原请求恢复使用 `GET /actions/by-request/{requestId}`，读取 `GET /actions/{id}` 或范围内 `/connections/{id}/actions` 分页历史。
@@ -226,4 +226,12 @@
 
 25 项工具分别映射现有参数、字典/明细、代码生成定义/历史的业务服务。列表按当前权限过滤，写操作保留原版本及审计；代码生成继承 all/self/roles 范围和原 UUID 去重。MCP 结果使用 structuredContent，分页保留 data/meta，单条结果包含 data，创建/生成代码记录还包含 created。业务失败返回 isError=true 和 error.code/message/effect；数据库提交结果不明确时 effect=unknown，不能自动重发。参数/字典创建无 UUID 回执，响应不明确应先查已有资料。
 
-输入、结果、Host/Origin 与错误边界、完整工具类别和后续未交付范围见 [后台业务 MCP 设计](design-mcp-server.md)。本次不增加数据库模型版本，仍需 15 项当前就绪标记。
+输入、结果、Host/Origin 与错误边界、完整工具类别和后续未交付范围见 [后台业务 MCP 设计](design-mcp-server.md)。业务服务本身不另增模型；共享当前 MCP 持久层和 15 项精确就绪标记。
+
+## HTTP 持久连接
+
+HTTP 连接与 STDIO 共用以上 UUID、版本、Scope、审计和加密结果接口。绑定启用的 HTTP 集成配置时使用规范 profileId、精确 profileVersion 和 1–128 项无重复工具名，白名单 JSON 最多 16 KiB；创建和更换绑定额外要求当前 settings.write。不接受 URL、请求头或凭据正文。配置的地址和凭据始终从同一保存记录解析，使用现有受控网络工厂。
+
+未删除连接保护其引用配置，包含停用的连接；配置禁用/删除与绑定竞争不能同时提交。配置更新使旧绑定 capabilityCurrent=false，启动发布和调用前会重新检查，运行中的本地 HTTP 会话随后关闭，不把旧请求转发到新地址。停止、旧 UUID 查询和历史读取不要求原配置仍可用。
+
+运行资料的 transportKind 区分 stdio/http，releaseConfirmed 表示该类型资源已释放；HTTP PID 为空，释放不证明远端操作没有执行。旧 HTTP 服务所有权失效时标记 disconnected 并将未完成调用保留 unknown，允许显式新发现；不走遗留进程确认、不重放旧调用。STDIO 继续要求真实进程退出或明确运维声明。详见 [HTTP MCP 设计](design-mcp-http.md)。

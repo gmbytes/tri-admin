@@ -1,4 +1,4 @@
-use super::dto::Transport;
+use super::dto::{Transport, TransportKind};
 use crate::common::{error::AppError, vault::SealedBox};
 use mongodb::bson::{DateTime, oid::ObjectId};
 use serde::{Deserialize, Serialize};
@@ -11,8 +11,9 @@ pub struct RuntimeMeta {
     pub id: ObjectId,
     pub service_id: String,
     pub state: String,
+    pub transport_kind: TransportKind,
     pub pid: Option<i64>,
-    pub exit_confirmed: bool,
+    pub release_confirmed: bool,
     pub lease_until: DateTime,
     pub updated_at: DateTime,
     pub error_code: Option<String>,
@@ -41,8 +42,9 @@ pub struct Connection {
 pub struct RuntimeView {
     pub id: String,
     pub state: String,
+    pub transport_kind: TransportKind,
     pub pid: Option<i64>,
-    pub exit_confirmed: bool,
+    pub release_confirmed: bool,
     pub updated_at: String,
     pub error_code: Option<String>,
 }
@@ -67,18 +69,24 @@ impl Connection {
         let runtime = self
             .runtime
             .map(|v| {
-                let state =
-                    if !v.exit_confirmed && v.state != "retired" && v.lease_until < DateTime::now()
-                    {
-                        "orphaned".into()
+                let state = if !v.release_confirmed
+                    && v.state != "retired"
+                    && v.lease_until < DateTime::now()
+                {
+                    if v.transport_kind == TransportKind::Http {
+                        "disconnected".into()
                     } else {
-                        v.state
-                    };
+                        "orphaned".into()
+                    }
+                } else {
+                    v.state
+                };
                 Ok::<RuntimeView, AppError>(RuntimeView {
                     id: v.id.to_hex(),
                     state,
+                    transport_kind: v.transport_kind,
                     pid: v.pid,
-                    exit_confirmed: v.exit_confirmed,
+                    release_confirmed: v.release_confirmed,
                     updated_at: time(v.updated_at)?,
                     error_code: v.error_code,
                 })
@@ -110,8 +118,9 @@ pub struct Instance {
     pub actor_id: ObjectId,
     pub service_id: String,
     pub state: String,
+    pub transport_kind: TransportKind,
     pub pid: Option<i64>,
-    pub exit_confirmed: bool,
+    pub release_confirmed: bool,
     pub lease_until: DateTime,
     pub tools_json: String,
     pub error_code: Option<String>,

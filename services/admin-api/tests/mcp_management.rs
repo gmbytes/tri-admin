@@ -103,7 +103,7 @@ async fn stop_interrupts_startup_and_revoked_authority_cannot_publish_running() 
     let finished = settled(&app, owner, started["id"].as_str().unwrap()).await;
     assert_ne!(finished["status"], "succeeded", "{finished}");
     let instance=app.database.collection::<Document>("mcp_instances").find_one(doc!{"_id":mongodb::bson::oid::ObjectId::parse_str(finished["instanceId"].as_str().unwrap()).unwrap()}).await.unwrap().unwrap();
-    assert!(instance.get_bool("exitConfirmed").unwrap());
+    assert!(instance.get_bool("releaseConfirmed").unwrap());
     app.cleanup().await;
 }
 
@@ -191,7 +191,7 @@ async fn crash_is_observed_without_rebinding_old_call_or_instance_ids() {
                     Some(token),
                 )
                 .await;
-            if row["data"]["runtime"]["exitConfirmed"] == true {
+            if row["data"]["runtime"]["releaseConfirmed"] == true {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -230,11 +230,11 @@ async fn expired_service_ownership_is_orphaned_and_needs_explicit_session_confir
         .collection::<Document>("mcp_instances")
         .update_one(
             doc! {"_id":instance},
-            doc! {"$set":{"state":"running","exitConfirmed":false,"leaseUntil":past}},
+            doc! {"$set":{"state":"running","releaseConfirmed":false,"leaseUntil":past}},
         )
         .await
         .unwrap();
-    app.database.collection::<Document>("mcp_connections").update_one(doc!{"_id":mongodb::bson::oid::ObjectId::parse_str(id).unwrap()},doc!{"$set":{"runtime.state":"running","runtime.exitConfirmed":false,"runtime.leaseUntil":past,"controlActionId":null}}).await.unwrap();
+    app.database.collection::<Document>("mcp_connections").update_one(doc!{"_id":mongodb::bson::oid::ObjectId::parse_str(id).unwrap()},doc!{"$set":{"runtime.state":"running","runtime.releaseConfirmed":false,"runtime.leaseUntil":past,"controlActionId":null}}).await.unwrap();
     let replacement_state = AppState::new((*state.config).clone(), Some(app.database.clone()));
     let replacement = TestApp {
         router: build_router(replacement_state.clone()),
