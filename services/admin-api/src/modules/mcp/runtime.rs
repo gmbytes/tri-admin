@@ -25,7 +25,10 @@ use mongodb::{
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
-use tri_mcp_runtime::process::{Error as RuntimeError, Phase, Process, Reply, ReplyKind};
+use tri_mcp_runtime::{
+    process::{Phase, Process},
+    session::{Error as RuntimeError, Reply, ReplyKind},
+};
 fn lease() -> DateTime {
     DateTime::from_millis(DateTime::now().timestamp_millis() + 15000)
 }
@@ -42,6 +45,7 @@ fn code(error: &RuntimeError) -> &'static str {
         RuntimeError::TimeoutUnknown => "TIMEOUT_UNKNOWN",
         RuntimeError::TransportUnknown => "TRANSPORT_UNKNOWN",
         RuntimeError::RemoteRejected { .. } => "REMOTE_REJECTED",
+        RuntimeError::RemoteUnknown { .. } => "REMOTE_UNKNOWN",
         RuntimeError::Unavailable => "UNAVAILABLE_BEFORE_SEND",
         RuntimeError::StopUnconfirmed => "EXIT_UNCONFIRMED",
     }

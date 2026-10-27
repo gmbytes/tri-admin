@@ -6,7 +6,10 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-streamable-http-client"] }
+reqwest.workspace = true
+futures-util.workspace = true
+sse-stream = "=0.2.6"
 process-wrap = { version = "=10.0.0", default-features = false, features = ["tokio1", "job-object", "creation-flags", "kill-on-drop", "process-group"] }
 tokio = { workspace = true, features = ["process", "io-std"] }
 tokio-util.workspace = true
@@ -22,6 +25,7 @@ nix = { version = "=0.31.3", default-features = false, features = ["process", "s
 
 [dev-dependencies]
 tempfile = "3"
+rustls.workspace = true
 
 [[bin]]
 name = "tri-mcp-test-peer"

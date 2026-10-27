@@ -3829,11 +3829,15 @@ dependencies = [
 name = "tri-mcp-runtime"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "nix",
  "process-wrap",
+ "reqwest",
  "rmcp",
+ "rustls",
  "serde",
  "serde_json",
+ "sse-stream",
  "tempfile",
  "thiserror",
  "tokio",

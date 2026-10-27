@@ -5,7 +5,7 @@ use std::{
 };
 use tokio::sync::{RwLock, watch};
 use tokio_util::sync::CancellationToken;
-use tri_mcp_runtime::process::Client;
+use tri_mcp_runtime::session::Client;
 pub struct Registry {
     pub service_id: String,
     entries: Mutex<BTreeMap<ObjectId, Arc<Entry>>>,

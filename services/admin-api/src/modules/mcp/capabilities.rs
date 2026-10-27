@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use tri_mcp_runtime::process::{Limits, ProgramSpec};
+use tri_mcp_runtime::{process::ProgramSpec, session::Limits};
 #[derive(Default)]
 pub struct Catalog {
     programs: BTreeMap<String, Capability>,

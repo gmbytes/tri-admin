@@ -2,7 +2,10 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
-use tri_mcp_runtime::process::{Error, Limits, Phase, Process, ProgramSpec};
+use tri_mcp_runtime::{
+    process::{Phase, Process, ProgramSpec},
+    session::{Error, Limits},
+};
 fn spec(scenario: &str, directory: &TempDir) -> ProgramSpec {
     let environment = BTreeMap::from([("TRI_FIXTURE_ALLOWED".into(), "explicit-only".into())]);
     #[cfg(windows)]
@@ -187,7 +190,7 @@ async fn stderr_is_drained_with_a_bound_and_input_required_does_not_repeat_the_c
         .unwrap();
     assert!(matches!(
         result.kind,
-        tri_mcp_runtime::process::ReplyKind::InputRequired
+        tri_mcp_runtime::session::ReplyKind::InputRequired
     ));
     assert_eq!(result.value["requestState"], "opaque-fixture-state");
     let stderr = process.stderr();
