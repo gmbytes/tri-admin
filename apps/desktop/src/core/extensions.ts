@@ -15,14 +15,27 @@ export interface SkillMeta {
   metadata: Record<string, string>
   allowedTools: string | null
 }
+export interface PluginMcpContribution {
+  id: string
+  label: string
+  capabilityId: string
+  tools: string[]
+}
+export interface PluginToolBinding {
+  name: string
+  description: string
+  operation: string
+  inputSchema: Record<string, unknown>
+  mappings: Record<string, string>
+}
 export interface PackageInfo {
   kind: 'skill' | 'plugin'
   name: string
   version: string | null
   description: string
   skills: { meta: SkillMeta; entryPath: string; sha256: string }[]
-  mcp: Record<string, unknown>[]
-  tools: Record<string, unknown>[]
+  mcp: PluginMcpContribution[]
+  tools: PluginToolBinding[]
   files: ExtensionFile[]
   archiveSha256: string
   treeSha256: string
@@ -105,6 +118,11 @@ function hash(v: unknown): v is string {
 }
 export function extensionName(v: unknown): v is string {
   return typeof v === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) && v.length <= 64
+}
+export function pluginToolName(extension: string, revision: string, name: string): string {
+  if (!objectId(extension) || !objectId(revision) || !/^[a-zA-Z0-9_.-]{1,64}$/.test(name))
+    throw invalid()
+  return `plugin.${extension}.${revision}.${name}`
 }
 export function extensionPath(v: unknown): v is string {
   if (
@@ -223,7 +241,9 @@ export function parsePackage(v: unknown): PackageInfo {
         skills[0]?.meta.name !== v.name))
   )
     throw invalid()
-  for (const m of v.mcp)
+  const contributionNames = new Set<string>(),
+    toolNames = new Set<string>()
+  for (const m of v.mcp) {
     if (
       !object(m) ||
       !exact(m, ['id', 'label', 'capabilityId', 'tools']) ||
@@ -232,16 +252,23 @@ export function parsePackage(v: unknown): PackageInfo {
       !text(m.label, 80) ||
       !Array.isArray(m.tools) ||
       m.tools.length > 64 ||
-      m.tools.some((t) => typeof t !== 'string' || !/^[a-zA-Z0-9_.-]{1,64}$/.test(t))
+      m.tools.some((t) => typeof t !== 'string' || !/^[a-zA-Z0-9_.-]{1,64}$/.test(t)) ||
+      new Set(m.tools).size !== m.tools.length ||
+      contributionNames.has(m.id)
     )
       throw invalid()
+    contributionNames.add(m.id)
+  }
   for (const t of v.tools) {
     if (
       !object(t) ||
       !exact(t, ['name', 'description', 'operation', 'inputSchema', 'mappings']) ||
-      !text(t.name, 64) ||
+      typeof t.name !== 'string' ||
+      !/^[a-zA-Z0-9_.-]{1,64}$/.test(t.name) ||
+      toolNames.has(t.name) ||
       !text(t.description, 1024) ||
-      !text(t.operation, 80) ||
+      typeof t.operation !== 'string' ||
+      !/^[a-zA-Z0-9_.]{1,80}$/.test(t.operation) ||
       !object(t.inputSchema) ||
       t.inputSchema.type !== 'object' ||
       !object(t.inputSchema.properties) ||
@@ -252,9 +279,16 @@ export function parsePackage(v: unknown): PackageInfo {
       throw invalid()
     const properties = t.inputSchema.properties
     if (
-      Object.values(t.mappings).some((s) => typeof s !== 'string' || !Object.hasOwn(properties, s))
+      Object.entries(t.mappings).some(
+        ([target, s]) =>
+          !/^[a-zA-Z0-9_.-]{1,64}$/.test(target) ||
+          typeof s !== 'string' ||
+          !/^[a-zA-Z0-9_.-]{1,64}$/.test(s) ||
+          !Object.hasOwn(properties, s),
+      )
     )
       throw invalid()
+    toolNames.add(t.name)
   }
   return { ...v, files, skills } as unknown as PackageInfo
 }

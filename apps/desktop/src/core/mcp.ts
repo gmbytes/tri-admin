@@ -5,6 +5,19 @@ export type McpKind =
 export type McpTransport =
   | { kind: 'stdio'; capabilityId: string }
   | { kind: 'http'; profileId: string; profileVersion: number; allowedTools: string[] }
+  | { kind: 'plugin'; extensionId: string; revisionId: string; contributionId: string }
+export interface McpPluginCapability {
+  extensionId: string
+  extensionName: string
+  revisionId: string
+  revision: number
+  extensionVersion: number
+  contributionId: string
+  label: string
+  capabilityId: string
+  allowedTools: string[]
+  current: boolean
+}
 export interface McpRuntime {
   id: string
   state: string
@@ -152,6 +165,23 @@ function jsonTree(v: unknown) {
 }
 export function parseTransport(v: unknown): McpTransport {
   if (!object(v)) invalid()
+  if (v.kind === 'plugin') {
+    if (
+      !exact(v, ['kind', 'extensionId', 'revisionId', 'contributionId']) ||
+      !objectId(v.extensionId) ||
+      !objectId(v.revisionId) ||
+      typeof v.contributionId !== 'string' ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v.contributionId) ||
+      v.contributionId.length > 64
+    )
+      invalid()
+    return {
+      kind: 'plugin',
+      extensionId: v.extensionId,
+      revisionId: v.revisionId,
+      contributionId: v.contributionId,
+    }
+  }
   if (v.kind === 'stdio') {
     if (
       !exact(v, ['kind', 'capabilityId']) ||
@@ -233,10 +263,14 @@ export function parseConnection(v: unknown): McpConnection {
     !(v.deletedAt === null || date(v.deletedAt))
   )
     invalid()
+  const transport = parseTransport(v.transport),
+    observed = v.runtime === null ? null : runtime(v.runtime)
+  if (observed && observed.transportKind !== (transport.kind === 'http' ? 'http' : 'stdio'))
+    invalid()
   return {
     ...v,
-    transport: parseTransport(v.transport),
-    runtime: v.runtime === null ? null : runtime(v.runtime),
+    transport,
+    runtime: observed,
   } as unknown as McpConnection
 }
 export function parseAction(v: unknown): McpAction {
@@ -312,6 +346,45 @@ export function parseCapabilities(v: unknown): McpCapability[] {
     ids.add(row.id)
     return { id: row.id, label: row.label, allowedTools: [...row.allowedTools] }
   })
+}
+export function parsePluginCapability(v: unknown): McpPluginCapability {
+  const identifier = (v: unknown) =>
+    typeof v === 'string' && v.length <= 64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)
+  if (
+    !object(v) ||
+    !exact(v, [
+      'extensionId',
+      'extensionName',
+      'revisionId',
+      'revision',
+      'extensionVersion',
+      'contributionId',
+      'label',
+      'capabilityId',
+      'allowedTools',
+      'current',
+    ]) ||
+    !objectId(v.extensionId) ||
+    !objectId(v.revisionId) ||
+    !identifier(v.extensionName) ||
+    !identifier(v.contributionId) ||
+    !identifier(v.capabilityId) ||
+    !integer(v.revision) ||
+    !integer(v.extensionVersion) ||
+    typeof v.label !== 'string' ||
+    !v.label.trim() ||
+    [...v.label].length > 80 ||
+    [...v.label].some((char) => !'\t\n\r'.includes(char) && /\p{Cc}/u.test(char)) ||
+    !Array.isArray(v.allowedTools) ||
+    v.allowedTools.length > 64 ||
+    v.allowedTools.some(
+      (name) => typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(name),
+    ) ||
+    new Set(v.allowedTools).size !== v.allowedTools.length ||
+    typeof v.current !== 'boolean'
+  )
+    invalid()
+  return { ...v, allowedTools: [...v.allowedTools] } as unknown as McpPluginCapability
 }
 export function parseTools(v: unknown): McpTool[] {
   if (

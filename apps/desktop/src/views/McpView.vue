@@ -26,6 +26,8 @@ import {
   type McpResult,
 } from '../core/mcp'
 import { errorText, dateText } from '../ui'
+import PluginSourcePicker from '../components/PluginSourcePicker.vue'
+import type { McpPluginCapability } from '../core/mcp'
 const session = useSession(),
   identity = computed(() => `${session.settings.apiBaseUrl}|${session.user?.id ?? ''}`),
   canWrite = computed(() => session.can('mcp.write')),
@@ -65,13 +67,36 @@ interface Profile {
 }
 const form = reactive({
   name: '',
-  kind: 'stdio' as 'stdio' | 'http',
+  kind: 'stdio' as 'stdio' | 'http' | 'plugin',
   capabilityId: '',
   profileId: '',
   profileVersion: 1,
   allowedTools: '',
+  extensionId: '',
+  revisionId: '',
+  contributionId: '',
   enabled: false,
 })
+const sourcePickerOpen = ref(false),
+  selectedSource = ref<McpPluginCapability | null>(null)
+const canUseSource = computed(
+    () => selected.value?.transport.kind !== 'plugin' || session.can('skills.read'),
+  ),
+  canCall = computed(() => canInvoke.value && canUseSource.value)
+function chooseSource(value: McpPluginCapability) {
+  selectedSource.value = value
+  form.extensionId = value.extensionId
+  form.revisionId = value.revisionId
+  form.contributionId = value.contributionId
+}
+function transportText(row: McpConnection) {
+  const source = row.transport
+  return source.kind === 'stdio'
+    ? `STDIO · ${source.capabilityId}`
+    : source.kind === 'http'
+      ? `HTTP · 配置 v${source.profileVersion}`
+      : `插件 MCP · ${source.contributionId} · ${source.revisionId.slice(0, 8)}`
+}
 const callOpen = ref(false),
   callTool = ref<McpTool | null>(null),
   argumentsJson = ref('{}'),
@@ -180,6 +205,8 @@ function reset() {
   actions.value = []
   managerOpen.value = false
   editorOpen.value = false
+  sourcePickerOpen.value = false
+  selectedSource.value = null
   callOpen.value = false
   resultOpen.value = false
   result.value = null
@@ -386,6 +413,11 @@ async function edit(row: McpConnection | null) {
   form.profileId = row?.transport.kind === 'http' ? row.transport.profileId : ''
   form.profileVersion = row?.transport.kind === 'http' ? row.transport.profileVersion : 1
   form.allowedTools = row?.transport.kind === 'http' ? row.transport.allowedTools.join('\n') : ''
+  form.extensionId = row?.transport.kind === 'plugin' ? row.transport.extensionId : ''
+  form.revisionId = row?.transport.kind === 'plugin' ? row.transport.revisionId : ''
+  form.contributionId = row?.transport.kind === 'plugin' ? row.transport.contributionId : ''
+  selectedSource.value = null
+  sourcePickerOpen.value = false
   form.enabled = row?.enabled ?? false
   configuring = false
   editorOpen.value = true
@@ -432,6 +464,13 @@ async function submit(op: McpOperation, send: () => Promise<unknown>) {
   }
 }
 function transport() {
+  if (form.kind === 'plugin')
+    return parseTransport({
+      kind: 'plugin',
+      extensionId: form.extensionId,
+      revisionId: form.revisionId,
+      contributionId: form.contributionId,
+    })
   return parseTransport(
     form.kind === 'stdio'
       ? { kind: 'stdio', capabilityId: form.capabilityId }
@@ -448,6 +487,11 @@ async function save() {
   formError.value = ''
   try {
     if (!form.name.trim()) throw Error('请填写连接名称')
+    if (form.kind === 'plugin') {
+      if (!session.can('skills.read')) throw Error('当前账号缺少读取插件来源的权限')
+      if (editing.value?.capabilityCurrent === false && !selectedSource.value)
+        throw Error('请重新选择当前插件来源')
+    }
     const body = { name: form.name.trim(), enabled: form.enabled, transport: transport() }
     if (editing.value) {
       writing.value = true
@@ -531,6 +575,7 @@ async function control(kind: 'start' | 'stop' | 'restart' | 'refresh') {
   }
 }
 function openCall(tool: McpTool) {
+  if (!canCall.value) return
   callTool.value = tool
   argumentsJson.value = '{}'
   callError.value = ''
@@ -539,7 +584,7 @@ function openCall(tool: McpTool) {
 async function invoke() {
   const row = selected.value,
     tool = callTool.value
-  if (!row || !tool) return
+  if (!row || !tool || !canCall.value) return
   const ticket = epoch
   callError.value = ''
   try {
@@ -767,6 +812,12 @@ watch(status, () => {
   page.value = 1
   void load()
 })
+watch(canCall, (value) => {
+  if (!value) {
+    callOpen.value = false
+    argumentsJson.value = '{}'
+  }
+})
 watch(canInvoke, (value) => {
   if (!value) {
     callOpen.value = false
@@ -824,9 +875,7 @@ onBeforeUnmount(() => {
         ><template #default="{ row }"
           ><strong>{{ row.name }}</strong
           ><small class="table-secondary">{{
-            row.transport.kind === 'stdio'
-              ? 'STDIO · ' + row.transport.capabilityId
-              : 'HTTP · 配置 v' + row.transport.profileVersion
+            transportText(row as McpConnection)
           }}</small></template
         ></el-table-column
       ><el-table-column label="状态" min-width="170"
@@ -892,7 +941,10 @@ onBeforeUnmount(() => {
           ><el-option value="stdio" label="STDIO" /><el-option
             value="http"
             label="HTTP"
-            :disabled="!canBind" /></el-select></el-form-item
+            :disabled="!canBind" /><el-option
+            value="plugin"
+            label="插件 MCP"
+            :disabled="!session.can('skills.read')" /></el-select></el-form-item
       ><template v-if="form.kind === 'stdio'"
         ><el-form-item label="批准程序能力"
           ><el-select v-model="form.capabilityId" aria-label="批准程序能力"
@@ -903,6 +955,32 @@ onBeforeUnmount(() => {
               :label="cap.label + ' · ' + cap.id" /></el-select
         ></el-form-item>
         <p v-if="!caps.length" class="subtle">暂无部署批准的 STDIO 能力。</p></template
+      ><template v-else-if="form.kind === 'plugin'">
+        <el-form-item label="插件来源">
+          <div class="plugin-binding">
+            <strong v-if="selectedSource"
+              >{{ selectedSource.extensionName }} · 修订 {{ selectedSource.revision }} · 版本
+              {{ selectedSource.extensionVersion }}</strong
+            >
+            <span v-else-if="form.extensionId"
+              >扩展 {{ form.extensionId.slice(0, 8) }} · {{ form.contributionId }}</span
+            >
+            <span v-else class="subtle">尚未选择来源</span>
+            <code v-if="form.revisionId">修订 ID {{ form.revisionId }}</code>
+            <small v-if="selectedSource"
+              >部署能力 {{ selectedSource.capabilityId }} · 批准工具
+              {{ selectedSource.allowedTools.join(' · ') || '无' }}</small
+            >
+            <el-button
+              :disabled="!session.can('skills.read') || blocked"
+              @click="sourcePickerOpen = true"
+              >选择插件来源</el-button
+            >
+          </div>
+        </el-form-item>
+        <p class="subtle">
+          使用插件中固定修订的批准来源。插件启停版本或修订改变后，旧连接需重新选择并确认来源。
+        </p> </template
       ><template v-else
         ><el-form-item label="HTTP配置"
           ><el-select v-model="form.profileId" aria-label="HTTP配置" filterable :disabled="!canBind"
@@ -938,7 +1016,11 @@ onBeforeUnmount(() => {
     ><template #footer
       ><el-button @click="editorOpen = false">关闭编辑</el-button
       ><el-button v-if="editing" :disabled="writing" @click="edit(editing)">重新载入记录</el-button
-      ><el-button type="primary" :loading="writing" :disabled="blocked" @click="save"
+      ><el-button
+        type="primary"
+        :loading="writing"
+        :disabled="blocked || (form.kind === 'plugin' && !session.can('skills.read'))"
+        @click="save"
         >保存连接</el-button
       ></template
     ></el-dialog
@@ -952,7 +1034,9 @@ onBeforeUnmount(() => {
       ><el-alert v-if="error" :title="error" type="error" :closable="false" />
       <h2>{{ selected.name }}</h2>
       <div class="mcp-summary">
-        <el-tag>{{ selected.transport.kind === 'stdio' ? 'STDIO' : 'HTTP' }}</el-tag
+        <el-tag>{{ selected.transport.kind === 'http' ? 'HTTP' : 'STDIO' }}</el-tag
+        ><el-tag v-if="selected.transport.kind === 'plugin'"
+          >插件来源 · {{ selected.transport.contributionId }}</el-tag
         ><el-tag :type="selected.runtime?.state === 'running' ? 'success' : 'info'">{{
           selected.runtime ? stateLabels[selected.runtime.state] : '未启动'
         }}</el-tag
@@ -968,7 +1052,11 @@ onBeforeUnmount(() => {
         <el-button
           type="primary"
           :disabled="
-            blocked || !selected.enabled || !selected.capabilityCurrent || !releasable(selected)
+            blocked ||
+            !canUseSource ||
+            !selected.enabled ||
+            !selected.capabilityCurrent ||
+            !releasable(selected)
           "
           @click="control('start')"
           >启动</el-button
@@ -981,8 +1069,10 @@ onBeforeUnmount(() => {
           "
           @click="control('stop')"
           >停止</el-button
-        ><el-button :disabled="blocked || !active" @click="control('restart')">重启</el-button
-        ><el-button :disabled="blocked || !active" @click="control('refresh')">刷新工具</el-button
+        ><el-button :disabled="blocked || !active || !canUseSource" @click="control('restart')"
+          >重启</el-button
+        ><el-button :disabled="blocked || !active || !canUseSource" @click="control('refresh')"
+          >刷新工具</el-button
         ><el-button v-if="canConfirm" type="warning" :disabled="blocked" @click="openOrphan"
           >确认遗留程序清理</el-button
         >
@@ -1001,7 +1091,7 @@ onBeforeUnmount(() => {
             /><el-table-column label="操作" width="100"
               ><template #default="{ row }"
                 ><el-button
-                  v-if="canInvoke"
+                  v-if="canCall"
                   text
                   :disabled="blocked || !active"
                   @click="openCall(row as McpTool)"
@@ -1099,7 +1189,11 @@ onBeforeUnmount(() => {
             :rows="9" /></el-form-item></el-form></template
     ><template #footer
       ><el-button @click="callOpen = false">关闭调用</el-button
-      ><el-button type="primary" :loading="writing" :disabled="blocked || !active" @click="invoke"
+      ><el-button
+        type="primary"
+        :loading="writing"
+        :disabled="blocked || !active || !canCall"
+        @click="invoke"
         >发送调用</el-button
       ></template
     ></el-dialog
@@ -1144,8 +1238,19 @@ onBeforeUnmount(() => {
       ></template
     ></el-dialog
   >
+  <PluginSourcePicker v-model="sourcePickerOpen" @select="chooseSource" />
 </template>
 <style scoped>
+:global(.mcp-dialog h3) {
+  overflow-wrap: anywhere;
+}
+.plugin-binding {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
 :global(.mcp-dialog) {
   max-width: calc(100vw - 32px);
 }

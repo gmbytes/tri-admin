@@ -421,11 +421,12 @@ pub async fn revise(
     Ok((row.view()?, created))
 }
 pub async fn toggle(
-    database: &Database,
+    state: &crate::state::AppState,
     context: &AuthContext,
     id: ObjectId,
     input: Toggle,
 ) -> Result<ExtensionView, AppError> {
+    let database = state.require_database()?;
     dto::version(input.version)?;
     let verified_revision = if input.enabled {
         let row = get_record(database, context, id, true).await?;
@@ -438,27 +439,42 @@ pub async fn toggle(
         {
             return Err(AppError::NotReady);
         }
-        Some(row.revision_id)
+        Some((
+            row.revision_id,
+            serde_json::to_value(package.info()).map_err(|_| AppError::NotReady)?,
+        ))
     } else {
         None
     };
     transaction::run(
         database,
-        (database.clone(), context.clone()),
-        |session, (database, context)| {
+        (
+            database.clone(),
+            context.clone(),
+            state.config.clone(),
+            verified_revision,
+        ),
+        |session, (database, context, config, verified_revision)| {
             async move {
                 let actor = owned::fresh(database, session, context, policy(), true).await?;
                 let mut row = row_tx(database, session, &actor, id, true).await?;
                 if row.version != input.version {
                     return Err(fail(Failure::Conflict("扩展版本已改变")));
                 }
-                if input.enabled && verified_revision != Some(row.revision_id) {
-                    return Err(fail(Failure::Conflict("扩展修订已改变")));
-                }
-                if input.enabled && !row.package.mcp.is_empty() {
-                    return Err(fail(Failure::Conflict(
-                        "插件能力需要先登记并验证 MCP 与工具绑定",
-                    )));
+                if input.enabled {
+                    let Some((revision, package)) = verified_revision.as_ref() else {
+                        return Err(fail(Failure::NotReady));
+                    };
+                    if *revision != row.revision_id {
+                        return Err(fail(Failure::Conflict("扩展修订已改变")));
+                    }
+                    if serde_json::to_value(&row.package).map_err(|_| fail(Failure::NotReady))?
+                        != *package
+                    {
+                        return Err(fail(Failure::NotReady));
+                    }
+                    super::programs::validate(config, &row.package)
+                        .map_err(super::programs::transaction_error)?;
                 }
                 if input.enabled && !row.package.tools.is_empty() {
                     super::contributions::validate_activation(database, session, &row).await?;
@@ -492,7 +508,7 @@ pub async fn uninstall(
     dto::version(version)?;
     transaction::run(database,(database.clone(),context.clone()),|session,(database,context)|async move{let actor=owned::fresh(database,session,context,policy(),true).await?;let row=row_tx(database,session,&actor,id,true).await?;if row.version!=version{return Err(fail(Failure::Conflict("扩展版本已改变")))}let now=DateTime::now();database.collection::<Document>("extensions").update_one(doc!{"_id":id,"version":version,"deletedAt":null},doc!{"$set":{"deletedAt":now,"updatedAt":now,"enabled":false},"$inc":{"version":1i64}}).session(&mut *session).await?;shared::audit(database,&actor,"skills.uninstall",id,session).await}.boxed()).await
 }
-fn prefix(value: &str) -> String {
+pub(super) fn prefix(value: &str) -> String {
     let mut safe = String::from("^");
     for c in value.chars() {
         if ".+*?^${}()|[]\\".contains(c) {

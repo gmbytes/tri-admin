@@ -14,6 +14,7 @@ use crate::{
     config::Config,
     modules::{
         auth::AuthContext,
+        extensions::programs::PluginProgram,
         rbac::{owned, shared},
     },
     state::AppState,
@@ -136,11 +137,19 @@ async fn finish_retry(
         delay = (delay * 2).min(2000);
     }
 }
-async fn heartbeat(db: &Database, id: ObjectId, service: &str) -> Result<(), AppError> {
-    transaction::run(db,(db.clone(),service.to_owned()),|session,(db,service)|async move{
+async fn heartbeat(
+    db: &Database,
+    config: &Arc<Config>,
+    id: ObjectId,
+    service: &str,
+) -> Result<(), AppError> {
+    transaction::run(db,(db.clone(),config.clone(),service.to_owned()),|session,(db,config,service)|async move{
         ready(db,session).await?;let now=DateTime::now();let until=lease();
         let instance=db.collection::<Instance>("mcp_instances").find_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"state":{"$ne":"retired"},"leaseUntil":{"$gt":now}}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("运行实例租约已失效")))?;
-        let connection=db.collection::<Document>("mcp_connections").find_one(doc!{"_id":instance.connection_id,"enabled":true,"deletedAt":null}).projection(doc!{"runtime":1,"controlActionId":1}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("连接所有权已改变")))?;
+        let connection=db.collection::<Document>("mcp_connections").find_one(doc!{"_id":instance.connection_id,"enabled":true,"deletedAt":null}).projection(doc!{"runtime":1,"controlActionId":1,"transport":1,"capabilityFingerprint":1}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("连接所有权已改变")))?;
+        let transport=bson::deserialize_from_bson::<super::dto::Transport>(connection.get("transport").cloned().ok_or_else(||fail(Failure::NotReady))?).map_err(|_|fail(Failure::NotReady))?;
+        let fingerprint=connection.get_str("capabilityFingerprint").map_err(|_|fail(Failure::NotReady))?;
+        if !binding::plugin_current_tx(db,session,config,&transport,fingerprint).await?{return Err(fail(Failure::Conflict("插件 MCP 来源已改变")))}
         if instance.state=="reserved"{
             let action=connection.get_object_id("controlActionId").map_err(|_|fail(Failure::Conflict("重启意图已改变")))?;
             if db.collection::<Document>("mcp_actions").count_documents(doc!{"_id":action,"instanceId":id,"kind":"restart","status":{"$in":["pending","running"]}}).session(&mut *session).await?!=1{return Err(fail(Failure::Conflict("重启意图已改变")))}
@@ -254,13 +263,14 @@ pub(super) fn launch_action(
     tokio::spawn(async move {
         let lifetime = CancellationToken::new();
         let hb_db = db.clone();
+        let hb_config = config.clone();
         let hb_service = service_id.clone();
         let hb_entry = entry.clone();
         let hb_end = lifetime.clone();
         let hb = tokio::spawn(async move {
             let mut timer = tokio::time::interval(Duration::from_secs(2));
             loop {
-                tokio::select! {_ = hb_end.cancelled()=>break,_ = timer.tick()=>{if heartbeat(&hb_db,instance_id,&hb_service).await.is_err(){hb_entry.stop.cancel();break}}}
+                tokio::select! {_ = hb_end.cancelled()=>break,_ = timer.tick()=>{if heartbeat(&hb_db,&hb_config,instance_id,&hb_service).await.is_err(){hb_entry.stop.cancel();break}}}
             }
         });
         if action.kind == "restart" {
@@ -287,7 +297,7 @@ pub(super) fn launch_action(
             }
         }
         let outcome = match &capability {
-            Binding::Stdio(capability) => {
+            Binding::Stdio(capability) | Binding::Plugin(PluginProgram { capability, .. }) => {
                 run_program(
                     &db,
                     &config,
@@ -578,7 +588,7 @@ pub(super) async fn authorize_start(
                     return Err(fail(Failure::Forbidden));
                 }
                 let row = connection_tx(db, session, &actor, action.connection_id, true).await?;
-                binding::ensure(db, session, config, &row).await?;
+                binding::ensure(db, session, config, &row, &actor).await?;
                 if !row.enabled
                     || row.version != action.connection_version
                     || row.control_action_id != Some(action.id)
@@ -602,7 +612,7 @@ async fn publish_running(
     tools: Vec<Value>,
 ) -> Result<(), AppError> {
     let json = serde_json::to_string(&tools).map_err(|_| AppError::NotReady)?;
-    transaction::run(db,(db.clone(),config.clone(),context.clone(),action.clone(),service_id.to_owned(),json),|session,(db,config,context,action,service,json)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;binding::ensure(db,session,config,&row).await?;if !row.enabled||row.version!=action.connection_version||row.control_action_id!=Some(action.id)||row.runtime.as_ref().map(|r|r.id)!=action.instance_id{return Err(fail(Failure::Conflict("启动意图已改变")))}let now=DateTime::now();let until=lease();let id=action.instance_id.unwrap();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"state":{"$ne":"retired"}},doc!{"$set":{"state":"running","pid":pid,"toolsJson":&*json,"updatedAt":now,"leaseUntil":until}}).session(&mut *session).await?;db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime.state":"running","runtime.pid":pid,"runtime.updatedAt":now,"runtime.leaseUntil":until,"controlActionId":null}}).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_one(doc!{"_id":action.id,"status":"pending"},doc!{"$set":{"status":"succeeded","finishedAt":now}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.running",id,session).await}.boxed()).await
+    transaction::run(db,(db.clone(),config.clone(),context.clone(),action.clone(),service_id.to_owned(),json),|session,(db,config,context,action,service,json)|async move{let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;let row=connection_tx(db,session,&actor,action.connection_id,true).await?;binding::ensure(db,session,config,&row,&actor).await?;if !row.enabled||row.version!=action.connection_version||row.control_action_id!=Some(action.id)||row.runtime.as_ref().map(|r|r.id)!=action.instance_id{return Err(fail(Failure::Conflict("启动意图已改变")))}let now=DateTime::now();let until=lease();let id=action.instance_id.unwrap();db.collection::<Document>("mcp_instances").update_one(doc!{"_id":id,"serviceId":&*service,"releaseConfirmed":false,"state":{"$ne":"retired"}},doc!{"$set":{"state":"running","pid":pid,"toolsJson":&*json,"updatedAt":now,"leaseUntil":until}}).session(&mut *session).await?;db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"runtime.state":"running","runtime.pid":pid,"runtime.updatedAt":now,"runtime.leaseUntil":until,"controlActionId":null}}).session(&mut *session).await?;db.collection::<Document>("mcp_actions").update_one(doc!{"_id":action.id,"status":"pending"},doc!{"$set":{"status":"succeeded","finishedAt":now}}).session(&mut *session).await?;shared::audit(db,&actor,"mcp.running",id,session).await}.boxed()).await
 }
 pub(super) fn launch_call(
     state: &AppState,
@@ -714,7 +724,7 @@ async fn refresh_access(
     transaction::run(db,(db.clone(),config.clone(),context.clone(),action.clone(),service.to_owned(),tools),|session,(db,config,context,action,service,tools)|async move{
         let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;
         let row=connection_tx(db,session,&actor,action.connection_id,true).await?;
-        let binding=binding::ensure(db,session,config,&row).await?;
+        let binding=binding::ensure(db,session,config,&row,&actor).await?;
         if !row.enabled || row.version!=action.connection_version || row.control_action_id!=Some(action.id) || row.runtime.as_ref().is_none_or(|runtime|Some(runtime.id)!=action.instance_id || runtime.service_id!=*service || runtime.state!="running" || runtime.release_confirmed || runtime.lease_until<DateTime::now()){return Err(fail(Failure::Conflict("工具刷新实例已改变")))}
         let stored=db.collection::<Action>("mcp_actions").find_one(doc!{"_id":action.id,"status":{"$in":["pending","running"]},"cancelRequested":false}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("工具刷新操作已改变")))?;
         let Some(tools)=tools else{db.collection::<Document>("mcp_actions").update_one(doc!{"_id":stored.id},doc!{"$set":{"status":"running"}}).session(session).await?;return Ok(())};
@@ -822,7 +832,7 @@ async fn authorize_call(
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.invoke"), true).await?;
                 let row = connection_tx(db, session, &actor, action.connection_id, true).await?;
-                binding::ensure(db, session, config, &row).await?;
+                binding::ensure(db, session, config, &row, &actor).await?;
                 let stored = db
                     .collection::<Action>("mcp_actions")
                     .find_one(doc! {"_id":action.id,"status":"pending"})

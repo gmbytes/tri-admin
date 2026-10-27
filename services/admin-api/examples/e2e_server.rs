@@ -90,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_workers = admin_api::modules::data_tools::retention::start_service(state.clone());
     let export_workers =
         admin_api::modules::data_tools::export_jobs::worker::start_service(state.clone());
+    let mcp_workers = admin_api::modules::mcp::service::start_service(state.clone());
     let shutdown_state = state.clone();
     let worker_state = state.clone();
     let result=axum::serve(listener,build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async move{
@@ -97,13 +98,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_api::modules::files::jobs::stop_service(&shutdown_state);
         admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
         admin_api::modules::data_tools::export_jobs::worker::stop_service(&shutdown_state);
+        admin_api::modules::mcp::service::stop_service(&shutdown_state);
     }).await;
     admin_api::modules::files::jobs::stop_service(&worker_state);
     admin_api::modules::data_tools::retention::stop_service(&worker_state);
     admin_api::modules::data_tools::export_jobs::worker::stop_service(&worker_state);
+    admin_api::modules::mcp::service::stop_service(&worker_state);
     let _ = workers.await;
     let _ = data_workers.await;
     let _ = export_workers.await;
+    let _ = mcp_workers.await;
+    admin_api::modules::mcp::service::shutdown(&worker_state).await;
     if let Some(stop) = resource_stop {
         let _ = stop.send(());
     }

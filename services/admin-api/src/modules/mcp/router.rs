@@ -19,6 +19,7 @@ crate::api_routes! {
  prefix "";
  post "/api/v1/mcp/server"=>protocol,"mcp.server.request","mcp","MCP 后台业务工具协议",Permission,&["mcp.read"],"现代无会话协议；每次调用还要求 mcp.invoke 和对应业务权限/Scope";
  get "/api/v1/mcp/capabilities"=>capabilities,"mcp.capabilities.list","mcp","部署批准的 MCP 程序能力",Permission,&["mcp.read"];
+ get "/api/v1/mcp/plugin-capabilities"=>plugin_capabilities,"mcp.pluginCapabilities.list","mcp","当前范围的插件 MCP 来源",Permission,&["mcp.read","skills.read"];
  get "/api/v1/mcp/connections"=>connections,"mcp.connections.list","mcp","MCP 连接列表",Permission,&["mcp.read"];
  post "/api/v1/mcp/connections"=>create,"mcp.connections.create","mcp","创建 MCP 连接",Permission,&["mcp.read","mcp.write"];
  get "/api/v1/mcp/connections/by-request/{requestId}"=>connection_request,"mcp.connections.byRequest","mcp","按本人请求查询连接",Permission,&["mcp.read"];
@@ -92,6 +93,15 @@ async fn connections(
 ) -> Result<Page<ConnectionView>, AppError> {
     read(&context)?;
     service::connections(&state, &context, query(input)?).await
+}
+async fn plugin_capabilities(
+    State(state): State<AppState>,
+    context: AuthContext,
+    input: Result<Query<PageInput>, QueryRejection>,
+) -> Result<Page<crate::modules::extensions::programs::PluginCapabilityView>, AppError> {
+    read(&context)?;
+    context.require("skills.read")?;
+    crate::modules::extensions::programs::list(&state, &context, query(input)?).await
 }
 async fn create(
     State(state): State<AppState>,

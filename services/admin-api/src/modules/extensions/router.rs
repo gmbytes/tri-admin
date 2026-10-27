@@ -124,13 +124,7 @@ async fn toggle(
     write(&context)?;
     let input = request::json::<Toggle>(body, &state).await?;
     Ok(ApiResponse::success(
-        service::toggle(
-            state.require_database()?,
-            &context,
-            validation::object_id(&id)?,
-            input,
-        )
-        .await?,
+        service::toggle(&state, &context, validation::object_id(&id)?, input).await?,
     ))
 }
 async fn uninstall(

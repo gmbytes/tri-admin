@@ -61,7 +61,9 @@ Read the reference before preparing a record.
 
 工具绑定包含 name、description、operation、对象 inputSchema 和 mappings。operation 只接受已实现的参数、字典/明细和代码生成业务工具；mappings 的键是目标字段，值是已声明的输入属性字面名称，不解释路径或表达式。create/update 的平面字段由显式适配器放入原处理器的 input，路由 id 等字段仍在外层；明细查询的分页字段放入 query。
 
-后端启用验证和实际 MCP 业务工具调用已接入，工具名为 `plugin.<extensionId>.<revisionId>.<toolName>`。更新或停用后旧工具名不转向新内容。发现和执行要求当前 skills.read、MCP 权限、扩展范围及实际业务权限；包说明和工具注解不授予权限。输入 Schema 与原处理器 Schema 都会验证，原业务对数字、字段和版本的限制仍生效。完整 MCP 来源选择及插件管理交互继续实施；含 MCP 贡献的插件目前仍不能启用。
+后端启用验证和实际 MCP 业务工具调用已接入，工具名为 `plugin.<extensionId>.<revisionId>.<toolName>`。更新或停用后旧工具名不转向新内容。发现和执行要求当前 skills.read、MCP 权限、扩展范围及实际业务权限；包说明和工具注解不授予权限。输入 Schema 与原处理器 Schema 都会验证，原业务对数字、字段和版本的限制仍生效。
+
+MCP 贡献启用时必须引用当前部署批准的能力，tools 不能扩大部署白名单。启用不启动程序；在「MCP连接」选择「插件 MCP」后，按当前插件范围分页选择固定修订并显式启动。贡献为空工具子集时不会隐式取得全部工具。插件启停版本和内容修订变化会使旧绑定失效并关闭自身旧进程，重新启用后仍需明确重新绑定；历史结果和未知调用保持原身份。详细步骤见 [MCP 管理说明](mcp-programs.md)。
 
 全部启用业务绑定与 25 项原生工具共用 MCP 128 项、256 KiB、深度 32 和节点 4096 的目录预算，启用超额会明确冲突。Schema 最大 64 KiB；参数映射前后都限制为 64 KiB，防止重复映射放大。Schema 不读取外部引用，支持包内 Schema 的本地引用。安装/启用本身不执行工具。受管 MCP 连接发起的调用继续使用既有 UUID 恢复和结果管理；直接协议调用沿用各业务操作自身的幂等合同，JSON-RPC id 不作为业务 UUID。
 

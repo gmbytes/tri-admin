@@ -289,7 +289,7 @@ pub async fn patch(
                 let capability = if row.transport != input.transport {
                     binding::bind(db, session, config, &input.transport, &actor).await?
                 } else {
-                    binding::resolve(db, session, config, &input.transport).await?
+                    binding::resolve(db, session, config, &input.transport, &actor).await?
                 };
                 row.name = input.name.trim().into();
                 row.transport = input.transport.clone();
@@ -519,7 +519,8 @@ pub async fn submit_action(
                     if !row.enabled {
                         return Err(fail(Failure::Conflict("连接已停用")));
                     }
-                    let capability = binding::ensure(db, session, &state.config, &row).await?;
+                    let capability =
+                        binding::ensure(db, session, &state.config, &row, &actor).await?;
                     Some(capability)
                 } else {
                     None
@@ -696,7 +697,7 @@ async fn submit_refresh(
                 if row.version != input.version || !row.enabled || row.control_action_id.is_some() {
                     return Err(fail(Failure::Conflict("连接版本或控制状态已改变")));
                 }
-                binding::ensure(db, session, &state.config, &row).await?;
+                binding::ensure(db, session, &state.config, &row, &actor).await?;
                 let current = row
                     .runtime
                     .as_ref()
@@ -831,7 +832,7 @@ pub async fn submit_call(
                 {
                     return Err(fail(Failure::Conflict("当前服务没有可用实例")));
                 }
-                let capability = binding::ensure(db, session, &state.config, &row).await?;
+                let capability = binding::ensure(db, session, &state.config, &row, &actor).await?;
                 if capability.fingerprint() != row.capability_fingerprint
                     || !capability.allowed_tools().contains(&input.name)
                 {

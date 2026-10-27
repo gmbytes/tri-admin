@@ -22,6 +22,7 @@ import {
   type ExtensionOperation,
 } from '../core/extensions'
 import { errorText, dateText } from '../ui'
+import ExtensionContributions from '../components/ExtensionContributions.vue'
 const session = useSession(),
   identity = computed(() => `${session.settings.apiBaseUrl}|${session.user?.id ?? ''}`),
   canWrite = computed(() => session.can('skills.write')),
@@ -995,6 +996,12 @@ onMounted(() => {
         title="当前修订只读，原始内容和历史仍可导出。"
         type="info"
         :closable="false" />
+      <ExtensionContributions
+        v-if="revision"
+        :extension-id="selected.id"
+        :revision-id="revision.id"
+        :package-info="revision.package"
+        :active="selected.enabled && !selected.deletedAt && selected.revisionId === revision.id" />
       <div class="extension-filebar">
         <el-select v-model="filePath" aria-label="修订文件" filterable @change="loadFile"
           ><el-option

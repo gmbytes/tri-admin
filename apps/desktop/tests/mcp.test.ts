@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import {
   parseConnection,
+  parsePluginCapability,
   parseAction,
   parseCapabilities,
   parseTools,
@@ -64,6 +65,53 @@ const action = {
   cancelRequested: false,
 }
 describe('MCP public contracts and recovery', () => {
+  it('validates immutable plugin sources and keeps their physical runtime as STDIO', () => {
+    const transport = {
+      kind: 'plugin',
+      extensionId: id,
+      revisionId: run,
+      contributionId: 'records',
+    }
+    const plugin = {
+      ...connection,
+      transport,
+      runtime: { ...connection.runtime, transportKind: 'stdio', pid: 42 },
+    }
+    expect(parseConnection(plugin).transport).toEqual(transport)
+    expect(() =>
+      parseConnection({ ...plugin, transport: { ...transport, program: 'unapproved' } }),
+    ).toThrow()
+    expect(() =>
+      parseConnection({
+        ...plugin,
+        runtime: { ...plugin.runtime, transportKind: 'http', pid: null },
+      }),
+    ).toThrow()
+    expect(() =>
+      parseConnection({ ...plugin, transport: { ...transport, revisionId: 'old' } }),
+    ).toThrow()
+  })
+  it('reads bounded source metadata without accepting commands or expanding an empty tool subset', () => {
+    const capability = {
+      extensionId: id,
+      extensionName: 'record-plugin',
+      revisionId: run,
+      revision: 1,
+      extensionVersion: 2,
+      contributionId: 'records',
+      label: '记录服务',
+      capabilityId: 'approved-records',
+      allowedTools: [],
+      current: true,
+    }
+    expect(parsePluginCapability(capability).allowedTools).toEqual([])
+    expect(() => parsePluginCapability({ ...capability, environment: {} })).toThrow()
+    expect(() =>
+      parsePluginCapability({ ...capability, allowedTools: ['inspect', 'inspect'] }),
+    ).toThrow()
+    expect(() => parsePluginCapability({ ...capability, extensionVersion: 0 })).toThrow()
+    expect(() => parsePluginCapability({ ...capability, allowedTools: ['x'.repeat(65)] })).toThrow()
+  })
   it('accepts the backend terminal receipts for input requests and remote tasks', () => {
     expect(
       parseAction({ ...action, status: 'inputRequired', resultKind: 'inputRequired' }).status,

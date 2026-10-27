@@ -40,24 +40,24 @@
 **Files:** `services/admin-api/src/modules/extensions/{contributions,service}.rs`, `services/admin-api/src/modules/mcp/server.rs`, `services/admin-api/tests/plugin_tools.rs`, `services/admin-api/src/storage/extensions_schema.rs`。
 
 - [x] 先测试安装默认停用、合法启用与真实参数创建/查询、当前权限/Scope、更新/停用拒绝旧工具、审计失败和并发目录预算，观察原启用冲突失败。
-- [x] 启用时解析核对原 ZIP、编译业务工具，在同一扩展不变量下验证全局发现预算；新增修订仍默认停用。批准 MCP 贡献的验证和激活仍由 Task 3 完成，当前保留其启用限制。
+- [x] 启用时解析核对原 ZIP、编译业务工具，在同一扩展不变量下验证全局发现预算；新增修订仍默认停用。MCP 贡献按 Task 3 校验批准引用。
 - [x] 目录按当前授权过滤；调用精确解析原扩展/修订，提交接受审计后由现有业务处理器执行。处理器不替换原 credential；代码生成继续使用已有 UUID 合同。
-- [x] 6 项真实协议/数据库用例、9 项绑定合同及原有扩展/MCP 服务 14 项通过，严格 workspace/all-targets 检查通过。当前仅完成后端工具绑定，管理界面与整个插件交付仍待 Task 3/4。
+- [x] 6 项真实协议/数据库用例、9 项绑定合同及原有扩展/MCP 服务 14 项通过，严格 workspace/all-targets 检查通过。完整插件验收见 Task 3/4。
 
 ## Task 3：插件 MCP 来源与运行约束
 
 **Files:** `services/admin-api/src/modules/mcp/{dto,binding,runtime,service}.rs`, `services/admin-api/src/storage/mcp_schema.rs`, `services/admin-api/tests/plugin_mcp.rs`。
 
-- [ ] 先测试新来源创建、显式启动/发现/调用、工具子集、版本与范围、停用/更新后的释放和旧 UUID 查询，观察缺失来源失败。
-- [ ] 新 transport plugin 固定 extensionId/revisionId/contributionId，解析为批准 STDIO 能力；指纹包含固定来源和部署配置。启用不自动启动。
-- [ ] 当前授权在绑定/使用时检查，生命周期保存现有实体和审计；后台只停止自身旧资源，实际子进程验证退出。
-- [ ] 显式自身模型升级拒绝旧二进制就绪，保留当前 STDIO/HTTP/历史/密文，运行相关全量回归。
+- [x] 先测试新来源创建、显式启动/发现/调用、工具子集、版本与范围、停用/更新后的释放和旧 UUID 查询，观察缺失来源失败。
+- [x] 新 transport plugin 固定 extensionId/revisionId/contributionId，解析为批准 STDIO 能力；指纹包含固定来源、启停记录版本和部署配置。启用不自动启动，空子集不扩大工具权限。
+- [x] 当前授权在绑定/使用时检查，生命周期保存现有实体和审计；后台只停止自身旧资源，实际子进程验证退出。
+- [x] 显式自身 mcp v4 升级拒绝旧二进制就绪，保留当前 STDIO/HTTP/历史/密文，9 项新用例及相关 37 项回归通过。
 
 ## Task 4：管理界面与完整验收
 
 **Files:** `apps/desktop/src/views/ExtensionsView.vue`, `apps/desktop/src/core/extensions.ts`, `apps/desktop/src/views/McpView.vue`, `apps/desktop/src/core/mcp.ts`, `services/admin-api/src/modules/mcp/router.rs` 及对应 API 目录、docs 与 `tests/e2e` 用例。
 
-- [ ] 提供当前贡献预览/稳定工具名称、MCP 插件来源选择和明确的批准工具/修订显示；不让说明文本成为执行指令。
-- [ ] 真实页面验证启用、显式连接启动与插件工具调用、只读、撤权、版本冲突、响应丢失/未知、停用更新与重启。
-- [ ] 完整 Rust/Node/页面、严格检查、桌面/窄屏核对；实际开发库迁移和只读核验、注销、恢复隐藏服务。原生 GUI 暂停约束继续保留。
-- [ ] 更新 Task 9 B 状态并保存提交；继续 9 C/D、tok 与后续阶段，不在此关闭整个目标。
+- [x] 提供当前贡献预览/稳定工具名称、MCP 插件来源选择和明确的批准工具/修订显示；不让说明文本成为执行指令。
+- [x] 真实页面验证启用、21 条来源搜索/跨页、显式连接启动与插件工具调用、权限限制、冲突、响应丢失单次效果、停用和重新绑定；补充重启更换实例与 PID 的页面验证通过。
+- [x] 完整 Rust 453 项常规、工具 6 项/客户端 122 项、完整页面 76 项通过，12 项专项按原配置保留；严格检查、构建和桌面/窄屏核对通过。实际库升级 mcp v4，维护 0/0/0/0、只读核验注销、API/前端/模块 200。原生 GUI 暂停约束继续保留。
+- [x] 更新 Task 9 B 状态并保存提交；继续 9 C/D、tok 与后续阶段，不在此关闭整个目标。

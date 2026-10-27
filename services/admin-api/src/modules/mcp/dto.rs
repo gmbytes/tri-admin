@@ -10,6 +10,12 @@ pub enum TransportKind {
 #[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Transport {
+    #[serde(rename_all = "camelCase")]
+    Plugin {
+        extension_id: String,
+        revision_id: String,
+        contribution_id: String,
+    },
     Stdio {
         #[serde(rename = "capabilityId")]
         capability_id: String,
@@ -24,7 +30,7 @@ pub enum Transport {
 impl Transport {
     pub fn kind(&self) -> TransportKind {
         match self {
-            Self::Stdio { .. } => TransportKind::Stdio,
+            Self::Stdio { .. } | Self::Plugin { .. } => TransportKind::Stdio,
             Self::Http { .. } => TransportKind::Http,
         }
     }

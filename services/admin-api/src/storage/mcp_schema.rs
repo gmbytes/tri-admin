@@ -7,11 +7,11 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 3;
+pub const VERSION: i32 = 4;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(old) = metadata.find_one(doc! {"_id":"mcp"}).await?
-        && !old.get_i32("version").is_ok_and(|v| matches!(v, 1..=3))
+        && !old.get_i32("version").is_ok_and(|v| matches!(v, 1..=4))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -117,7 +117,8 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         let marker=db.collection::<Document>("_schema_migrations").find_one(doc!{"_id":"mcp"}).session(&mut *session).await?;
         let version=marker.as_ref().map(|row|row.get_i32("version")).transpose().map_err(|_|fail(Failure::NotReady))?;
         if version==Some(VERSION){return Ok(())}
-        if version.is_some_and(|v|v!=1&&v!=2){return Err(fail(Failure::NotReady))}
+        if version.is_some_and(|v|!(1..=3).contains(&v)){return Err(fail(Failure::NotReady))}
+        if matches!(version,Some(2|3)) && db.collection::<Document>("mcp_connections").count_documents(doc!{"transport.kind":{"$nin":["stdio","http"]}}).session(&mut *session).await?>0{return Err(fail(Failure::NotReady))}
         if version==Some(1){
             if db.collection::<Document>("mcp_connections").count_documents(doc!{"$or":[{"transport.kind":{"$ne":"stdio"}},{"runtime":{"$type":"object"},"runtime.exitConfirmed":{"$not":{"$type":"bool"}}}]}).session(&mut *session).await?>0
                 || db.collection::<Document>("mcp_instances").count_documents(doc!{"exitConfirmed":{"$not":{"$type":"bool"}}}).session(&mut *session).await?>0{return Err(fail(Failure::NotReady))}

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import {
   parseExtension,
+  pluginToolName,
   parseRevision,
   parseConstraints,
   parsePreview,
@@ -66,6 +67,42 @@ const revision = {
   createdAt: date,
 }
 describe('extension public models and recovery', () => {
+  const pluginInfo = {
+    ...info,
+    kind: 'plugin',
+    name: 'record-plugin',
+    version: '1.0.0',
+    skills: [],
+    files: [{ ...info.files[0], path: 'tri-plugin.json' }],
+    mcp: [
+      { id: 'records', label: 'Records', capabilityId: 'approved-records', tools: ['inspect'] },
+    ],
+    tools: [
+      {
+        name: 'lookup',
+        description: 'Search',
+        operation: 'parameters.list',
+        inputSchema: { type: 'object', properties: { prefix: { type: 'string' } } },
+        mappings: { search: 'prefix' },
+      },
+    ],
+  }
+  const plugin = { ...extension, name: 'record-plugin', kind: 'plugin', package: pluginInfo }
+  it('builds immutable protocol names from validated extension and revision identities', () => {
+    expect(pluginToolName(id, revisionId, 'lookup')).toBe(`plugin.${id}.${revisionId}.lookup`)
+    expect(parseExtension(plugin).package.tools[0]?.operation).toBe('parameters.list')
+    expect(() => pluginToolName(id, 'old', 'lookup')).toThrow()
+    expect(() => pluginToolName(id, revisionId, 'lookup/name')).toThrow()
+  })
+  it('rejects ambiguous contribution names and duplicate tool declarations before rendering them', () => {
+    for (const value of [
+      { ...pluginInfo, mcp: [...pluginInfo.mcp, ...pluginInfo.mcp] },
+      { ...pluginInfo, mcp: [{ ...pluginInfo.mcp[0], tools: ['inspect', 'inspect'] }] },
+      { ...pluginInfo, tools: [...pluginInfo.tools, ...pluginInfo.tools] },
+      { ...pluginInfo, tools: [{ ...pluginInfo.tools[0], name: 'not an identifier' }] },
+    ])
+      expect(() => parseExtension({ ...plugin, package: value })).toThrow()
+  })
   it('rejects malformed private and ambiguous package metadata', () => {
     expect(parseExtension(extension).package.files[0]?.path).toBe('SKILL.md')
     expect(parseRevision(revision).requestId).toBe(uuid)

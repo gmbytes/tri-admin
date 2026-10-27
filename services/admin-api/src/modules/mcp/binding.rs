@@ -8,6 +8,7 @@ use crate::{
     },
     config::Config,
     modules::{
+        extensions::programs::{self, PluginProgram, Reference},
         rbac::shared::{self, Actor},
         settings::{models::Profile, service},
     },
@@ -25,6 +26,7 @@ use tri_mcp_runtime::session::Limits;
 pub(super) enum Binding {
     Stdio(Capability),
     Http(HttpBinding),
+    Plugin(PluginProgram),
 }
 #[derive(Clone)]
 pub(super) struct HttpBinding {
@@ -37,11 +39,13 @@ impl Binding {
         match self {
             Self::Stdio(v) => v.fingerprint(),
             Self::Http(v) => v.fingerprint.clone(),
+            Self::Plugin(v) => v.fingerprint.clone(),
         }
     }
     pub fn allowed_tools(&self) -> &[String] {
         match self {
             Self::Stdio(v) => &v.allowed_tools,
+            Self::Plugin(v) => &v.capability.allowed_tools,
             Self::Http(v) => match &v.transport {
                 Transport::Http { allowed_tools, .. } => allowed_tools,
                 _ => unreachable!(),
@@ -101,8 +105,20 @@ pub(super) async fn resolve(
     session: &mut ClientSession,
     config: &Config,
     transport: &Transport,
+    actor: &Actor,
 ) -> mongodb::error::Result<Binding> {
     match transport {
+        Transport::Plugin {
+            extension_id,
+            revision_id,
+            contribution_id,
+        } => {
+            let reference = Reference::parse(extension_id, revision_id, contribution_id)
+                .map_err(programs::transaction_error)?;
+            programs::resolve_tx(db, session, config, &reference, actor)
+                .await
+                .map(Binding::Plugin)
+        }
         Transport::Stdio { capability_id } => config
             .mcp_programs
             .get(capability_id)
@@ -136,10 +152,23 @@ pub(super) async fn bind(
         }
         shared::lock(db, "settings", session).await?;
     }
-    resolve(db, session, config, transport).await
+    resolve(db, session, config, transport, actor).await
 }
 pub(super) async fn current(state: &AppState, row: &Connection) -> bool {
     match &row.transport {
+        Transport::Plugin {
+            extension_id,
+            revision_id,
+            contribution_id,
+        } => {
+            let Ok(reference) = Reference::parse(extension_id, revision_id, contribution_id) else {
+                return false;
+            };
+            let Ok(db) = state.require_database() else {
+                return false;
+            };
+            programs::current(db, &state.config, &reference, &row.capability_fingerprint).await
+        }
         Transport::Stdio { capability_id } => state
             .config
             .mcp_programs
@@ -215,10 +244,30 @@ pub(super) async fn ensure(
     session: &mut ClientSession,
     config: &Config,
     row: &Connection,
+    actor: &Actor,
 ) -> mongodb::error::Result<Binding> {
-    let binding = resolve(db, session, config, &row.transport).await?;
+    let binding = resolve(db, session, config, &row.transport, actor).await?;
     if binding.fingerprint() != row.capability_fingerprint {
         return Err(fail(Failure::Conflict("MCP 配置已改变，请重新确认绑定")));
     }
     Ok(binding)
+}
+pub(super) async fn plugin_current_tx(
+    db: &Database,
+    session: &mut ClientSession,
+    config: &Config,
+    transport: &Transport,
+    expected: &str,
+) -> mongodb::error::Result<bool> {
+    let Transport::Plugin {
+        extension_id,
+        revision_id,
+        contribution_id,
+    } = transport
+    else {
+        return Ok(true);
+    };
+    let reference = Reference::parse(extension_id, revision_id, contribution_id)
+        .map_err(programs::transaction_error)?;
+    programs::current_tx(db, session, config, &reference, expected).await
 }

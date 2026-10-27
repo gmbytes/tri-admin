@@ -10,6 +10,7 @@ export default async function setup() {
   await mkdir(root, { recursive: true })
   const directory = await mkdtemp(join(root, 'run-')),
     passwordFile = join(directory, 'password'),
+    programsFile = join(directory, 'programs.json'),
     metadata = join(directory, 'server.json')
   await writeFile(passwordFile, randomBytes(24).toString('hex'), { mode: 0o600 })
   const log = openSync(join(directory, 'server.log'), 'w')
@@ -27,6 +28,8 @@ export default async function setup() {
     TRI_SETTINGS_KEYS: `fixture:${randomBytes(32).toString('hex')}`,
     TRI_SETTINGS_ACTIVE_KEY: 'fixture',
     TRI_STORAGE_ROOT: join(directory, 'storage'),
+    TRI_MCP_PROGRAMS_FILE: programsFile,
+    TRI_MCP_ALLOWED_HOSTS: '127.0.0.1,localhost',
     ...(generated
       ? {
           TRI_E2E_RESOURCE_SCHEMA_FILE: generated.schemaPath,
@@ -35,16 +38,45 @@ export default async function setup() {
         }
       : {}),
   }
-  const build = spawnSync('cargo', ['build', '-p', 'admin-api', '--example', 'e2e_server'], {
-    env: environment,
-    windowsHide: true,
-    stdio: ['ignore', log, log],
-  })
+  const build = spawnSync(
+    'cargo',
+    ['build', '-p', 'admin-api', '--example', 'e2e_server', '--bin', 'tri-admin-mcp-test-peer'],
+    {
+      env: environment,
+      windowsHide: true,
+      stdio: ['ignore', log, log],
+    },
+  )
   if (build.status !== 0) {
     await generated?.close()
     closeSync(log)
     throw new Error('UI 测试服务编译失败，日志：' + directory)
   }
+  const peerDirectory = join(directory, 'mcp-records')
+  await mkdir(peerDirectory)
+  await writeFile(
+    programsFile,
+    JSON.stringify({
+      formatVersion: 1,
+      programs: [
+        {
+          id: 'e2e-records',
+          label: '受控 E2E 记录服务',
+          program: resolve(
+            'target/debug/tri-admin-mcp-test-peer' + (process.platform === 'win32' ? '.exe' : ''),
+          ),
+          arguments: ['normal', peerDirectory],
+          workingDirectory: peerDirectory,
+          environment: process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot } : {},
+          allowedTools: ['increment', 'inspect', 'effect_then_wait'],
+          startupTimeoutMs: 5000,
+          requestTimeoutMs: 5000,
+          stopTimeoutMs: 3000,
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  )
   const executable = resolve(
     'target/debug/examples/e2e_server' + (process.platform === 'win32' ? '.exe' : ''),
   )
