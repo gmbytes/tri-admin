@@ -26,6 +26,7 @@ cargo run -p admin-api -- serve
 开发环境工具不覆盖已有 `.env`。升级已有工程时，`dev:settings-key` 仅补充缺失的独立配置加密密钥，不打印密钥或改动已有 JWT/数据库凭据。生产环境独立提供密钥环并安全备份，不能使用示例占位符。
 
 - [配置中心与凭据规则](docs/design-settings.md)
+- [MCP 连接与工具管理](docs/mcp-programs.md)
 
 以具有 `settings.read` 权限的账号打开“配置中心”，可查看服务设置、集成配置和启动状态；`settings.write` 允许修改和检查连接。新增集成默认停用，填写完成后显式启用；凭据只能替换或清除，不能读回。升级到当前版本后先运行 `cargo run -p admin-api -- migrate`，再启动服务并重新登录以读取新增菜单。
 

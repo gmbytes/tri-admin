@@ -7,11 +7,11 @@ use mongodb::{
     error::ErrorKind,
     options::IndexOptions,
 };
-pub const VERSION: i32 = 2;
+pub const VERSION: i32 = 3;
 pub async fn migrate(database: &Database) -> Result<(), AppError> {
     let metadata = database.collection::<Document>("_schema_migrations");
     if let Some(old) = metadata.find_one(doc! {"_id":"mcp"}).await?
-        && !old.get_i32("version").is_ok_and(|v| v == 1 || v == VERSION)
+        && !old.get_i32("version").is_ok_and(|v| matches!(v, 1..=3))
     {
         return Err(AppError::SchemaMismatch);
     }
@@ -112,18 +112,23 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .upsert(true)
         .await?;
     transaction::run(database,database.clone(),|session,db|async move{
+        crate::modules::rbac::shared::lock(db,"rbac",session).await?;
         crate::modules::rbac::shared::lock(db,"mcp",session).await?;
         let marker=db.collection::<Document>("_schema_migrations").find_one(doc!{"_id":"mcp"}).session(&mut *session).await?;
         let version=marker.as_ref().map(|row|row.get_i32("version")).transpose().map_err(|_|fail(Failure::NotReady))?;
         if version==Some(VERSION){return Ok(())}
-        if version.is_some_and(|v|v!=1){return Err(fail(Failure::NotReady))}
+        if version.is_some_and(|v|v!=1&&v!=2){return Err(fail(Failure::NotReady))}
         if version==Some(1){
             if db.collection::<Document>("mcp_connections").count_documents(doc!{"$or":[{"transport.kind":{"$ne":"stdio"}},{"runtime":{"$type":"object"},"runtime.exitConfirmed":{"$not":{"$type":"bool"}}}]}).session(&mut *session).await?>0
                 || db.collection::<Document>("mcp_instances").count_documents(doc!{"exitConfirmed":{"$not":{"$type":"bool"}}}).session(&mut *session).await?>0{return Err(fail(Failure::NotReady))}
             db.collection::<Document>("mcp_connections").update_many(doc!{"runtime":{"$type":"object"}},doc!{"$rename":{"runtime.exitConfirmed":"runtime.releaseConfirmed"},"$set":{"runtime.transportKind":"stdio"}}).session(&mut *session).await?;
             db.collection::<Document>("mcp_instances").update_many(doc!{},doc!{"$rename":{"exitConfirmed":"releaseConfirmed"},"$set":{"transportKind":"stdio"}}).session(&mut *session).await?;
-        }else{
+        }else if version.is_none(){
             for collection in ["mcp_connections","mcp_instances","mcp_actions","mcp_results"]{if db.collection::<Document>(collection).count_documents(doc!{}).session(&mut *session).await?>0{return Err(fail(Failure::NotReady))}}
+        }
+        if db.collection::<Document>("menus").find_one(doc!{"path":"/mcp"}).session(&mut *session).await?.is_none(){
+            use sha2::{Digest,Sha256};let hash=Sha256::digest("tri-admin:menu:/mcp");let mut bytes=[0;12];bytes.copy_from_slice(&hash[..12]);let id=mongodb::bson::oid::ObjectId::from_bytes(bytes);let now=DateTime::now();
+            db.collection::<Document>("menus").update_one(doc!{"_id":id},doc!{"$setOnInsert":{"label":"MCP连接","path":"/mcp","viewKey":"mcp","permission":"mcp.read","icon":null,"parentId":null,"sort":160i32,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}}).upsert(true).session(&mut *session).await?;
         }
         db.collection::<Document>("_schema_migrations").update_one(doc!{"_id":"mcp"},doc!{"$set":{"version":VERSION,"updatedAt":DateTime::now()},"$setOnInsert":{"createdAt":DateTime::now()}}).upsert(true).session(session).await?;
         Ok(())

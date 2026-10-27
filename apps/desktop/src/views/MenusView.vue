@@ -36,6 +36,7 @@ const views = [
   { value: 'parameters', label: '参数管理' },
   { value: 'versions', label: '版本管理' },
   { value: 'audit', label: '日志中心' },
+  { value: 'mcp', label: 'MCP连接' },
 ]
 function tree(items: MenuRecord[], parent: string | null = null): MenuRecord[] {
   return items

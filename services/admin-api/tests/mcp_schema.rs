@@ -52,7 +52,7 @@ async fn own_v1_upgrade_preserves_stdio_identity_history_and_sealed_results() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(marker.get_i32("version").unwrap(), 2);
+    assert_eq!(marker.get_i32("version").unwrap(), 3);
     let row = db
         .collection::<Document>("mcp_connections")
         .find_one(doc! {"_id":connection})

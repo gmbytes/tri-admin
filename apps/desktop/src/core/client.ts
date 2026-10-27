@@ -1,4 +1,5 @@
 import { normalizeEndpoint } from './endpoint'
+import { buildCallDocument } from './mcp'
 import type { Envelope, TokenResponse, UserSummary } from './types'
 import { readConfigurationDownload, type ConfigurationDownload } from './configuration'
 import {
@@ -36,6 +37,7 @@ interface RequestOptions {
   signal?: AbortSignal
 }
 interface TransportOptions extends RequestOptions {
+  document?: string
   chunk?: { body: Blob; sha256: string }
   timeoutMs?: number
 }
@@ -183,13 +185,14 @@ export class ApiClient {
         headers: {
           ...(options.chunk
             ? { 'content-type': 'application/octet-stream', 'x-chunk-sha256': options.chunk.sha256 }
-            : options.body !== undefined
+            : options.body !== undefined || options.document !== undefined
               ? { 'content-type': 'application/json' }
               : {}),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
         },
         body:
           options.chunk?.body ??
+          options.document ??
           (options.body !== undefined ? JSON.stringify(options.body) : undefined),
         signal,
         credentials: 'omit',
@@ -323,6 +326,28 @@ export class ApiClient {
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
     return this.authorized<T>(path, options)
+  }
+  async callMcpTool<T>(
+    connectionId: string,
+    requestId: string,
+    version: number,
+    name: string,
+    argumentsJson: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<Envelope<T>> {
+    if (!/^[a-f0-9]{24}$/.test(connectionId))
+      throw new ApiError('INVALID_MCP_REQUEST', 'MCP 连接标识无效')
+    let document: string
+    try {
+      document = buildCallDocument(requestId, version, name, argumentsJson)
+    } catch {
+      throw new ApiError('INVALID_MCP_REQUEST', 'MCP 工具参数或请求标识无效')
+    }
+    return this.authorized<T>(`/mcp/connections/${connectionId}/calls`, {
+      method: 'POST',
+      document,
+      signal: options.signal,
+    })
   }
 
   async putChunk<T = unknown>(

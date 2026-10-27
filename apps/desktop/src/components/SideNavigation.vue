@@ -10,6 +10,7 @@ import {
   Lock,
   FolderOpened,
   Sort,
+  Connection,
 } from '@element-plus/icons-vue'
 import type { MenuRecord } from '../core/types'
 defineOptions({ name: 'SideNavigation' })
@@ -30,6 +31,7 @@ const icons: Record<string, unknown> = {
   permissions: Lock,
   files: FolderOpened,
   exports: Sort,
+  mcp: Connection,
 }
 </script>
 <template>

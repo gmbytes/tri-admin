@@ -53,6 +53,74 @@ function tokens(accessToken = 'old-access', refreshToken = 'a'.repeat(64)) {
 }
 
 describe('new API session client', () => {
+  it('sends exact MCP argument documents through one authentication refresh without changing request identity', async () => {
+    const id = '111111111111111111111111',
+      uuid = '00000000-0000-4000-8000-000000000001',
+      documents: string[] = [],
+      proofs: string[] = []
+    let effects = 0,
+      refreshes = 0
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      if (req.url?.endsWith('/refresh')) {
+        refreshes++
+        return send(res, 200, tokens('new-access'))
+      }
+      if (req.url?.endsWith(`/mcp/connections/${id}/calls`)) {
+        let body = ''
+        req.on('data', (chunk) => {
+          body += chunk
+        })
+        req.on('end', () => {
+          documents.push(body)
+          proofs.push(req.headers.authorization ?? '')
+          expect(req.headers['content-type']).toBe('application/json')
+          if (req.headers.authorization === 'Bearer old-access')
+            return send(res, 401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } })
+          effects++
+          send(res, 202, { data: { id: 'accepted' } })
+        })
+        return
+      }
+      send(res, 404, { error: { code: 'NOT_FOUND', message: 'missing' } })
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'fixture', false)
+    const raw = '{"playerId":18446744073709551615,"requestId":"nested"}'
+    const result = await client.callMcpTool<{ id: string }>(id, uuid, 2, 'increment', raw)
+    expect(result.data.id).toBe('accepted')
+    expect(documents).toEqual([
+      `{"requestId":"${uuid}","version":2,"name":"increment","arguments":${raw}}`,
+      `{"requestId":"${uuid}","version":2,"name":"increment","arguments":${raw}}`,
+    ])
+    expect(proofs).toEqual(['Bearer old-access', 'Bearer new-access'])
+    expect(refreshes).toBe(1)
+    expect(effects).toBe(1)
+    await expect(client.callMcpTool('../foreign', uuid, 2, 'increment', '{}')).rejects.toThrow()
+    await expect(client.callMcpTool(id, uuid, 2, 'increment', '[]')).rejects.toThrow()
+    expect(documents).toHaveLength(2)
+  })
+  it('does not resend an MCP call when the transport loses the response after the effect', async () => {
+    let effects = 0
+    const endpoint = await server((req, res) => {
+      if (req.url?.endsWith('/login')) return send(res, 200, tokens())
+      effects++
+      req.resume()
+      req.on('end', () => req.socket.destroy())
+    })
+    const client = new ApiClient({ endpoint, vault: vault() })
+    await client.login('admin', 'fixture', false)
+    await expect(
+      client.callMcpTool(
+        '111111111111111111111111',
+        '00000000-0000-4000-8000-000000000001',
+        2,
+        'increment',
+        '{}',
+      ),
+    ).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
+    expect(effects).toBe(1)
+  })
   it('downloads a verified configuration package through the same single refresh as JSON requests', async () => {
     let refreshes = 0
     const bytes = Buffer.from('{"format":"tri-admin/config-bundle","schemaVersion":1}')

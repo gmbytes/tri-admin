@@ -88,7 +88,7 @@ async fn capabilities(
 async fn connections(
     State(state): State<AppState>,
     context: AuthContext,
-    input: Result<Query<PageInput>, QueryRejection>,
+    input: Result<Query<List>, QueryRejection>,
 ) -> Result<Page<ConnectionView>, AppError> {
     read(&context)?;
     service::connections(&state, &context, query(input)?).await

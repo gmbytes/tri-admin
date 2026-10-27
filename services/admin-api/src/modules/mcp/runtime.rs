@@ -703,6 +703,112 @@ pub(super) fn launch_call(
         }
     });
 }
+async fn refresh_access(
+    db: &Database,
+    config: &Config,
+    context: &AuthContext,
+    action: &Action,
+    service: &str,
+    tools: Option<Vec<Value>>,
+) -> Result<(), AppError> {
+    transaction::run(db,(db.clone(),config.clone(),context.clone(),action.clone(),service.to_owned(),tools),|session,(db,config,context,action,service,tools)|async move{
+        let actor=owned::fresh(db,session,context,policy("mcp.write"),true).await?;
+        let row=connection_tx(db,session,&actor,action.connection_id,true).await?;
+        let binding=binding::ensure(db,session,config,&row).await?;
+        if !row.enabled || row.version!=action.connection_version || row.control_action_id!=Some(action.id) || row.runtime.as_ref().is_none_or(|runtime|Some(runtime.id)!=action.instance_id || runtime.service_id!=*service || runtime.state!="running" || runtime.release_confirmed || runtime.lease_until<DateTime::now()){return Err(fail(Failure::Conflict("工具刷新实例已改变")))}
+        let stored=db.collection::<Action>("mcp_actions").find_one(doc!{"_id":action.id,"status":{"$in":["pending","running"]},"cancelRequested":false}).session(&mut *session).await?.ok_or_else(||fail(Failure::Conflict("工具刷新操作已改变")))?;
+        let Some(tools)=tools else{db.collection::<Document>("mcp_actions").update_one(doc!{"_id":stored.id},doc!{"$set":{"status":"running"}}).session(session).await?;return Ok(())};
+        let tools=tools.iter().filter(|tool|tool["name"].as_str().is_some_and(|name|binding.allowed_tools().iter().any(|allowed|allowed==name))).cloned().collect::<Vec<_>>();
+        let json=serde_json::to_string(&tools).map_err(|_|fail(Failure::NotReady))?;let now=DateTime::now();
+        let updated=db.collection::<Document>("mcp_instances").update_one(doc!{"_id":action.instance_id,"serviceId":&*service,"state":"running","releaseConfirmed":false,"leaseUntil":{"$gt":now}},doc!{"$set":{"toolsJson":json,"updatedAt":now}}).session(&mut *session).await?;
+        if updated.matched_count!=1{return Err(fail(Failure::Conflict("工具刷新实例已释放")))}
+        db.collection::<Document>("mcp_connections").update_one(doc!{"_id":row.id,"controlActionId":action.id},doc!{"$set":{"controlActionId":null,"runtime.updatedAt":now,"updatedAt":now}}).session(&mut *session).await?;
+        db.collection::<Document>("mcp_actions").update_one(doc!{"_id":action.id},doc!{"$set":{"status":"succeeded","finishedAt":now}}).session(&mut *session).await?;
+        shared::audit(db,&actor,"mcp.tools.refresh",action.instance_id.unwrap(),session).await
+    }.boxed()).await
+}
+pub(super) fn launch_refresh(state: &AppState, context: AuthContext, action: Action) {
+    let db = state.database.as_ref().unwrap().clone();
+    let config = state.config.clone();
+    let service = state.mcp.service_id.clone();
+    let entry = action.instance_id.and_then(|id| state.mcp.get(id));
+    tokio::spawn(async move {
+        let Some(entry) = entry else {
+            finish_retry(
+                &db,
+                &config,
+                &action,
+                "failed",
+                Some("INSTANCE_UNAVAILABLE_BEFORE_SEND"),
+                None,
+            )
+            .await;
+            return;
+        };
+        let Some(client) = entry.client.read().await.clone() else {
+            finish_retry(
+                &db,
+                &config,
+                &action,
+                "failed",
+                Some("INSTANCE_UNAVAILABLE_BEFORE_SEND"),
+                None,
+            )
+            .await;
+            return;
+        };
+        let cancel = entry.stop.child_token();
+        entry
+            .calls
+            .lock()
+            .unwrap_or_else(|value| value.into_inner())
+            .insert(action.id, cancel.clone());
+        let result = if refresh_access(&db, &config, &context, &action, &service, None)
+            .await
+            .is_err()
+        {
+            Err(None)
+        } else {
+            match client.tools(cancel).await {
+                Ok(tools) => refresh_access(&db, &config, &context, &action, &service, Some(tools))
+                    .await
+                    .map_err(|_| None),
+                Err(error) => Err(Some(error)),
+            }
+        };
+        entry
+            .calls
+            .lock()
+            .unwrap_or_else(|value| value.into_inner())
+            .remove(&action.id);
+        if let Err(error) = result {
+            let status = match &error {
+                Some(
+                    RuntimeError::CancelledUnknown
+                    | RuntimeError::TimeoutUnknown
+                    | RuntimeError::TransportUnknown
+                    | RuntimeError::RemoteUnknown { .. },
+                ) => "unknown",
+                _ if entry.stop.is_cancelled() => "cancelled",
+                _ => "failed",
+            };
+            finish_retry(
+                &db,
+                &config,
+                &action,
+                status,
+                Some(
+                    error
+                        .as_ref()
+                        .map(code)
+                        .unwrap_or("REFRESH_COMMIT_REJECTED"),
+                ),
+                None,
+            )
+            .await;
+        }
+    });
+}
 async fn authorize_call(
     db: &Database,
     config: &Config,

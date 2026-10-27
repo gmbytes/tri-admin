@@ -161,6 +161,17 @@ export const useSession = defineStore('session', () => {
     await client?.clearSession()
     settings.value.rememberSession = false
   }
+  async function callMcpTool<T>(
+    connectionId: string,
+    requestId: string,
+    version: number,
+    name: string,
+    argumentsJson: string,
+    options: { signal?: AbortSignal } = {},
+  ) {
+    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
+    return client.callMcpTool<T>(connectionId, requestId, version, name, argumentsJson, options)
+  }
   async function downloadConfiguration(path: string) {
     if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
     return client.downloadConfiguration(path)
@@ -219,6 +230,7 @@ export const useSession = defineStore('session', () => {
     logout,
     changeServer,
     request,
+    callMcpTool,
     downloadConfiguration,
     putChunk,
     downloadFile,

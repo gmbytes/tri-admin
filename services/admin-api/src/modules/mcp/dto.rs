@@ -52,6 +52,7 @@ pub enum ActionKind {
     Start,
     Stop,
     Restart,
+    Refresh,
 }
 impl ActionKind {
     pub fn code(&self) -> &'static str {
@@ -59,6 +60,42 @@ impl ActionKind {
             Self::Start => "start",
             Self::Stop => "stop",
             Self::Restart => "restart",
+            Self::Refresh => "refresh",
+        }
+    }
+}
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Status {
+    #[default]
+    Active,
+    Deleted,
+}
+fn first() -> u64 {
+    1
+}
+fn size() -> u64 {
+    20
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct List {
+    #[serde(default = "first")]
+    pub page: u64,
+    #[serde(default = "size")]
+    pub page_size: u64,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    #[serde(default)]
+    pub status: Status,
+}
+impl List {
+    pub fn page(&self) -> crate::common::pagination::PageInput {
+        crate::common::pagination::PageInput {
+            page: self.page,
+            page_size: self.page_size,
+            search: self.search.clone(),
+            sort: self.sort.clone(),
         }
     }
 }

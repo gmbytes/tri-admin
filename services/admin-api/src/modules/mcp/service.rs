@@ -225,7 +225,7 @@ pub async fn get(
         |session, (db, context)| {
             async move {
                 let actor = owned::fresh(db, session, context, policy("mcp.write"), false).await?;
-                connection_tx(db, session, &actor, id, true).await
+                connection_tx(db, session, &actor, id, false).await
             }
             .boxed()
         },
@@ -347,9 +347,13 @@ async fn page<T: DeserializeOwned + Send>(
 pub async fn connections(
     state: &AppState,
     context: &AuthContext,
-    input: PageInput,
+    query: dto::List,
 ) -> Result<Page<ConnectionView>, AppError> {
-    let mut filter = doc! {"deletedAt":null};
+    let input = query.page();
+    let mut filter = match query.status {
+        dto::Status::Active => doc! {"deletedAt":null},
+        dto::Status::Deleted => doc! {"deletedAt":{"$ne":null}},
+    };
     if let Some(search) = input.search.as_deref().filter(|v| !v.trim().is_empty()) {
         filter.insert("name", doc! {"$regex":escaped_prefix(search.trim())});
     }
@@ -471,6 +475,9 @@ pub async fn submit_action(
     id: ObjectId,
     input: ActionInput,
 ) -> Result<(ActionView, bool), AppError> {
+    if matches!(input.kind, ActionKind::Refresh) {
+        return submit_refresh(state, context, id, input).await;
+    }
     dto::request_id(&input.request_id)?;
     dto::version(input.version)?;
     let fp = fingerprint(input.kind.code(), Some(id), &input)?;
@@ -664,6 +671,74 @@ pub async fn submit_action(
         );
     }
     Ok((result.view()?, created))
+}
+async fn submit_refresh(
+    state: &AppState,
+    context: &AuthContext,
+    id: ObjectId,
+    input: ActionInput,
+) -> Result<(ActionView, bool), AppError> {
+    dto::request_id(&input.request_id)?;
+    dto::version(input.version)?;
+    let fp = fingerprint("refresh", Some(id), &input)?;
+    let db = state.require_database()?;
+    let action_id = ObjectId::new();
+    let (action, created) = transaction::run(
+        db,
+        (db.clone(), context.clone(), state.clone(), input, fp),
+        |session, (db, context, state, input, fp)| {
+            async move {
+                let actor = owned::fresh(db, session, context, policy("mcp.write"), true).await?;
+                if let Some(old) = replay_tx(db, session, &actor, &input.request_id, fp).await? {
+                    return Ok((old, false));
+                }
+                let mut row = connection_tx(db, session, &actor, id, true).await?;
+                if row.version != input.version || !row.enabled || row.control_action_id.is_some() {
+                    return Err(fail(Failure::Conflict("连接版本或控制状态已改变")));
+                }
+                binding::ensure(db, session, &state.config, &row).await?;
+                let current = row
+                    .runtime
+                    .as_ref()
+                    .ok_or_else(|| fail(Failure::Conflict("连接尚未运行")))?;
+                if current.state != "running"
+                    || current.release_confirmed
+                    || current.service_id != state.mcp.service_id
+                    || current.lease_until < DateTime::now()
+                    || state.mcp.get(current.id).is_none()
+                {
+                    return Err(fail(Failure::Conflict("当前服务没有可刷新实例")));
+                }
+                let action = new_action(
+                    &actor,
+                    &row,
+                    action_id,
+                    &input.request_id,
+                    fp,
+                    "refresh",
+                    Some(current.id),
+                );
+                row.control_action_id = Some(action_id);
+                row.updated_at = DateTime::now();
+                db.collection::<Connection>("mcp_connections")
+                    .replace_one(doc! {"_id":id,"version":input.version}, &row)
+                    .session(&mut *session)
+                    .await?;
+                db.collection::<Action>("mcp_actions")
+                    .insert_one(&action)
+                    .session(&mut *session)
+                    .await?;
+                shared::audit(db, &actor, "mcp.refresh", id, session).await?;
+                Ok((action, true))
+            }
+            .boxed()
+        },
+    )
+    .await?;
+    if created {
+        runtime::launch_refresh(state, context.clone(), action.clone());
+    }
+    Ok((action.view()?, created))
 }
 pub async fn tools(
     state: &AppState,

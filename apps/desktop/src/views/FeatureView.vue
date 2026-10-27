@@ -21,6 +21,7 @@ const views: Record<string, unknown> = {
   apps: defineAsyncComponent(() => import('./ApplicationsView.vue')),
   codegen: defineAsyncComponent(() => import('./CodegenView.vue')),
   skills: defineAsyncComponent(() => import('./ExtensionsView.vue')),
+  mcp: defineAsyncComponent(() => import('./McpView.vue')),
 }
 const page = computed(() => views[session.findMenu(route.path)?.viewKey ?? ''])
 </script>
