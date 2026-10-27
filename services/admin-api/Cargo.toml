@@ -52,6 +52,7 @@ tri-resource-generator = { path = "../../crates/resource-generator" }
 tri-extension-package = { path = "../../crates/extension-package" }
 tri-mcp-runtime = { path = "../../crates/mcp-runtime" }
 tri-ai-runtime = { path = "../../crates/ai-runtime" }
+tri-workflow-runtime = { path = "../../crates/workflow-runtime" }
 rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "transport-streamable-http-server"] }
 
 [[bin]]

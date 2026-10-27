@@ -52,6 +52,7 @@ dependencies = [
  "tri-mcp-runtime",
  "tri-resource-generator",
  "tri-resource-runtime",
+ "tri-workflow-runtime",
  "url",
  "uuid",
  "zeroize",
@@ -4137,6 +4138,17 @@ dependencies = [
  "tower-http",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "tri-workflow-runtime"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
 ]
 
 [[package]]

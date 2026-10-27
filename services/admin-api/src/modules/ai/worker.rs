@@ -47,6 +47,7 @@ async fn execute(
     cancel: CancellationToken,
 ) -> Result<(), ExecutionFailure> {
     let prepared = journal::prepare(state, claim).await?;
+    let expected = prepared.input.format;
     let streamed = prepared.row.stream
         && matches!(prepared.operation, Operation::Generate | Operation::Resume);
     let url = reqwest::Url::parse(&prepared.endpoint)
@@ -69,6 +70,7 @@ async fn execute(
             adapter
                 .create(
                     CreateRequest {
+                        format: expected.map(|format| format.definition()),
                         model: prepared.input.model,
                         input: prepared.input.input,
                         instructions: prepared.input.instructions,
@@ -119,7 +121,7 @@ async fn execute(
             Some(exchange.next().await)
         };
         let Some(next) = next else {
-            journal::persist(state, claim, exchange.state()).await?;
+            journal::persist(state, claim, exchange.state(), expected).await?;
             dirty = false;
             pending_bytes = 0;
             flush.reset();
@@ -145,7 +147,7 @@ async fn execute(
                 };
                 dirty = true;
                 if immediate || pending_bytes >= 32 * 1024 {
-                    journal::persist(state, claim, exchange.state()).await?;
+                    journal::persist(state, claim, exchange.state(), expected).await?;
                     dirty = false;
                     pending_bytes = 0;
                     flush.reset();
@@ -153,13 +155,13 @@ async fn execute(
             }
             Ok(None) => {
                 if dirty {
-                    journal::persist(state, claim, exchange.state()).await?;
+                    journal::persist(state, claim, exchange.state(), expected).await?;
                 }
                 break;
             }
             Err(error) => {
                 if dirty {
-                    journal::persist(state, claim, exchange.state()).await?;
+                    journal::persist(state, claim, exchange.state(), expected).await?;
                 }
                 return Err(error.into());
             }

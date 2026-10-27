@@ -85,6 +85,8 @@ pub struct Run {
     pub model: String,
     pub max_output_tokens: u32,
     pub stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_origin: Option<WorkflowOrigin>,
     pub state: RunState,
     pub submission_started: bool,
     pub has_response: bool,
@@ -104,6 +106,13 @@ pub struct Run {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub finished_at: Option<DateTime>,
+}
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowOrigin {
+    pub run_id: ObjectId,
+    pub step_id: String,
+    pub payload_sha256: String,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,7 +1,7 @@
 //! Trusted-host transport: the host supplies a DNS-pinned client with redirects,
 //! retries and proxies disabled, plus credentials resolved under current policy.
 //! Every POST is attempted once. Any failure after submission remains ambiguous.
-pub use crate::request::{CreateRequest, Failure, FailureKind, Policy, Reference};
+pub use crate::request::{CreateRequest, Failure, FailureKind, JsonFormat, Policy, Reference};
 use crate::{Error, Limits, ResponseState, Status, Update, frames};
 use bytes::Bytes;
 use futures_util::{StreamExt, stream::BoxStream};

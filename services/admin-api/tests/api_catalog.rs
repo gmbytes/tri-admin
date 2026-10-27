@@ -69,6 +69,11 @@ async fn catalog_has_stable_unique_operations_and_a_verifiable_checksum() {
         .iter()
         .map(|row| row["code"].as_str().unwrap())
         .collect::<HashSet<_>>();
+    assert_eq!(
+        codes.len(),
+        permissions["data"].as_array().unwrap().len(),
+        "permission codes must be unique"
+    );
     for entry in entries {
         let id = entry["operationId"].as_str().unwrap();
         assert!(ids.insert(id));

@@ -87,6 +87,23 @@ pub struct RunInput {
     pub instructions: Option<String>,
     pub max_output_tokens: u32,
     pub stream: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<OutputFormat>,
+}
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OutputFormat {
+    Requirements,
+}
+impl OutputFormat {
+    pub fn definition(self) -> tri_ai_runtime::http::JsonFormat {
+        match self {
+            Self::Requirements => tri_ai_runtime::http::JsonFormat {
+                name: "tri_admin_requirements_v1".into(),
+                schema: tri_workflow_runtime::Analysis::schema(),
+            },
+        }
+    }
 }
 impl RunInput {
     pub fn validate(&self) -> Result<(), AppError> {

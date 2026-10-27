@@ -23,6 +23,11 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
     use crate::common::api::ApiModule;
     vec![
         ApiModule {
+            prefix: workflows::router::API_PREFIX,
+            endpoints: workflows::router::API_ENDPOINTS,
+            routes: workflows::router::configured_routes,
+        },
+        ApiModule {
             prefix: ai::router::API_PREFIX,
             endpoints: ai::router::API_ENDPOINTS,
             routes: ai::router::configured_routes,
@@ -125,3 +130,4 @@ pub fn registry() -> Vec<crate::common::api::ApiModule> {
     ]
 }
 pub mod ai;
+pub mod workflows;

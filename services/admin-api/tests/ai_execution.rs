@@ -86,6 +86,27 @@ async fn upstream(State(state): State<PeerState>, request: Request<Body>) -> Res
         )
             .into_response();
     }
+    if state.mode == "analysis" {
+        let analysis = json!({"summary":"Game administration","modules":[{"key":"worlds","label":"Worlds","description":"World settings","fields":[{"name":"name","label":"Name","kind":"string","required":true}]}],"risks":[],"questions":[]});
+        let text = analysis.to_string();
+        return (
+            [("content-type", "application/json")],
+            response(
+                if parts.method == Method::POST {
+                    "queued"
+                } else {
+                    "completed"
+                },
+                if parts.method == Method::POST {
+                    ""
+                } else {
+                    &text
+                },
+            )
+            .to_string(),
+        )
+            .into_response();
+    }
     let created = frame(
         json!({"type":"response.created","sequence_number":0,"response":{"id":"resp_host_fixture","status":"in_progress"}}),
     );
@@ -743,4 +764,55 @@ async fn an_unsupported_database_model_cannot_start_a_paid_generation() {
     let effects = peer.state.seen.lock().unwrap().len();
     app.cleanup().await;
     assert_eq!(effects, 0);
+}
+#[tokio::test]
+async fn requirements_format_is_validated_locally_after_real_provider_completion() {
+    for mode in ["analysis", "json"] {
+        let (app, state, token, provider, peer) = fixture(mode).await;
+        let service = worker::start_service(state.clone());
+        let mut body = input(&provider, false);
+        body["format"] = json!("requirements");
+        let row = submitted(&app, &token, body).await;
+        let id = row["id"].as_str().unwrap();
+        let result = wait(
+            &app,
+            &token,
+            id,
+            if mode == "analysis" {
+                "succeeded"
+            } else {
+                "failed"
+            },
+        )
+        .await;
+        if mode == "json" {
+            assert_eq!(result["errorCode"], "INVALID_ANALYSIS");
+        } else {
+            let content = app
+                .send(
+                    "GET",
+                    &format!("/api/v1/ai/runs/{id}/content"),
+                    Value::Null,
+                    Some(&token),
+                )
+                .await;
+            let parsed: Value =
+                serde_json::from_str(content.1["data"]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(parsed["modules"][0]["key"], "worlds");
+        }
+        worker::stop_service(&state);
+        service.await.unwrap();
+        {
+            let seen = peer.state.seen.lock().unwrap();
+            assert_eq!(
+                seen[0].body["text"]["format"]["name"],
+                "tri_admin_requirements_v1"
+            );
+            assert_eq!(
+                seen.iter().filter(|value| value.method == "POST").count(),
+                1
+            );
+        }
+        app.cleanup().await;
+    }
 }

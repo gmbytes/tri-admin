@@ -10,6 +10,21 @@ pub struct Permission {
 
 pub const CATALOG: &[Permission] = &[
     Permission {
+        code: "workflows.read",
+        label: "查看工作流与会话",
+        group: "workflows",
+    },
+    Permission {
+        code: "workflows.write",
+        label: "维护本人工作流与会话",
+        group: "workflows",
+    },
+    Permission {
+        code: "workflows.invoke",
+        label: "执行和取消本人工作流",
+        group: "workflows",
+    },
+    Permission {
         code: "ai.read",
         label: "查看 AI 上游与运行",
         group: "ai",
@@ -218,16 +233,6 @@ pub const CATALOG: &[Permission] = &[
         code: "mcp.write",
         label: "管理 MCP",
         group: "mcp",
-    },
-    Permission {
-        code: "workflows.read",
-        label: "查看工作流",
-        group: "workflows",
-    },
-    Permission {
-        code: "workflows.write",
-        label: "运行工作流",
-        group: "workflows",
     },
     Permission {
         code: "settings.read",

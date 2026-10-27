@@ -122,6 +122,9 @@ async fn current(
         return Err(fail(Failure::Conflict("RUN_EXPIRED")));
     }
     owner(db, session, &row).await?;
+    if row.workflow_origin.is_some() {
+        crate::modules::workflows::runs::verify_ai_origin(state, session, &row).await?;
+    }
     let provider = db
         .collection::<Provider>("ai_providers")
         .find_one(doc! {"_id":row.provider_id,"deletedAt":null,"enabled":true})
@@ -282,6 +285,7 @@ pub async fn persist(
     state: &AppState,
     claim: &Claim,
     response: &ResponseState,
+    expected: Option<dto::OutputFormat>,
 ) -> Result<(), AppError> {
     let checkpoint = Zeroizing::new(response.checkpoint().map_err(|_| AppError::Internal)?);
     let blob = payload::seal(
@@ -293,6 +297,11 @@ pub async fn persist(
     let status = response.status();
     let refused = response.refused();
     let empty = response.text().is_empty();
+    let invalid_analysis = status == Some(Status::Completed)
+        && !refused
+        && !empty
+        && expected.is_some()
+        && tri_workflow_runtime::Analysis::parse(response.text().as_bytes()).is_err();
     let has_response = response.response_id().is_some();
     transaction::run(
         state.require_database()?,
@@ -311,6 +320,9 @@ pub async fn persist(
                 row.version += 1;
                 if let Some(status) = status {
                     let (state, error) = match status {
+                        Status::Completed if invalid_analysis => {
+                            (RunState::Failed, Some("INVALID_ANALYSIS"))
+                        }
                         Status::Completed if refused => (RunState::Failed, Some("MODEL_REFUSED")),
                         Status::Completed if empty => (RunState::Failed, Some("EMPTY_OUTPUT")),
                         Status::Completed => (RunState::Succeeded, None),

@@ -18,3 +18,4 @@ pub mod schema;
 pub mod settings_schema;
 pub mod version_import_schema;
 pub mod version_schema;
+pub mod workflow_schema;

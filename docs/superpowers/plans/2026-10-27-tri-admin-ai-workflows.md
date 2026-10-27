@@ -56,12 +56,14 @@ Task 3 后台验收：11 项实际执行、5 项意图/范围/并发限额、4 �
 
 ## Task 4：需求分析、会话与持久 Prompt 工作流
 
-**Files:** `services/admin-api/src/modules/workflows/{dto,models,plan,service,worker,export,router}.rs`, 自身 schema 及测试。
+**Files:** `crates/workflow-runtime/{src,tests}/`、`services/admin-api/src/modules/workflows/{dto,models,plan,service,worker,export,router}.rs`，自身 schema 及测试。纯计划/分析/导出核心独立，以便同一规则用于接口、工作线程及验证。
 
-- [ ] 先测试分析/计划格式、消息分支与私有历史、任务 UUID/版本、取消、重启和 Markdown 大小/摘要/授权。
-- [ ] Rust 保存固定步骤/依赖/Prompt/预期输出，关联 AI 运行；模型提案经校验且需明确用户操作才进入代码生成或 MCP 调用。
-- [ ] 输出通过受控产物下载，不收任意主机目录；迟到 worker、过期内容、审计回滚和一项失败/未知不伪装整计划成功。
-- [ ] 运行真实任务/进程/存储流程，保留所有9C/9D要求，不以模板或元数据代替实际执行。
+- [x] 先测试分析/计划格式、消息分支与私有历史、任务 UUID/版本、取消、重启和 Markdown 大小/摘要/授权。
+- [x] Rust 保存固定步骤/依赖/Prompt/预期输出，关联 AI 运行；模型提案经校验且需明确用户操作才进入代码生成或 MCP 调用。
+- [x] 输出通过受控产物下载，不收任意主机目录；迟到 worker、过期内容、审计回滚和一项失败/未知不伪装整计划成功。
+- [x] 运行真实任务/进程/存储流程，保留所有9C/9D要求，不以模板或元数据代替实际执行。
+
+Task 4 后端验证：工作流核心 9 项、后端计划 4 项及实际执行/取消/主进程重启/加密会话与分支/私有导出 14 项通过；完整 workspace 539 项常规测试通过、0 失败、12 项外部专项保留，严格 all-targets Clippy、格式检查通过。结构化分析同时使用固定上游 JSON Schema 与本地语义校验，非法结果停止后续步骤；后台以固定父意图授权子运行，不伪造用户会话。会话读取引用已有运行，不再请求模型。此阶段不包含 Task 5 页面、用户应用代码生成建议的界面或真实厂商凭据验收。
 
 ## Task 5：管理界面与完整验收
 

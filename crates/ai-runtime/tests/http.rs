@@ -270,6 +270,7 @@ async fn start_server(mode: &'static str) -> Server {
 }
 fn request(stream: bool) -> CreateRequest {
     CreateRequest {
+        format: None,
         model: "fixture-model".into(),
         input: "PRIVATE-PROMPT".into(),
         instructions: Some("PRIVATE-INSTRUCTIONS".into()),
@@ -531,4 +532,53 @@ async fn resumed_reads_keep_the_cursor_but_start_a_new_wire_byte_budget() {
     while exchange.next().await.unwrap().is_some() {}
     assert_eq!(exchange.into_state().finish().unwrap().text(), "流式 reply");
     assert_eq!(server.fixture.seen.lock().unwrap().len(), 1);
+}
+#[tokio::test]
+async fn structured_output_requests_use_a_named_strict_schema_and_never_enable_tools() {
+    let server = start_server("json").await;
+    let adapter = make_adapter(&server, Limits::default(), Policy::default());
+    let schema = json!({"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"],"additionalProperties":false});
+    let mut body = request(false);
+    body.format = Some(tri_ai_runtime::http::JsonFormat {
+        name: "analysis_v1".into(),
+        schema: schema.clone(),
+    });
+    let mut exchange = adapter
+        .create(body, CancellationToken::new())
+        .await
+        .unwrap();
+    exchange.next().await.unwrap();
+    let seen = server.fixture.seen.lock().unwrap();
+    assert_eq!(
+        seen[0].body["text"]["format"],
+        json!({"type":"json_schema","name":"analysis_v1","strict":true,"schema":schema})
+    );
+    assert_eq!(seen[0].body["tools"], json!([]));
+}
+#[tokio::test]
+async fn invalid_structured_formats_are_rejected_before_any_network_effect() {
+    let server = start_server("json").await;
+    let adapter = make_adapter(&server, Limits::default(), Policy::default());
+    for format in [
+        tri_ai_runtime::http::JsonFormat {
+            name: "bad name".into(),
+            schema: json!({"description":"PRIVATE-SCHEMA"}),
+        },
+        tri_ai_runtime::http::JsonFormat {
+            name: "external".into(),
+            schema: json!({"$ref":"https://example.invalid/remote-schema"}),
+        },
+    ] {
+        let mut body = request(false);
+        body.format = Some(format);
+        let error = adapter
+            .create(body, CancellationToken::new())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.kind, FailureKind::Input);
+        assert!(!error.may_have_been_sent);
+        assert!(!format!("{error:?} {error}").contains("PRIVATE"));
+    }
+    assert!(server.fixture.seen.lock().unwrap().is_empty());
 }
