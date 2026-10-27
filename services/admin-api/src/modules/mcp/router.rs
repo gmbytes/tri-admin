@@ -17,6 +17,7 @@ use axum::{
 };
 crate::api_routes! {
  prefix "";
+ post "/api/v1/mcp/server"=>protocol,"mcp.server.request","mcp","MCP 后台业务工具协议",Permission,&["mcp.read"],"现代无会话协议；每次调用还要求 mcp.invoke 和对应业务权限/Scope";
  get "/api/v1/mcp/capabilities"=>capabilities,"mcp.capabilities.list","mcp","部署批准的 MCP 程序能力",Permission,&["mcp.read"];
  get "/api/v1/mcp/connections"=>connections,"mcp.connections.list","mcp","MCP 连接列表",Permission,&["mcp.read"];
  post "/api/v1/mcp/connections"=>create,"mcp.connections.create","mcp","创建 MCP 连接",Permission,&["mcp.read","mcp.write"];
@@ -33,6 +34,14 @@ crate::api_routes! {
  get "/api/v1/mcp/actions/{id}/result"=>result,"mcp.actions.result","mcp","原调用者读取加密结果",Permission,&["mcp.invoke","mcp.read"];
  post "/api/v1/mcp/actions/{id}/cancel"=>cancel,"mcp.actions.cancel","mcp","请求取消 MCP 调用",Permission,&["mcp.invoke","mcp.read"];
  post "/api/v1/mcp/connections/{id}/confirm-orphan"=>confirm_orphan,"mcp.connections.confirmOrphan","mcp","交互确认遗留进程已清理",Permission,&["mcp.read","mcp.write"],"仅交互会话与全部数据范围；不根据旧 PID 终止任何进程";
+}
+async fn protocol(
+    State(state): State<AppState>,
+    context: AuthContext,
+    request: Request,
+) -> Result<Response, AppError> {
+    read(&context)?;
+    super::server::handle(state, context, request).await
 }
 pub fn configured_routes() -> axum::Router<AppState> {
     routes()

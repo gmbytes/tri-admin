@@ -18,6 +18,7 @@ pub struct Config {
     pub storage_root: String,
     pub outbound_ca_file: Option<std::path::PathBuf>,
     pub(crate) mcp_programs: std::sync::Arc<crate::modules::mcp::capabilities::Catalog>,
+    pub(crate) mcp_allowed_hosts: Vec<String>,
     connection_epoch: String,
 }
 
@@ -152,6 +153,48 @@ impl Config {
         let mcp_programs = crate::modules::mcp::capabilities::Catalog::load(
             lookup("TRI_MCP_PROGRAMS_FILE").as_deref(),
         )?;
+        let mcp_allowed_hosts = lookup("TRI_MCP_ALLOWED_HOSTS")
+            .unwrap_or_else(|| "localhost,127.0.0.1,::1".into())
+            .split(',')
+            .map(str::trim)
+            .map(|host| {
+                if host == "::1" {
+                    return Ok(host.to_owned());
+                }
+                let url = url::Url::parse(&format!("http://{host}"))
+                    .map_err(|_| ConfigError("TRI_MCP_ALLOWED_HOSTS 必须为明确主机或主机端口"))?;
+                if host.is_empty()
+                    || host.len() > 255
+                    || !host.is_ascii()
+                    || host.contains('*')
+                    || host.chars().any(char::is_whitespace)
+                    || url.host_str().is_none()
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.path() != "/"
+                    || url.query().is_some()
+                    || url.fragment().is_some()
+                    || host.contains('/')
+                {
+                    return Err(ConfigError(
+                        "TRI_MCP_ALLOWED_HOSTS 必须为明确主机或主机端口",
+                    ));
+                }
+                Ok(host.to_ascii_lowercase())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if mcp_allowed_hosts.is_empty()
+            || mcp_allowed_hosts.len() > 32
+            || mcp_allowed_hosts
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != mcp_allowed_hosts.len()
+        {
+            return Err(ConfigError(
+                "TRI_MCP_ALLOWED_HOSTS 需包含 1–32 个不重复主机",
+            ));
+        }
         Ok(Self {
             bind,
             database_name,
@@ -165,6 +208,7 @@ impl Config {
             storage_root,
             outbound_ca_file,
             mcp_programs: std::sync::Arc::new(mcp_programs),
+            mcp_allowed_hosts,
             connection_epoch: uuid::Uuid::new_v4().to_string(),
         })
     }

@@ -8,6 +8,7 @@ default-run = "admin-api"
 
 [dependencies]
 axum.workspace = true
+tower.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tower-http.workspace = true
@@ -49,7 +50,7 @@ tri-resource-runtime = { path = "../../crates/resource-runtime" }
 tri-resource-generator = { path = "../../crates/resource-generator" }
 tri-extension-package = { path = "../../crates/extension-package" }
 tri-mcp-runtime = { path = "../../crates/mcp-runtime" }
-rmcp = { version = "=3.5.1", default-features = false, features = ["client"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "server", "transport-streamable-http-server"] }
 
 [[bin]]
 name = "tri-admin-mcp-test-peer"
@@ -57,7 +58,6 @@ path = "tests/fixtures/mcp_peer.rs"
 test = false
 
 [dev-dependencies]
-tower.workspace = true
 http-body-util.workspace = true
 tempfile = "3"
 rcgen = "0.14"

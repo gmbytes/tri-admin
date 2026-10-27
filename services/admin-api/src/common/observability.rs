@@ -40,6 +40,22 @@ struct Context {
 }
 tokio::task_local! {static CURRENT: Context;}
 
+/// Carry trusted request tracing into a protocol worker without authenticating again.
+#[derive(Clone)]
+pub(crate) struct CapturedRequest(Option<Context>);
+pub(crate) fn capture_request() -> CapturedRequest {
+    CapturedRequest(CURRENT.try_with(Clone::clone).ok())
+}
+impl CapturedRequest {
+    pub(crate) async fn scope<F: Future>(&self, future: F) -> F::Output {
+        if let Some(context) = &self.0 {
+            CURRENT.scope(context.clone(), future).await
+        } else {
+            future.await
+        }
+    }
+}
+
 pub fn request_id() -> Option<String> {
     CURRENT.try_with(|context| context.id.clone()).ok()
 }

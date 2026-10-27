@@ -204,11 +204,11 @@
 - `GET /extensions/{id}/revisions` 与 `GET /revisions/{revisionId}`：有界分页和原修订元数据。卸载后保留原 ID 下可授权的历史。`GET /revisions/{revisionId}/preview?path=...` 返回原包内有界 UTF-8 文本的 path/content/sha256/size，二进制或超过 256 KiB 的文件不能文本预览。`GET /revisions/{revisionId}/download` 核对并下载原字节，返回 ZIP 媒体类型、长度、SHA-256 ETag 与 X-Content-Sha256。
 - `GET/PATCH /api/v1/skill-constraints`：读取或以 version/content 更新全局约束（UTF-8 内容最大 64 KiB）。更新额外要求 skills.constraints.write 和当前 all 范围，版本冲突返回 409；`GET /skill-constraints/revisions` 分页读取独立历史。约束和审计原子提交。
 
-扩展库接口和管理页面已经实现；STDIO MCP 管理服务另见下节，HTTP MCP、实际业务工具及其管理界面仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整插件能力验收。
+扩展库接口和管理页面已经实现；STDIO MCP 管理服务及业务 MCP 服务另见下节，受控 HTTP MCP 客户端和管理界面仍按 Task 9 B 后续交付，不能把停用内容管理等同于完整插件能力验收。
 
 ## MCP 持久 STDIO 管理
 
-当前接入 STDIO 后台管理，配置格式和操作步骤见 [MCP 部署程序说明](mcp-programs.md)。自身 mcp schema v1 增加连接、实例、操作回执和加密结果集合，就绪标记由 14 项增至 15 项；升级需要停服 migrate，没有旧数量回退。HTTP MCP 传输、实际后台业务工具、插件能力激活及管理界面仍在后续范围。
+当前接入 STDIO 后台管理，配置格式和操作步骤见 [MCP 部署程序说明](mcp-programs.md)。自身 mcp schema v1 增加连接、实例、操作回执和加密结果集合，就绪标记由 14 项增至 15 项；升级需要停服 migrate，没有旧数量回退。业务 MCP 服务见下节；HTTP MCP 客户端、插件能力激活及管理界面仍在后续范围。
 
 - `GET /api/v1/mcp/capabilities` 只公开部署能力 ID、标签和工具白名单，不返回路径、参数、环境或配置指纹。`GET/POST /mcp/connections` 支持范围内分页与创建；创建输入 requestId/name/transport/enabled，transport 当前为 kind=stdio + capabilityId。未知命令/路径/环境字段拒绝。
 - `GET/PATCH/DELETE /connections/{id}` 读取、以 version 和完整连接配置修改、按 query version 删除；未确认退出或有控制操作时不能修改/删除。部署配置指纹变化需显式重新确认绑定。`GET /connections/by-request/{requestId}` 只查询本人创建身份，原 UUID 重放不受当前能力移除影响。
@@ -219,3 +219,11 @@
 - `POST /connections/{id}/confirm-orphan` 要求交互会话、当前 all 范围及 write 权限，输入 requestId/version/confirmed=true/reason。它记录运维人员已清理遗留程序的声明，不根据旧 PID 终止进程，也不伪造 OS 退出证明；过期服务的未知调用仍保持 unknown。
 
 所有响应禁止缓存，连接和历史采用当前 all/self/roles，范围在计数及分页前过滤。周期维护按租约识别失联实例；主服务关闭仅停止自身注册且持有所有权的程序。结果、状态和审计同事务提交，原始 SDK 日志及 stderr 不进入主日志或公开结果。
+
+## 后台业务 MCP 协议
+
+`POST /api/v1/mcp/server` 是实际 MCP 2026-07-28 Streamable HTTP 端点，使用当前管理 JWT/PAT，要求 mcp.read；tools/call 还要求 mcp.invoke 和相应业务权限。每请求附 MCP-Protocol-Version、Mcp-Method，tools/call 附 Mcp-Name；params._meta 携带协议版本、客户端资料和能力。只支持 server/discover、tools/list 及已实现工具等现代方法，拒绝旧 initialize 回退。GET SSE 会话端点不提供。
+
+25 项工具分别映射现有参数、字典/明细、代码生成定义/历史的业务服务。列表按当前权限过滤，写操作保留原版本及审计；代码生成继承 all/self/roles 范围和原 UUID 去重。MCP 结果使用 structuredContent，分页保留 data/meta，单条结果包含 data，创建/生成代码记录还包含 created。业务失败返回 isError=true 和 error.code/message/effect；数据库提交结果不明确时 effect=unknown，不能自动重发。参数/字典创建无 UUID 回执，响应不明确应先查已有资料。
+
+输入、结果、Host/Origin 与错误边界、完整工具类别和后续未交付范围见 [后台业务 MCP 设计](design-mcp-server.md)。本次不增加数据库模型版本，仍需 15 项当前就绪标记。
