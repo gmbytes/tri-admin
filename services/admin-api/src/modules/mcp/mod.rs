@@ -1,5 +1,5 @@
 mod binding;
-mod business;
+pub(crate) mod business;
 pub mod capabilities;
 pub mod dto;
 pub mod models;

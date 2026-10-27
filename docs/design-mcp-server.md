@@ -16,4 +16,6 @@ Origin 必须匹配明确的 TRI_CORS_ORIGINS，允许没有 Origin 的认证服
 
 SDK 工作任务显式继承安全请求追踪上下文，使领域审计保留原 actor、requestId 和协议路由；不复制请求正文或 Authorization。主程序已有 rmcp/process_wrap 日志过滤继续生效。
 
-此接入不替代后续受控网络 HTTP MCP 客户端、加密凭据引用、插件能力激活或 MCP 管理界面。真实本机 HTTP/协议和隔离 MongoDB 测试只证明本服务端边界，不计作外部 MCP 上游或 Linux 主 API 发布验收。
+已启用插件的业务别名按固定 `plugin.<extensionId>.<revisionId>.<toolName>` 加入目录；实际处理器仍只有上述明确登记的业务操作。目录按当前扩展范围和业务权限过滤；调用重新核对原修订并保存接受审计，不把包内说明、Schema 或参数当作代码。全局启用预算避免目录超过现有 MCP 客户端的 128 项/256 KiB/结构上限，不静默截断。
+
+受控 HTTP 客户端、加密配置引用和 MCP 管理界面已有独立验收。插件 MCP 能力来源和完整界面继续后续项；真实本机 HTTP/协议和隔离 MongoDB 测试只证明对应边界，不计作外部 MCP 上游或 Linux 主 API 发布验收。

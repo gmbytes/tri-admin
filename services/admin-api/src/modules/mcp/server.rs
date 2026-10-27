@@ -54,17 +54,35 @@ impl ServerHandler for BusinessServer {
         {
             return Err(ErrorData::invalid_params("不支持该工具游标", None));
         }
-        Ok(ListToolsResult::with_all_items(business::catalog(
-            &self.context,
-        )))
+        let tools = self
+            .trace
+            .scope(crate::modules::extensions::contributions::catalog(
+                &self.state,
+                &self.context,
+            ))
+            .await
+            .map_err(|_| ErrorData::internal_error("工具目录暂不可用", None))?;
+        Ok(ListToolsResult::with_all_items(tools))
     }
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        let plugin = request.name.starts_with("plugin.");
         self.trace
-            .scope(business::call(&self.state, &self.context, request))
+            .scope(async {
+                if plugin {
+                    crate::modules::extensions::contributions::call(
+                        &self.state,
+                        &self.context,
+                        request,
+                    )
+                    .await
+                } else {
+                    business::call(&self.state, &self.context, request).await
+                }
+            })
             .await
             .map(Into::into)
     }

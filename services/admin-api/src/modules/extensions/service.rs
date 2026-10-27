@@ -25,7 +25,7 @@ use mongodb::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tri_extension_package::package::{self, Package};
-fn policy() -> Resource {
+pub(super) fn policy() -> Resource {
     Resource {
         schema: "extensions",
         version: crate::storage::extensions_schema::VERSION,
@@ -47,7 +47,7 @@ async fn build(source: Source, base: Option<Package>) -> Result<Package, AppErro
         .await
         .map_err(|_| AppError::Internal)?
 }
-async fn row_tx(
+pub(super) async fn row_tx(
     database: &Database,
     session: &mut ClientSession,
     actor: &Actor,
@@ -455,10 +455,13 @@ pub async fn toggle(
                 if input.enabled && verified_revision != Some(row.revision_id) {
                     return Err(fail(Failure::Conflict("扩展修订已改变")));
                 }
-                if input.enabled && (!row.package.mcp.is_empty() || !row.package.tools.is_empty()) {
+                if input.enabled && !row.package.mcp.is_empty() {
                     return Err(fail(Failure::Conflict(
                         "插件能力需要先登记并验证 MCP 与工具绑定",
                     )));
+                }
+                if input.enabled && !row.package.tools.is_empty() {
+                    super::contributions::validate_activation(database, session, &row).await?;
                 }
                 row.enabled = input.enabled;
                 row.version += 1;

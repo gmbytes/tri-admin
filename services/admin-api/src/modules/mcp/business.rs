@@ -284,28 +284,41 @@ fn bindings() -> Vec<Binding> {
     );
     rows
 }
+pub(crate) struct Contract {
+    pub permission: &'static str,
+    pub read_only: bool,
+    pub tool: Tool,
+}
+fn contract(row: Binding) -> Contract {
+    let mut tool = Tool::new(
+        row.name,
+        row.description,
+        row.schema.as_object().cloned().unwrap_or_default(),
+    );
+    tool.annotations = Some(
+        ToolAnnotations::new()
+            .read_only(row.read_only)
+            .destructive(!row.read_only && !row.name.ends_with(".create"))
+            .idempotent(row.replay)
+            .open_world(false),
+    );
+    Contract {
+        permission: row.permission,
+        read_only: row.read_only,
+        tool,
+    }
+}
+pub(crate) fn contracts() -> Vec<Contract> {
+    bindings().into_iter().map(contract).collect()
+}
 pub fn catalog(context: &AuthContext) -> Vec<Tool> {
-    bindings()
+    contracts()
         .into_iter()
         .filter(|row| {
             context.can(row.permission)
-                && (!row.name.starts_with("codegen.") || context.can("codegen.read"))
+                && (!row.tool.name.starts_with("codegen.") || context.can("codegen.read"))
         })
-        .map(|row| {
-            let mut tool = Tool::new(
-                row.name,
-                row.description,
-                row.schema.as_object().cloned().unwrap_or_default(),
-            );
-            tool.annotations = Some(
-                ToolAnnotations::new()
-                    .read_only(row.read_only)
-                    .destructive(!row.read_only && !row.name.ends_with(".create"))
-                    .idempotent(row.replay)
-                    .open_world(false),
-            );
-            tool
-        })
+        .map(|row| row.tool)
         .collect()
 }
 #[derive(Deserialize)]
@@ -601,7 +614,7 @@ pub async fn call(
         Err(error) => Ok(error_result(error, !binding.read_only)),
     }
 }
-fn error_result(error: AppError, write: bool) -> CallToolResult {
+pub(crate) fn error_result(error: AppError, write: bool) -> CallToolResult {
     let (code, message, unknown) = match error {
         AppError::Forbidden => ("FORBIDDEN", "当前账号权限或数据范围不足", false),
         AppError::Unauthorized => ("UNAUTHENTICATED", "当前凭据已失效", false),

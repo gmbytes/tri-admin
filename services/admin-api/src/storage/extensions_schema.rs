@@ -48,6 +48,12 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
             None,
         ),
         (
+            "extensions",
+            doc! {"enabled":1,"deletedAt":1,"ownerId":1},
+            false,
+            Some(doc! {"package.tools.0":{"$exists":true}}),
+        ),
+        (
             "extension_requests",
             doc! {"actorId":1,"requestId":1},
             true,
