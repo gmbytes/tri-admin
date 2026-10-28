@@ -5,6 +5,136 @@ use serde_json::{Value, json};
 use support::{PASSWORD, TestApp};
 
 #[tokio::test]
+async fn scope_upgrade_preserves_nested_core_menus_and_repairs_v1_orphans() {
+    for already_v1 in [false, true] {
+        let app = TestApp::new().await;
+        let signed = app.login().await;
+        let token = signed["accessToken"].as_str().unwrap();
+        let group = ObjectId::new();
+        let retired = ObjectId::new();
+        let retired_nested = ObjectId::new();
+        let kept = ObjectId::new();
+        let folder = ObjectId::new();
+        let file = ObjectId::new();
+        let retired_root = ObjectId::new();
+        let role = ObjectId::new();
+        let now = DateTime::now();
+        let menu = |id: ObjectId,
+                    path: &str,
+                    view: Option<&str>,
+                    parent: Option<ObjectId>,
+                    removed: bool| doc! {"_id":id,"label":path,"path":path,"viewKey":view,"permission":null,"parentId":parent,"icon":null,"sort":77,"enabled":!removed,"version":4i64,"createdAt":now,"updatedAt":now,"deletedAt":if removed{mongodb::bson::Bson::DateTime(now)}else{mongodb::bson::Bson::Null}};
+        app.database
+            .collection::<Document>("menus")
+            .insert_many([
+                menu(group, "/custom-group", None, None, false),
+                menu(
+                    retired,
+                    "/settings",
+                    Some("settings"),
+                    Some(group),
+                    already_v1,
+                ),
+                menu(
+                    retired_nested,
+                    "/dictionaries",
+                    Some("dictionaries"),
+                    Some(retired),
+                    already_v1,
+                ),
+                menu(
+                    kept,
+                    "/my-users",
+                    Some("users"),
+                    Some(retired_nested),
+                    false,
+                ),
+                menu(folder, "/my-folder", None, Some(retired), false),
+                menu(file, "/my-files", Some("files"), Some(folder), false),
+                menu(
+                    retired_root,
+                    "/parameters",
+                    Some("parameters"),
+                    None,
+                    already_v1,
+                ),
+                menu(role, "/my-roles", Some("roles"), Some(retired_root), false),
+            ])
+            .await
+            .unwrap();
+        let metadata = app.database.collection::<Document>("_schema_migrations");
+        if already_v1 {
+            metadata
+                .update_one(doc! {"_id":"game-scope"}, doc! {"$set":{"version":1}})
+                .await
+                .unwrap();
+        } else {
+            metadata
+                .delete_one(doc! {"_id":"game-scope"})
+                .await
+                .unwrap();
+        }
+        admin_api::storage::schema::migrate_database(&app.database)
+            .await
+            .unwrap();
+        let created=app.send("POST","/api/v1/menus",json!({"label":"New retained menu","path":"/after-upgrade","viewKey":"users","permission":"users.read"}),Some(token)).await;
+        assert_eq!(
+            created.0,
+            StatusCode::CREATED,
+            "retained graph must remain editable: {}",
+            created.1
+        );
+        let menus = app.database.collection::<Document>("menus");
+        for (id, parent, version) in [
+            (kept, Some(group), 5),
+            (folder, Some(group), 5),
+            (file, Some(folder), 4),
+            (role, None, 5),
+        ] {
+            let row = menus
+                .find_one(doc! {"_id":id,"deletedAt":null})
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                row.get("parentId"),
+                Some(
+                    &parent
+                        .map(mongodb::bson::Bson::ObjectId)
+                        .unwrap_or(mongodb::bson::Bson::Null)
+                )
+            );
+            assert_eq!(row.get_i64("version").unwrap(), version);
+            assert_eq!(row.get_i32("sort").unwrap(), 77);
+        }
+        admin_api::storage::schema::migrate_database(&app.database)
+            .await
+            .unwrap();
+        assert_eq!(
+            menus
+                .find_one(doc! {"_id":kept})
+                .await
+                .unwrap()
+                .unwrap()
+                .get_i64("version")
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            metadata
+                .find_one(doc! {"_id":"game-scope"})
+                .await
+                .unwrap()
+                .unwrap()
+                .get_i32("version")
+                .unwrap(),
+            2
+        );
+        app.cleanup().await;
+    }
+}
+
+#[tokio::test]
 async fn file_storage_options_are_searchable_without_exposing_configuration_or_secrets() {
     let app = TestApp::new().await;
     let signed = app.login().await;
