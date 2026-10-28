@@ -9,7 +9,6 @@ export async function initializeDevelopmentEnv(path = resolve('.env')) {
       'mongodb://127.0.0.1:13317/?replicaSet=tri-admin-rs&directConnection=true&serverSelectionTimeoutMS=3000',
     TRI_MONGODB_DATABASE: 'tri_admin_dev',
     TRI_JWT_SIGNING_KEY: randomBytes(32).toString('hex'),
-    TRI_OPEN_JWT_SIGNING_KEY: randomBytes(32).toString('hex'),
     TRI_ADMIN_BIND: '127.0.0.1:18088',
     TRI_SETTINGS_KEYS: `local:${randomBytes(32).toString('hex')}`,
     TRI_SETTINGS_ACTIVE_KEY: 'local',

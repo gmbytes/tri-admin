@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { Permission, ApiCatalog } from '../core/types'
+import { filterPermissions, filterApiEndpoints } from '../core/navigation'
 import { notifyError } from '../ui'
 const session = useSession(),
   rows = ref<Permission[]>([]),
@@ -43,9 +44,6 @@ function accessLabel(access: string) {
         authenticated: '登录',
         refreshCredential: '刷新凭证',
         permission: '操作权限',
-        openApplication: '应用服务身份',
-        openUser: '应用用户身份',
-        openRefreshCredential: '开放刷新凭证',
       } as Record<string, string>
     )[access] ?? access
   )
@@ -71,8 +69,8 @@ async function load() {
       session.request<Permission[]>('/permissions'),
       session.request<ApiCatalog>('/api-catalog'),
     ])
-    rows.value = permissions.data
-    catalog.value = apis.data
+    rows.value = filterPermissions(permissions.data)
+    catalog.value = { ...apis.data, endpoints: filterApiEndpoints(apis.data.endpoints) }
   } catch (failure) {
     notifyError(failure)
   } finally {

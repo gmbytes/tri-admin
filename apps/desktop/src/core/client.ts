@@ -1,8 +1,5 @@
 import { normalizeEndpoint } from './endpoint'
-import { buildCallDocument } from './mcp'
-import { readPrivateJson } from './private-json'
 import type { Envelope, TokenResponse, UserSummary } from './types'
-import { readConfigurationDownload, type ConfigurationDownload } from './configuration'
 import {
   FileTransferError,
   readFileContent,
@@ -38,7 +35,6 @@ interface RequestOptions {
   signal?: AbortSignal
 }
 interface TransportOptions extends RequestOptions {
-  document?: string
   chunk?: { body: Blob; sha256: string }
   timeoutMs?: number
 }
@@ -186,14 +182,13 @@ export class ApiClient {
         headers: {
           ...(options.chunk
             ? { 'content-type': 'application/octet-stream', 'x-chunk-sha256': options.chunk.sha256 }
-            : options.body !== undefined || options.document !== undefined
+            : options.body !== undefined
               ? { 'content-type': 'application/json' }
               : {}),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
         },
         body:
           options.chunk?.body ??
-          options.document ??
           (options.body !== undefined ? JSON.stringify(options.body) : undefined),
         signal,
         credentials: 'omit',
@@ -328,52 +323,6 @@ export class ApiClient {
   async request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
     return this.authorized<T>(path, options)
   }
-  async readPrivate<T>(
-    path: string,
-    parse: (value: unknown) => T | Promise<T>,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<Envelope<T>> {
-    const content =
-      /^\/(?:ai\/runs|workflows\/(?:runs|sessions|messages))\/[a-f0-9]{24}\/content$/u.test(path)
-    const definition =
-      /^\/workflows\/plans\/[a-f0-9]{24}\/(?:definition|revisions\/[1-9][0-9]{0,15})$/u.test(path)
-    if (!content && !definition) throw new ApiError('INVALID_PRIVATE_RESOURCE', '私有资源标识无效')
-    return this.authorized<T>(path, { signal: options.signal }, async (response, signal) => {
-      try {
-        const value = await readPrivateJson(response, signal)
-        const data = await parse(value)
-        if (signal.aborted) throw new Error()
-        return { data }
-      } catch {
-        throw new ApiError(
-          signal.aborted ? 'REQUEST_CANCELLED' : 'INVALID_RESPONSE',
-          signal.aborted ? '请求已取消' : '私有响应格式或完整性无效',
-        )
-      }
-    })
-  }
-  async callMcpTool<T>(
-    connectionId: string,
-    requestId: string,
-    version: number,
-    name: string,
-    argumentsJson: string,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<Envelope<T>> {
-    if (!/^[a-f0-9]{24}$/.test(connectionId))
-      throw new ApiError('INVALID_MCP_REQUEST', 'MCP 连接标识无效')
-    let document: string
-    try {
-      document = buildCallDocument(requestId, version, name, argumentsJson)
-    } catch {
-      throw new ApiError('INVALID_MCP_REQUEST', 'MCP 工具参数或请求标识无效')
-    }
-    return this.authorized<T>(`/mcp/connections/${connectionId}/calls`, {
-      method: 'POST',
-      document,
-      signal: options.signal,
-    })
-  }
 
   async putChunk<T = unknown>(
     uploadId: string,
@@ -400,70 +349,17 @@ export class ApiClient {
     })
   }
 
-  async downloadConfiguration(path: string): Promise<ConfigurationDownload> {
-    const response = await this.authorized<ConfigurationDownload>(path, {}, async (response) => {
-      try {
-        return { data: await readConfigurationDownload(response) }
-      } catch (error) {
-        throw new ApiError(
-          'INVALID_DOWNLOAD',
-          error instanceof Error ? error.message : '配置包下载失败',
-        )
-      }
-    })
-    return response.data
-  }
-
   async downloadFile<T>(
     fileId: string,
     expected: FileContentSpec,
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
   ): Promise<T> {
-    return this.downloadContent({ kind: 'file', id: fileId }, expected, sink, options)
+    return this.downloadContent(fileId, expected, sink, options)
   }
-  async downloadExport<T>(
-    jobId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ): Promise<T> {
-    return this.downloadContent({ kind: 'export', id: jobId }, expected, sink, options)
-  }
-  async downloadWorkflow<T>(
-    id: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ): Promise<T> {
-    return this.downloadContent({ kind: 'workflow', id }, expected, sink, options)
-  }
-  async downloadGeneratedProject<T>(
-    generationId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ): Promise<T> {
-    return this.downloadContent({ kind: 'generated', id: generationId }, expected, sink, options)
-  }
-  async downloadExtension<T>(
-    extensionId: string,
-    revisionId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ): Promise<T> {
-    return this.downloadContent(
-      { kind: 'extension', id: revisionId, extensionId },
-      expected,
-      sink,
-      options,
-    )
-  }
+
   private async downloadContent<T>(
-    destination:
-      | { kind: 'file' | 'export' | 'generated' | 'workflow'; id: string }
-      | { kind: 'extension'; id: string; extensionId: string },
+    fileId: string,
     expected: FileContentSpec,
     sink: FileSink<T>,
     options: { signal?: AbortSignal; onProgress?: (bytes: number) => void },
@@ -479,43 +375,17 @@ export class ApiClient {
       abort,
     }
     try {
-      const kind = destination.kind,
-        fileId = destination.id
       if (!/^[a-f0-9]{24}$/.test(fileId)) throw new ApiError('INVALID_FILE', '文件标识无效')
-      if (destination.kind === 'extension' && !/^[a-f0-9]{24}$/.test(destination.extensionId))
-        throw new ApiError('INVALID_FILE', '扩展标识无效')
       validateFileSpec(expected)
-      if (kind === 'generated' && (expected.size === 0 || expected.size > 1024 * 1024))
-        throw new ApiError('INVALID_GENERATED_PACKAGE', '生成包长度无效或超过 1 MiB')
-      if (kind === 'extension' && (expected.size === 0 || expected.size > 4 * 1024 * 1024))
-        throw new ApiError('INVALID_EXTENSION_PACKAGE', '扩展包长度无效或超过 4 MiB')
-      if (kind === 'workflow' && (expected.size === 0 || expected.size > 4 * 1024 * 1024))
-        throw new ApiError('INVALID_WORKFLOW_EXPORT', 'Markdown 产物长度无效或超过 4 MiB')
       const spec = Object.freeze({ size: expected.size, sha256: expected.sha256 })
       const result = await this.authorized<T>(
-        destination.kind === 'extension'
-          ? `/extensions/${destination.extensionId}/revisions/${fileId}/download`
-          : kind === 'generated'
-            ? `/codegen/generations/${fileId}/download`
-            : kind === 'export'
-              ? `/data-tools/exports/${fileId}/content`
-              : kind === 'workflow'
-                ? `/workflows/exports/${fileId}/content`
-                : `/files/${fileId}/content`,
-        {
-          signal: options.signal,
-          timeoutMs: 30 * 60 * 1000,
-        },
+        `/files/${fileId}/content`,
+        { signal: options.signal, timeoutMs: 30 * 60 * 1000 },
         async (response, signal) => ({
           data: await readFileContent(response, spec, target, {
             signal,
             onProgress: options.onProgress,
-            mediaType:
-              kind === 'generated' || kind === 'extension'
-                ? 'application/zip'
-                : kind === 'workflow'
-                  ? 'text/markdown'
-                  : 'application/octet-stream',
+            mediaType: 'application/octet-stream',
           }),
         }),
       )
@@ -527,7 +397,6 @@ export class ApiClient {
       throw new ApiError('FILE_TRANSFER_FAILED', '文件下载失败，请重试')
     }
   }
-
   async clearSession(): Promise<void> {
     const endpoint = this.base
     this.invalidate()

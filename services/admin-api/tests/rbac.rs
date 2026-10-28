@@ -255,7 +255,7 @@ async fn delegated_admin_cannot_grant_owner_or_permissions_they_do_not_hold() {
     .await;
     let tokens = login_as(&app, "operator", PASSWORD).await;
     let access = tokens["accessToken"].as_str().unwrap();
-    let (status,_)=app.send("POST","/api/v1/roles",json!({"name":"escape","slug":"escape","permissions":["settings.write"],"dataScope":"all"}),Some(access)).await;
+    let (status,_)=app.send("POST","/api/v1/roles",json!({"name":"escape","slug":"escape","permissions":["files.write"],"dataScope":"all"}),Some(access)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(
         app.send(

@@ -686,7 +686,7 @@ onBeforeUnmount(() => {
         ><el-input v-model="form.name" :disabled="!!resumeKey" /></el-form-item
       ><el-form-item label="文件分类"
         ><FileCategorySelect v-model="form.categoryId" :disabled="!!resumeKey" /></el-form-item
-      ><el-form-item v-if="session.can('settings.read') && !resumeKey" label="文件存储"
+      ><el-form-item v-if="session.can('files.write') && !resumeKey" label="文件存储"
         ><FileStorageSelect v-model="form.storageProfileId" /></el-form-item></el-form
     ><template #footer
       ><el-button @click="open = false">取消</el-button

@@ -27,7 +27,6 @@ struct Details {
     username: Option<String>,
     login_recorded: bool,
     event_ids: Vec<ObjectId>,
-    call_ticket: Option<crate::modules::open_access::usage::Ticket>,
 }
 #[derive(Clone)]
 struct Context {
@@ -40,43 +39,9 @@ struct Context {
 }
 tokio::task_local! {static CURRENT: Context;}
 
-/// Carry trusted request tracing into a protocol worker without authenticating again.
-#[derive(Clone)]
-pub(crate) struct CapturedRequest(Option<Context>);
-pub(crate) fn capture_request() -> CapturedRequest {
-    CapturedRequest(CURRENT.try_with(Clone::clone).ok())
-}
-impl CapturedRequest {
-    pub(crate) async fn scope<F: Future>(&self, future: F) -> F::Output {
-        if let Some(context) = &self.0 {
-            CURRENT.scope(context.clone(), future).await
-        } else {
-            future.await
-        }
-    }
-}
-
 pub fn request_id() -> Option<String> {
     CURRENT.try_with(|context| context.id.clone()).ok()
 }
-pub fn call_descriptor() -> Option<crate::modules::open_access::usage::Descriptor> {
-    CURRENT
-        .try_with(|context| crate::modules::open_access::usage::Descriptor {
-            request_id: context.id.clone(),
-            operation_id: context.action,
-            method: context.method,
-            route: context.route,
-        })
-        .ok()
-}
-pub fn call_ticket(ticket: crate::modules::open_access::usage::Ticket) {
-    let _ = CURRENT.try_with(|context| {
-        if let Ok(mut details) = context.details.lock() {
-            details.call_ticket = Some(ticket);
-        }
-    });
-}
-
 #[derive(Clone)]
 pub(crate) struct StreamErrorReporter {
     database: Database,
@@ -310,11 +275,6 @@ pub async fn observe(State(state): State<AppState>, mut request: Request, next: 
   let start=Instant::now();let mut response=crate::common::error::normalize_framework(match AssertUnwindSafe(next.run(request)).catch_unwind().await{Ok(response)=>response,Err(_)=>AppError::Internal.into_response()});
   let duration=i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX);let status=response.status().as_u16();
   let code=response.extensions().get::<ResponseError>().map(|error|error.code.to_owned()).unwrap_or_else(||format!("HTTP_{status}"));
-  let ticket=context.details.lock().ok().and_then(|details|details.call_ticket.clone());
-  if let Some(ticket)=ticket {
-    response.headers_mut().insert(axum::http::header::CACHE_CONTROL,HeaderValue::from_static("private, no-store"));
-    if let Some(database)=&state.database && !matches!(tokio::time::timeout(Duration::from_millis(500),crate::modules::open_access::usage::finish(database,&ticket,status,&code,duration)).await,Ok(Ok(()))){tracing::warn!(request_id=%context.id,"API call completion remains unconfirmed");}
-  }
   let has_events=context.details.lock().is_ok_and(|details|!details.event_ids.is_empty());
   if (status>=400||has_events)&&let Some(database)=&state.database
    && !matches!(tokio::time::timeout(Duration::from_millis(500),persist(database,&context,status,&code,duration)).await,Ok(Ok(()))) {tracing::warn!(request_id=%context.id,"request log storage unavailable");}

@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useSession } from '../stores/session'
-import type { IntegrationProfile } from '../core/settings'
+interface StorageOption {
+  id: string
+  name: string
+  code: string
+  version: number
+}
 const props = defineProps<{ modelValue: string | null }>(),
   emit = defineEmits<{ 'update:modelValue': [value: string | null] }>(),
   session = useSession(),
-  rows = ref<IntegrationProfile[]>([]),
-  selected = ref<IntegrationProfile | null>(null),
+  rows = ref<StorageOption[]>([]),
+  selected = ref<StorageOption | null>(null),
   loading = ref(false)
 let sequence = 0,
   alive = true
@@ -19,15 +24,10 @@ async function load(search = '') {
   const seq = ++sequence
   loading.value = true
   try {
-    const result = await Promise.all(
-      ['localStorage', 's3'].map((kind) =>
-        session.request<IntegrationProfile[]>(
-          `/settings/profiles?${new URLSearchParams({ pageSize: '100', sort: 'code', kind, search })}`,
-        ),
-      ),
+    const result = await session.request<StorageOption[]>(
+      `/files/storage-options?${new URLSearchParams({ pageSize: '100', search })}`,
     )
-    if (alive && seq === sequence)
-      rows.value = result.flatMap((value) => value.data).filter((row) => row.enabled)
+    if (alive && seq === sequence) rows.value = result.data
   } finally {
     if (alive && seq === sequence) loading.value = false
   }
@@ -40,7 +40,7 @@ watch(
       return
     }
     try {
-      const row = (await session.request<IntegrationProfile>(`/settings/profiles/${id}`)).data
+      const row = (await session.request<StorageOption>(`/files/storage-options/${id}`)).data
       if (alive && props.modelValue === id) selected.value = row
     } catch {
       /* Save-time validation remains authoritative. */

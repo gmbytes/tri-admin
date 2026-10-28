@@ -4,10 +4,7 @@ import { mkdir, mkdtemp, realpath, writeFile, rm } from 'node:fs/promises'
 import { resolve, join, sep } from 'node:path'
 const image =
   'chrislusf/seaweedfs@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860'
-const args = process.argv.slice(2)
-if (args.some((value) => value !== '--exports-only') || args.length > 1)
-  throw Error('Supported option: --exports-only')
-const exportsOnly = args.includes('--exports-only')
+if (process.argv.length > 2) throw Error('This script takes no arguments')
 const workspace = await realpath(resolve('.')),
   root = join(workspace, '.superpowers', 's3')
 await mkdir(root, { recursive: true })
@@ -102,28 +99,31 @@ try {
     { mode: 0o600 },
   )
   console.log('Isolated SeaweedFS 4.50 fixture ready; testing real immutable object storage.')
-  const result = exportsOnly
-    ? { status: 0 }
-    : spawnSync(
-        'cargo',
-        [
-          'test',
-          '-p',
-          'admin-api',
-          '--test',
-          'file_storage',
-          'real_s3_content_writes',
-          '--',
-          '--ignored',
-        ],
-        {
-          env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
-          stdio: 'inherit',
-          windowsHide: true,
-        },
-      )
+  const result = spawnSync(
+    'cargo',
+    [
+      'test',
+      '-p',
+      'admin-api',
+      '--test',
+      'file_storage',
+      'real_s3_content_writes',
+      '--',
+      '--ignored',
+    ],
+    {
+      env: {
+        ...process.env,
+        CARGO_INCREMENTAL: '0',
+        CARGO_BUILD_JOBS: '2',
+        TRI_S3_FIXTURE_FILE: fixture,
+      },
+      stdio: 'inherit',
+      windowsHide: true,
+    },
+  )
   exitCode = result.status ?? 1
-  if (exitCode === 0 && !exportsOnly) {
+  if (exitCode === 0) {
     const publication = spawnSync(
       'cargo',
       [
@@ -137,46 +137,17 @@ try {
         '--ignored',
       ],
       {
-        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
+        env: {
+          ...process.env,
+          CARGO_INCREMENTAL: '0',
+          CARGO_BUILD_JOBS: '2',
+          TRI_S3_FIXTURE_FILE: fixture,
+        },
         stdio: 'inherit',
         windowsHide: true,
       },
     )
     exitCode = publication.status ?? 1
-  }
-  if (exitCode === 0) {
-    const exports = spawnSync(
-      'cargo',
-      ['test', '-p', 'admin-api', '--test', 'export_s3', '--', '--ignored', '--test-threads=1'],
-      {
-        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
-        stdio: 'inherit',
-        windowsHide: true,
-      },
-    )
-    exitCode = exports.status ?? 1
-  }
-  if (exitCode === 0) {
-    const processRecovery = spawnSync(
-      'cargo',
-      [
-        'test',
-        '-p',
-        'admin-api',
-        '--test',
-        'export_service',
-        'real_s3_main',
-        '--',
-        '--ignored',
-        '--test-threads=1',
-      ],
-      {
-        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
-        stdio: 'inherit',
-        windowsHide: true,
-      },
-    )
-    exitCode = processRecovery.status ?? 1
   }
 } finally {
   if (id) {

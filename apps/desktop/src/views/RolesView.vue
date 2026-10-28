@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { DataScope, Permission, RoleRecord } from '../core/types'
+import { filterPermissions, filterPermissionCodes } from '../core/navigation'
 import { errorText, notifyError, scopeText } from '../ui'
 const session = useSession(),
   rows = ref<RoleRecord[]>([]),
@@ -70,9 +71,11 @@ async function load() {
 }
 async function loadPermissions() {
   if (session.can('permissions.read'))
-    permissions.value = (await session.request<Permission[]>('/permissions')).data
+    permissions.value = filterPermissions(
+      (await session.request<Permission[]>('/permissions')).data,
+    )
   else
-    permissions.value = (session.user?.permissions ?? [])
+    permissions.value = filterPermissionCodes(session.user?.permissions ?? [])
       .filter((code) => code !== '*')
       .map((code) => ({ code, label: code, group: code.split('.')[0] ?? 'other' }))
 }
@@ -81,7 +84,7 @@ function edit(row: RoleRecord | null) {
   Object.assign(form, {
     name: row?.name ?? '',
     slug: row?.slug ?? '',
-    permissions: [...(row?.permissions ?? [])],
+    permissions: filterPermissionCodes(row?.permissions ?? []),
     dataScope: row?.dataScope ?? 'self',
     dataScopeRoleIds: [...(row?.dataScopeRoleIds ?? [])],
   })

@@ -11,7 +11,7 @@ use crate::{
     },
     modules::{
         rbac::shared::{self, Actor},
-        settings::service as settings,
+        storage_profiles::service as settings,
     },
     state::AppState,
 };
@@ -100,7 +100,7 @@ async fn enqueue_request(
         |session, (database, config, actor)| {
             async move {
                 shared::lock(database, "rbac", session).await?;
-                shared::lock(database, "settings", session).await?;
+                shared::lock(database, "file-storage", session).await?;
                 shared::lock(database, "files", session).await?;
                 let row = database
                     .collection::<Upload>("file_uploads")

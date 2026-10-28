@@ -23,7 +23,7 @@ impl ProbeJournal {
     }
     pub async fn begin(&self, id: uuid::Uuid) -> Result<(), StorageError> {
         transaction::run(&self.database,(self.database.clone(),self.profile),|session,(database,profile)|{async move{
-            shared::lock(database,"settings",session).await?;shared::lock(database,"files",session).await?;
+            shared::lock(database,"file-storage",session).await?;shared::lock(database,"files",session).await?;
             if database.collection::<Document>("_schema_migrations").find_one(doc!{"_id":"files","version":crate::storage::files_schema::VERSION}).session(&mut *session).await?.is_none(){return Err(fail(Failure::NotReady))}
             if database.collection::<Document>("integration_profiles").find_one(doc!{"_id":*profile,"kind":"s3","enabled":true,"deletedAt":null}).session(&mut *session).await?.is_none(){return Err(fail(Failure::NotFound))}
             let now=DateTime::now();database.collection::<Document>("file_storage_probes").insert_one(doc!{"_id":id.to_string(),"storageProfileId":*profile,"state":"writing","phase":0i64,"leaseUntil":DateTime::from_millis(now.timestamp_millis()+30000),"nextRunAt":now,"createdAt":now,"updatedAt":now}).session(session).await?;Ok(())

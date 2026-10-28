@@ -186,7 +186,7 @@ async fn errors_use_safe_route_templates_request_ids_and_actor_attribution() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/parameters?password=secret-query")
+                .uri("/api/v1/file-categories?password=secret-query")
                 .header("authorization", format!("Bearer {owner}"))
                 .header("content-type", "application/json")
                 .header("x-request-id", "secret-untrusted-header")
@@ -204,8 +204,8 @@ async fn errors_use_safe_route_templates_request_ids_and_actor_attribution() {
     let logs = entries(&app, owner, &format!("kind=error&requestId={id}")).await;
     assert_eq!(logs["meta"]["total"], 1);
     let row = &logs["data"][0];
-    assert_eq!(row["route"], "/api/v1/parameters");
-    assert_eq!(row["action"], "parameters.create");
+    assert_eq!(row["route"], "/api/v1/file-categories");
+    assert_eq!(row["action"], "fileCategories.create");
     assert_eq!(row["errorCode"], "VALIDATION_ERROR");
     assert_eq!(row["actorId"], auth["user"]["id"]);
     assert!(row["durationMs"].as_i64().is_some());
@@ -275,13 +275,12 @@ async fn concurrent_operations_keep_their_own_request_id_and_completion_measurem
     let request = |key: &str, id: &str| {
         Request::builder()
             .method("POST")
-            .uri("/api/v1/parameters")
+            .uri("/api/v1/file-categories")
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {token}"))
             .header("x-request-id", id)
             .body(Body::from(
-                json!({"name":key,"key":key,"valueType":"string","value":"private-value"})
-                    .to_string(),
+                json!({"name":key,"code":key,"description":"private-value"}).to_string(),
             ))
             .unwrap()
     };
@@ -306,7 +305,7 @@ async fn concurrent_operations_keep_their_own_request_id_and_completion_measurem
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/v1/parameters")
+                .uri("/api/v1/file-categories")
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {token}"))
                 .header("x-request-id", &shared_id)
@@ -466,7 +465,7 @@ async fn logs_schema_is_required_and_failed_request_log_storage_preserves_the_re
     );
     app.database.run_command(doc!{"collMod":"request_errors","validator":{"$jsonSchema":{"required":["rejectFixture"]}},"validationLevel":"strict"}).await.unwrap();
     assert_eq!(
-        app.send("GET", "/api/v1/parameters", Value::Null, None)
+        app.send("GET", "/api/v1/file-categories", Value::Null, None)
             .await
             .0,
         StatusCode::UNAUTHORIZED

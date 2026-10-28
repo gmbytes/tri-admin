@@ -15,7 +15,7 @@ use crate::{
     config::Config,
     modules::{
         rbac::shared::{self, Actor},
-        settings::{
+        storage_profiles::{
             models::{ServiceSettings, stable_id},
             service as settings,
         },
@@ -168,7 +168,7 @@ pub async fn create(
         ),
         |session, (database, config, actor, input, request, media, spec, fingerprint)| {
             async move {
-                shared::lock(database, "settings", session).await?;
+                shared::lock(database, "file-storage", session).await?;
                 shared::lock(database, "files", session).await?;
                 if let Some(row) = database
                     .collection::<Upload>("file_uploads")

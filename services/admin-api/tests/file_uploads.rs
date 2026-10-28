@@ -1,3 +1,5 @@
+#[path = "support/storage.rs"]
+mod storage_support;
 mod support;
 use admin_api::{build_router, config::Config, state::AppState};
 use axum::{
@@ -254,37 +256,34 @@ async fn upload_inputs_reject_unsafe_names_sizes_hashes_and_missing_references()
     app.cleanup().await;
 }
 #[tokio::test]
-async fn active_uploads_pin_storage_until_cancellation_and_cleanup_finish() {
+async fn active_uploads_validate_approved_storage_and_cancel_idempotently() {
     let (app, _root) = app().await;
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
-    let(_,profile)=app.send("POST","/api/v1/settings/profiles",json!({"name":"上传存储","code":"uploads-storage","enabled":true,"configuration":{"kind":"localStorage","subdirectory":"uploads-target"}}),Some(token)).await;
-    let id = profile["data"]["id"].as_str().unwrap();
+    let profile=storage_support::seed(&app,json!({"name":"上传存储","code":"uploads-storage","enabled":true,"configuration":{"kind":"localStorage","subdirectory":"uploads-target"}})).await;
+    let id = profile["id"].as_str().unwrap();
+    let profile_id = ObjectId::parse_str(id).unwrap();
     let mut body = input("file.bin", 1);
     body["storageProfileId"] = json!(id);
     let upload = create(&app, token, body).await;
-    assert_eq!(
-        app.send(
-            "PATCH",
-            &format!("/api/v1/settings/profiles/{id}"),
-            json!({"version":1,"enabled":false}),
-            Some(token)
-        )
+    app.database
+        .collection::<Document>("integration_profiles")
+        .update_one(doc! {"_id":profile_id}, doc! {"$set":{"enabled":false}})
         .await
-        .0,
-        StatusCode::CONFLICT
-    );
+        .unwrap();
+    let mut next = input("blocked.bin", 1);
+    next["storageProfileId"] = json!(id);
     assert_eq!(
-        app.send(
-            "DELETE",
-            &format!("/api/v1/settings/profiles/{id}?version=1"),
-            Value::Null,
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
+        app.send("POST", "/api/v1/uploads", next, Some(token))
+            .await
+            .0,
+        StatusCode::UNPROCESSABLE_ENTITY
     );
+    app.database
+        .collection::<Document>("integration_profiles")
+        .update_one(doc! {"_id":profile_id}, doc! {"$set":{"enabled":true}})
+        .await
+        .unwrap();
     let path = format!("/api/v1/uploads/{}/cancel", upload["id"].as_str().unwrap());
     let first = app.send("POST", &path, json!({}), Some(token)).await;
     assert_eq!(first.0, StatusCode::OK);
@@ -293,19 +292,9 @@ async fn active_uploads_pin_storage_until_cancellation_and_cleanup_finish() {
         app.send("POST", &path, json!({}), Some(token)).await.0,
         StatusCode::OK
     );
-    assert_eq!(
-        app.send(
-            "DELETE",
-            &format!("/api/v1/settings/profiles/{id}?version=1"),
-            Value::Null,
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::NO_CONTENT
-    );
     app.cleanup().await;
 }
+
 #[tokio::test]
 async fn chunk_receipts_are_persistent_idempotent_and_cancelled_content_is_cleaned() {
     let (app, root) = app().await;
@@ -936,31 +925,18 @@ async fn replay_retains_the_original_default_storage_after_defaults_change() {
     let token = auth["accessToken"].as_str().unwrap();
     let body = input("default.bin", 1);
     let original = create(&app, token, body.clone()).await;
-    let(_,profile)=app.send("POST","/api/v1/settings/profiles",json!({"name":"新默认存储","code":"new-default","enabled":true,"configuration":{"kind":"localStorage","subdirectory":"new-default"}}),Some(token)).await;
-    let (_, service) = app
-        .send("GET", "/api/v1/settings/service", Value::Null, Some(token))
-        .await;
-    assert_eq!(
-        app.send(
-            "PATCH",
-            "/api/v1/settings/service",
-            json!({"version":service["data"]["version"],"storageProfileId":profile["data"]["id"]}),
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
+    let profile=storage_support::seed(&app,json!({"name":"新默认存储","code":"new-default","enabled":true,"configuration":{"kind":"localStorage","subdirectory":"new-default"}})).await;
+    app.database.collection::<Document>("service_settings").update_many(doc!{},doc!{"$set":{"storageProfileId":ObjectId::parse_str(profile["id"].as_str().unwrap()).unwrap()},"$inc":{"version":1i64}}).await.unwrap();
     let replay = create(&app, token, body).await;
     assert_eq!(replay["id"], original["id"]);
     assert_eq!(replay["storageProfileId"], original["storageProfileId"]);
     let new = create(&app, token, input("new.bin", 1)).await;
-    assert_eq!(new["storageProfileId"], profile["data"]["id"]);
+    assert_eq!(new["storageProfileId"], profile["id"]);
     app.cleanup().await;
 }
 
 #[tokio::test]
-async fn reference_creation_and_category_or_profile_deletion_cannot_both_succeed() {
+async fn reference_creation_and_category_deletion_cannot_both_succeed() {
     let (app, _root) = app().await;
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
@@ -976,25 +952,6 @@ async fn reference_creation_and_category_or_profile_deletion_cannot_both_succeed
     let mut body = input("category.bin", 1);
     body["categoryId"] = json!(id);
     let delete_path = format!("/api/v1/file-categories/{id}?version=1");
-    let (a, b) = tokio::join!(
-        app.send("POST", "/api/v1/uploads", body, Some(token)),
-        app.send("DELETE", &delete_path, Value::Null, Some(token))
-    );
-    assert!(
-        matches!(
-            (a.0, b.0),
-            (StatusCode::CREATED, StatusCode::CONFLICT)
-                | (StatusCode::UNPROCESSABLE_ENTITY, StatusCode::NO_CONTENT)
-        ),
-        "{} / {}",
-        a.1,
-        b.1
-    );
-    let(_,profile)=app.send("POST","/api/v1/settings/profiles",json!({"name":"并发存储","code":"race-storage","enabled":true,"configuration":{"kind":"localStorage","subdirectory":"race-storage"}}),Some(token)).await;
-    let id = profile["data"]["id"].as_str().unwrap();
-    let mut body = input("profile.bin", 1);
-    body["storageProfileId"] = json!(id);
-    let delete_path = format!("/api/v1/settings/profiles/{id}?version=1");
     let (a, b) = tokio::join!(
         app.send("POST", "/api/v1/uploads", body, Some(token)),
         app.send("DELETE", &delete_path, Value::Null, Some(token))

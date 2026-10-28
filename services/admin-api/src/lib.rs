@@ -26,9 +26,6 @@ pub fn build_router(state: AppState) -> Router {
             axum::http::header::AUTHORIZATION,
             axum::http::HeaderName::from_static("x-request-id"),
             axum::http::HeaderName::from_static("x-chunk-sha256"),
-            axum::http::HeaderName::from_static("mcp-protocol-version"),
-            axum::http::HeaderName::from_static("mcp-method"),
-            axum::http::HeaderName::from_static("mcp-name"),
         ])
         .expose_headers([
             axum::http::HeaderName::from_static("x-request-id"),

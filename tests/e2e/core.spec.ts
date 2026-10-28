@@ -104,10 +104,10 @@ test('API catalog shows actual methods paths permissions and local filters', asy
   await page.getByPlaceholder('搜索操作标识、路径或权限').fill('users.create')
   await expect(page.locator('.api-catalog-table')).toContainText('roles.assign')
   await expect(page.locator('.api-catalog-table')).toContainText('users.write')
-  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('parameters.get')
-  const row = page.getByRole('row').filter({ hasText: 'parameters.get' })
-  await expect(row).toContainText('/api/v1/parameters/{id}')
-  await expect(row).toContainText('parameters.read')
+  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('files.get')
+  const row = page.getByRole('row').filter({ hasText: 'files.get' })
+  await expect(row).toContainText('/api/v1/files/{id}')
+  await expect(row).toContainText('files.read')
   const method = page.getByRole('combobox', { name: 'HTTP 方法', exact: true })
   await page.locator('.method-select .el-select__wrapper').click()
   let controls = await method.getAttribute('aria-controls')
@@ -123,12 +123,6 @@ test('API catalog shows actual methods paths permissions and local filters', asy
   await page.getByPlaceholder('搜索操作标识、路径或权限').fill('health.')
   await expect(page.locator('.api-catalog-table')).toContainText('health.live')
   await expect(page.locator('.api-catalog-table')).toContainText('公开')
-  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('open.profile.get')
-  await expect(page.locator('.api-catalog-table')).toContainText('应用用户身份')
-  await expect(page.locator('.api-catalog-table')).toContainText('open.profile.read')
-  await page.getByPlaceholder('搜索操作标识、路径或权限').fill('open.users.list')
-  await expect(page.locator('.api-catalog-table')).toContainText('应用服务身份')
-  await expect(page.locator('.api-catalog-table')).toContainText('open.users.read')
   await page.getByPlaceholder('搜索操作标识、路径或权限').fill('uploads.chunk.put')
   await page.locator('.method-select .el-select__wrapper').click()
   controls = await method.getAttribute('aria-controls')
@@ -139,112 +133,6 @@ test('API catalog shows actual methods paths permissions and local filters', asy
   await expect(page.locator('.api-catalog-table')).toContainText('files.write')
   await page.getByRole('tab', { name: '权限操作', exact: true }).click()
   await expect(page.getByPlaceholder('搜索权限名或代码')).toBeVisible()
-})
-
-test('dictionary and item forms persist edits and guard parent deletion', async ({ page }) => {
-  await login(page)
-  await navigate(page, '字典管理')
-  const suffix = Date.now().toString(36),
-    key = `ui-dict-${suffix}`
-  await page.getByRole('button', { name: '新增字典', exact: true }).click()
-  let dialog = page.getByRole('dialog', { name: '新增字典', exact: true })
-  await dialog.getByLabel('字典名称', { exact: true }).fill(`界面字典-${suffix}`)
-  await dialog.getByLabel('字典标识', { exact: true }).fill(key)
-  await dialog.getByRole('button', { name: '保存字典', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  const row = page.getByRole('row').filter({ hasText: key })
-  await expect(row).toBeVisible()
-  await row.getByRole('button', { name: '编辑', exact: true }).click()
-  dialog = page.getByRole('dialog', { name: '编辑字典', exact: true })
-  await dialog.getByLabel('字典名称', { exact: true }).fill(`更新字典-${suffix}`)
-  await dialog.getByRole('button', { name: '保存字典', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(row).toContainText(`更新字典-${suffix}`)
-  await row.getByRole('button', { name: '明细', exact: true }).click()
-  const drawer = page.getByRole('dialog', { name: `更新字典-${suffix} · 明细`, exact: true })
-  await drawer.getByRole('button', { name: '新增明细', exact: true }).click()
-  dialog = page.getByRole('dialog', { name: '新增明细', exact: true })
-  await dialog.getByLabel('明细名称', { exact: true }).fill('中国')
-  await dialog.getByLabel('明细值', { exact: true }).fill('cn')
-  await dialog.getByRole('button', { name: '保存明细', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  const itemRow = drawer.getByRole('row').filter({ hasText: 'cn' })
-  await itemRow.getByRole('button', { name: '编辑', exact: true }).click()
-  dialog = page.getByRole('dialog', { name: '编辑明细', exact: true })
-  await dialog.getByLabel('明细名称', { exact: true }).fill('中国大陆')
-  await dialog.getByRole('button', { name: '保存明细', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(itemRow).toContainText('中国大陆')
-  await drawer.getByRole('button', { name: '关闭此对话框', exact: true }).click()
-  await row.getByRole('button', { name: '删除', exact: true }).click()
-  await page
-    .getByRole('dialog', { name: '删除字典', exact: true })
-    .getByRole('button', { name: '删除', exact: true })
-    .click()
-  await expect(page.getByText('请先删除字典中的活动明细', { exact: true })).toBeVisible()
-  await expect(row).toBeVisible()
-  await row.getByRole('button', { name: '明细', exact: true }).click()
-  await itemRow.getByRole('button', { name: '删除', exact: true }).click()
-  await page
-    .getByRole('dialog', { name: '删除明细', exact: true })
-    .getByRole('button', { name: '删除', exact: true })
-    .click()
-  await expect(itemRow).toHaveCount(0)
-  await drawer.getByRole('button', { name: '关闭此对话框', exact: true }).click()
-  await row.getByRole('button', { name: '删除', exact: true }).click()
-  await page
-    .getByRole('dialog', { name: '删除字典', exact: true })
-    .getByRole('button', { name: '删除', exact: true })
-    .click()
-  await expect(row).toHaveCount(0)
-})
-
-test('parameter form validates JSON and preserves typed values through edit and delete', async ({
-  page,
-}) => {
-  await login(page)
-  await navigate(page, '参数管理')
-  const key = `ui-param-${Date.now().toString(36)}`
-  await page.getByRole('button', { name: '新增参数', exact: true }).click()
-  let dialog = page.getByRole('dialog', { name: '新增参数', exact: true })
-  await dialog.getByLabel('参数名称', { exact: true }).fill('业务开关配置')
-  await dialog.getByLabel('参数标识', { exact: true }).fill(key)
-  await chooseSelect(page, dialog, '值类型', 'JSON')
-  await dialog.getByLabel('参数值', { exact: true }).fill('{invalid')
-  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('请输入有效的 JSON')
-  await dialog.getByLabel('参数值', { exact: true }).fill('{"limit":1e999}')
-  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('JSON 中的数字超出安全范围')
-  await dialog.getByLabel('参数值', { exact: true }).fill('{"enabled":true,"limit":10}')
-  let response = page.waitForResponse(
-    (response) => response.url() === api + '/parameters' && response.request().method() === 'POST',
-  )
-  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
-  let body = await (await response).json()
-  expect(body.data.value).toEqual({ enabled: true, limit: 10 })
-  await expect(dialog).not.toBeVisible()
-  const row = page.getByRole('row').filter({ hasText: key })
-  await row.getByRole('button', { name: '编辑', exact: true }).click()
-  dialog = page.getByRole('dialog', { name: '编辑参数', exact: true })
-  await expect(dialog.getByLabel('参数值', { exact: true })).toHaveValue(/"enabled": true/)
-  await dialog.getByLabel('参数值', { exact: true }).fill('null')
-  response = page.waitForResponse(
-    (response) =>
-      response.url() === api + `/parameters/${body.data.id}` &&
-      response.request().method() === 'PATCH',
-  )
-  await dialog.getByRole('button', { name: '保存参数', exact: true }).click()
-  body = await (await response).json()
-  expect(body.data.value).toBeNull()
-  expect(body.data.version).toBe(2)
-  await expect(dialog).not.toBeVisible()
-  await row.getByRole('button', { name: '删除', exact: true }).click()
-  await page
-    .getByRole('dialog', { name: '删除参数', exact: true })
-    .getByRole('button', { name: '删除', exact: true })
-    .click()
-  await expect(row).toHaveCount(0)
 })
 
 test('role and user forms submit real create and versioned edit requests', async ({ page }) => {
@@ -553,158 +441,38 @@ test('removed customer and client management has no navigation or API entries', 
   }
 })
 
-test('configuration versions capture download preview conflicts and apply without overwriting stale targets', async ({
+test('seven approved modules remain and retired role permissions and routes stay absent', async ({
   page,
 }) => {
-  test.setTimeout(60000)
-  const auth = await login(page)
-  const headers = { authorization: `Bearer ${auth.accessToken}` }
-  const suffix = Date.now().toString(36),
-    key = `ui.version.${suffix}`,
-    name = `版本参数-${suffix}`
-  const created = await page.request.post(api + '/parameters', {
-    headers,
-    data: { name, key, valueType: 'boolean', value: true },
-  })
-  expect(created.status()).toBe(201)
-  const parameter = (await created.json()).data
-  await navigate(page, '版本管理')
-  await page.getByRole('button', { name: '捕获配置', exact: true }).click()
-  let dialog = page.getByRole('dialog', { name: '捕获配置', exact: true })
-  await dialog.getByLabel('版本名称', { exact: true }).fill(`UI快照-${suffix}`)
-  await dialog.getByLabel('版本编号', { exact: true }).fill(`ui-capture-${suffix}`)
-  await chooseSelect(page, dialog, '参数', `${name} · ${key}`)
-  await dialog.getByRole('button', { name: '保存快照', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  const row = page.getByRole('row').filter({ hasText: `ui-capture-${suffix}` })
-  await expect(row).toBeVisible()
-  const downloaded = page.waitForEvent('download')
-  await row.getByRole('button', { name: '下载', exact: true }).click()
-  const download = await downloaded
-  const stream = await download.createReadStream(),
-    chunks: Buffer[] = []
-  if (!stream) throw Error('Missing package download')
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
-  const bundle = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  expect(bundle.resources.parameters[0].value).toBe(true)
-  bundle.release.code = `ui-import-${suffix}`
-  bundle.resources.parameters[0].value = false
-  await page.getByRole('button', { name: '导入配置包', exact: true }).click()
-  dialog = page.getByRole('dialog', { name: '导入配置包', exact: true })
-  await dialog.getByLabel('配置包 JSON', { exact: true }).fill(JSON.stringify(bundle))
-  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
-  await expect(dialog.locator('.import-summary')).toContainText('冲突')
-  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
-  await dialog.getByText('合并更新', { exact: true }).click()
-  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeEnabled()
-  const edited = await page.request.patch(`${api}/parameters/${parameter.id}`, {
-    headers,
-    data: { version: 1, value: true },
-  })
-  expect(edited.status()).toBe(200)
-  await dialog.getByRole('button', { name: '确认应用', exact: true }).click()
-  await expect(dialog).toContainText('目标配置已改变')
-  await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
-  await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
-  await dialog.getByRole('button', { name: '确认应用', exact: true }).click()
-  await expect(dialog).toContainText('配置已应用')
-  expect(
-    (await (await page.request.get(`${api}/parameters/${parameter.id}`, { headers })).json()).data
-      .value,
-  ).toBe(false)
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page.getByRole('row').filter({ hasText: `ui-import-${suffix}` })).toBeVisible()
-})
-
-test('version page enforces package read permissions and displays missing import writes', async ({
-  page,
-  browser,
-}) => {
-  test.setTimeout(60000)
-  const owner = await login(page),
-    headers = { authorization: `Bearer ${owner.accessToken}` }
-  const suffix = Date.now().toString(36)
-  const parameterResponse = await page.request.post(api + '/parameters', {
-    headers,
-    data: { name: '权限验证参数', key: `ui.access.${suffix}`, valueType: 'boolean', value: false },
-  })
-  expect(parameterResponse.status()).toBe(201)
-  const parameter = (await parameterResponse.json()).data
-  const captureResponse = await page.request.post(api + '/versions', {
-    headers,
-    data: { name: `权限快照-${suffix}`, code: `ui-access-${suffix}`, parameterIds: [parameter.id] },
-  })
-  expect(captureResponse.status()).toBe(201)
-  const version = (await captureResponse.json()).data
-  const packageResponse = await page.request.get(`${api}/versions/${version.id}/download`, {
-    headers,
-  })
-  const bundle = await packageResponse.json()
-  const context = await browser.newContext()
-  try {
-    for (const [kind, permissions] of [
-      ['reader', ['versions.read']],
-      ['importer', ['versions.read', 'versions.write', 'parameters.read']],
-    ] as const) {
-      const username = `${kind}-${suffix}`
-      const roleResponse = await page.request.post(api + '/roles', {
-        headers,
-        data: { name: username, slug: username, permissions, dataScope: 'all' },
-      })
-      expect(roleResponse.status()).toBe(201)
-      const role = (await roleResponse.json()).data
-      const userResponse = await page.request.post(api + '/users', {
-        headers,
-        data: { username, displayName: username, password: await password(), roleIds: [role.id] },
-      })
-      expect(userResponse.status()).toBe(201)
-      const operator = await context.newPage()
-      await operator.addInitScript(
-        (endpoint) => localStorage.setItem('tri-admin.server', endpoint),
-        api,
-      )
-      await login(operator, username)
-      await navigate(operator, '版本管理')
-      if (kind === 'reader') {
-        await expect(operator.getByRole('button', { name: '捕获配置', exact: true })).toHaveCount(0)
-        await expect(operator.getByRole('button', { name: '导入配置包', exact: true })).toHaveCount(
-          0,
-        )
-        const denied = operator.waitForResponse(
-          (response) => response.url() === `${api}/versions/${version.id}/download`,
-        )
-        await operator
-          .getByRole('row')
-          .filter({ hasText: version.code })
-          .getByRole('button', { name: '下载', exact: true })
-          .click()
-        expect((await denied).status()).toBe(403)
-        await expect(operator.locator('.el-message--error')).toBeVisible()
-      } else {
-        await operator.getByRole('button', { name: '导入配置包', exact: true }).click()
-        const dialog = operator.getByRole('dialog', { name: '导入配置包', exact: true })
-        await dialog.getByLabel('选择配置包', { exact: true }).setInputFiles({
-          name: 'invalid.json',
-          mimeType: 'application/json',
-          buffer: Buffer.from('{}'),
-        })
-        await expect(dialog).toContainText('仅支持 tri-admin/config-bundle')
-        await dialog.getByLabel('选择配置包', { exact: true }).setInputFiles({
-          name: 'configuration.json',
-          mimeType: 'application/json',
-          buffer: Buffer.from(JSON.stringify(bundle)),
-        })
-        await expect(dialog.getByLabel('配置包 JSON', { exact: true })).toHaveValue(
-          JSON.stringify(bundle),
-        )
-        await dialog.getByRole('button', { name: '生成预览', exact: true }).click()
-        await expect(dialog).toContainText('缺少写入权限：parameters.write')
-        await expect(dialog.getByRole('button', { name: '确认应用', exact: true })).toBeDisabled()
-      }
-      await operator.close()
-    }
-  } finally {
-    await context.close()
+  await login(page)
+  await expect(page.locator('nav').getByRole('button')).toHaveText([
+    '工作台',
+    '用户管理',
+    '角色管理',
+    '菜单管理',
+    '权限目录',
+    '日志中心',
+    '文件管理',
+  ])
+  await navigate(page, '角色管理')
+  await page.getByRole('button', { name: '新增角色', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新增角色', exact: true })
+  await expect(dialog.getByRole('checkbox')).toHaveCount(14)
+  await expect(dialog.getByText('查看文件', { exact: true })).toBeVisible()
+  for (const label of [
+    '查看字典',
+    '管理参数',
+    '查看配置',
+    '查看生成器',
+    '查看 Skills',
+    '查看 MCP',
+    '查看 AI 上游与运行',
+    '查看工作流与会话',
+  ])
+    await expect(dialog.getByText(label, { exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  for (const path of ['dictionaries', 'parameters', 'settings', 'mcp', 'workflows', 'codegen']) {
+    await page.goto('/#/' + path)
+    await expect(page).toHaveURL(/#\/dashboard$/)
   }
 })

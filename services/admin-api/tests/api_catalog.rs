@@ -107,9 +107,9 @@ async fn catalog_has_stable_unique_operations_and_a_verifiable_checksum() {
     assert_eq!(catalog(&app, token).await["checksum"], checksum);
     for required in [
         "apiCatalog.list",
-        "parameters.get",
+        "files.get",
         "roles.assignable",
-        "dictionaries.items.update",
+        "fileCategories.update",
         "auth.refresh",
         "health.ready",
     ] {

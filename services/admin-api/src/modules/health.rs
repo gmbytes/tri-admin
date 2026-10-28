@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 crate::api_routes! {
     prefix "";
+    get "/api/v1/application" => application, "application.get", "dashboard", "应用信息", Authenticated, &[];
     get "/health/live" => live, "health.live", "health", "进程存活", Public, &[];
     get "/health/ready" => ready, "health.ready", "health", "服务就绪", Public, &[];
 }
@@ -26,4 +27,8 @@ pub async fn ready(State(state): State<AppState>) -> Result<Json<Value>, AppErro
         Ok(Ok(true)) => Ok(Json(json!({"data":{"status":"ready"}}))),
         _ => Err(AppError::NotReady),
     }
+}
+
+async fn application(_actor: crate::modules::auth::AuthContext) -> ApiResponse<Value> {
+    ApiResponse::success(json!({"displayName":"TRI ADMIN","version":env!("CARGO_PKG_VERSION")}))
 }

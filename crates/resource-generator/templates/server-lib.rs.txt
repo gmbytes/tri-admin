@@ -1,6 +1,0 @@
-pub fn schema() -> tri_resource_runtime::schema::Schema {
-    tri_resource_runtime::schema::Schema::parse(
-        serde_json::from_str(include_str!("../../schema.json")).expect("generated schema JSON"),
-    )
-    .expect("generated schema contract")
-}

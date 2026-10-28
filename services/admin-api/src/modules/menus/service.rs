@@ -27,21 +27,8 @@ const VIEWS: &[&str] = &[
     "roles",
     "menus",
     "permissions",
-    "dictionaries",
-    "parameters",
     "audit",
     "files",
-    "exports",
-    "apps",
-    "tokens",
-    "codegen",
-    "skills",
-    "mcp",
-    "workflows",
-    "gameServers",
-    "gameJobs",
-    "settings",
-    "versions",
 ];
 
 pub(crate) fn validate(

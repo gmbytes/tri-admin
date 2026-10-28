@@ -72,29 +72,11 @@ onMounted(load)
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">OVERVIEW</div>
       <h1>工作台</h1>
-      <p>欢迎回来，{{ session.user?.displayName }}。工作空间已准备就绪。</p>
+      <p>欢迎回来，{{ session.user?.displayName }}。管理服务已连接。</p>
     </div>
     <el-button @click="load" :loading="loading">刷新概览</el-button>
   </div>
-  <section class="welcome-banner">
-    <div>
-      <span class="banner-kicker">YOUR WORKSPACE</span>
-      <h2>有序管理，从这里开始</h2>
-      <p>管理成员与权限，维护清晰的导航，让协作更专注。</p>
-      <el-button
-        type="primary"
-        @click="
-          router.push(
-            session.navigation.find((node) => node.viewKey === 'users')?.path ?? '/profile',
-          )
-        "
-        >开始工作<el-icon><ArrowRight /></el-icon
-      ></el-button>
-    </div>
-    <div class="banner-art"><span></span><span></span><span></span><i>T</i></div>
-  </section>
   <div class="stat-grid">
     <section
       v-for="card in cards.filter((card) => session.can(card.permission))"

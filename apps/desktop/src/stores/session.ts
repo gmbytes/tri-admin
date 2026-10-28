@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ApiClient, ApiError } from '../core/client'
 import type { FileContentSpec, FileSink } from '../core/files'
 import { normalizeEndpoint } from '../core/endpoint'
+import { filterNavigation } from '../core/navigation'
 import type { Envelope, MenuRecord, UserSummary } from '../core/types'
 import { platform, type Settings } from '../platform'
 
@@ -69,7 +70,7 @@ export const useSession = defineStore('session', () => {
         source.request<{ displayName: string; version: string }>('/application'),
       ])
       if (client === source && user.value?.id === actor) {
-        navigation.value = menus.data
+        navigation.value = filterNavigation(menus.data)
         application.value = info.data
       }
     }
@@ -161,38 +162,6 @@ export const useSession = defineStore('session', () => {
     await client?.clearSession()
     settings.value.rememberSession = false
   }
-  async function privateRequest<T>(
-    path: string,
-    parse: (value: unknown) => T | Promise<T>,
-    options: { signal?: AbortSignal } = {},
-  ) {
-    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    return client.readPrivate(path, parse, options)
-  }
-  async function downloadWorkflow<T>(
-    id: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ) {
-    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    return client.downloadWorkflow(id, expected, sink, options)
-  }
-  async function callMcpTool<T>(
-    connectionId: string,
-    requestId: string,
-    version: number,
-    name: string,
-    argumentsJson: string,
-    options: { signal?: AbortSignal } = {},
-  ) {
-    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    return client.callMcpTool<T>(connectionId, requestId, version, name, argumentsJson, options)
-  }
-  async function downloadConfiguration(path: string) {
-    if (!client) throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    return client.downloadConfiguration(path)
-  }
   async function putChunk<T>(
     uploadId: string,
     index: number,
@@ -215,21 +184,7 @@ export const useSession = defineStore('session', () => {
     }
     return client.downloadFile(fileId, expected, sink, options)
   }
-  async function downloadExport<T>(
-    jobId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ) {
-    if (!client) {
-      await sink.abort().catch(() => undefined)
-      throw new ApiError('UNCONFIGURED', '请先配置服务器')
-    }
-    return client.downloadExport(jobId, expected, sink, options)
-  }
   return {
-    downloadExtension,
-    downloadGeneratedProject,
     user,
     navigation,
     application,
@@ -247,42 +202,12 @@ export const useSession = defineStore('session', () => {
     logout,
     changeServer,
     request,
-    callMcpTool,
-    privateApi: privateRequest,
-    downloadWorkflow,
-    downloadConfiguration,
     putChunk,
     downloadFile,
-    downloadExport,
     syncProfile,
     loadNavigation,
     loadApplication,
     passwordChanged,
     native: platform.native,
-  }
-  async function downloadGeneratedProject<T>(
-    generationId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ) {
-    if (!client) {
-      await sink.abort().catch(() => undefined)
-      throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    }
-    return client.downloadGeneratedProject(generationId, expected, sink, options)
-  }
-  async function downloadExtension<T>(
-    extensionId: string,
-    revisionId: string,
-    expected: FileContentSpec,
-    sink: FileSink<T>,
-    options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
-  ) {
-    if (!client) {
-      await sink.abort().catch(() => undefined)
-      throw new ApiError('SERVER_REQUIRED', '请先设置服务器地址')
-    }
-    return client.downloadExtension(extensionId, revisionId, expected, sink, options)
   }
 })

@@ -384,8 +384,7 @@ test('file selectors search large catalogs and retain bindings outside the first
   const auth = await login(page),
     headers = { authorization: `Bearer ${auth.accessToken}` },
     suffix = Date.now().toString(36),
-    categories: string[] = [],
-    profiles: string[] = []
+    categories: string[] = []
   async function category(code: string, name: string) {
     const response = await page.request.post(api + '/file-categories', {
       headers,
@@ -396,30 +395,18 @@ test('file selectors search large catalogs and retain bindings outside the first
     categories.push(row.id)
     return row
   }
-  async function profile(code: string, name: string) {
-    const response = await page.request.post(api + '/settings/profiles', {
-      headers,
-      data: {
-        code,
-        name,
-        enabled: true,
-        configuration: { kind: 'localStorage', subdirectory: code },
-      },
-    })
-    expect(response.status()).toBe(201)
-    const row = (await response.json()).data
-    profiles.push(row.id)
-    return row
-  }
   let file: string | undefined,
     version = 1
   try {
     for (let index = 0; index < 100; index++) {
       await category(`aa-${suffix}-${String(index).padStart(3, '0')}`, '目录-' + index)
-      await profile(`aa-${suffix}-${String(index).padStart(3, '0')}`, '存储-' + index)
     }
     const selectedCategory = await category('zz-' + suffix, '跨页分类-' + suffix),
-      selectedProfile = await profile('zz-' + suffix, '跨页存储-' + suffix),
+      selectedProfile = (
+        await (
+          await page.request.get(api + '/files/storage-options?search=ui-storage-119', { headers })
+        ).json()
+      ).data[0],
       name = 'choices-' + suffix + '.bin'
     await openFiles(page)
     await page.getByRole('button', { name: '上传文件', exact: true }).click()
@@ -479,8 +466,6 @@ test('file selectors search large catalogs and retain bindings outside the first
     if (file) await page.request.delete(`${api}/files/${file}?version=${version}`, { headers })
     for (const id of categories)
       await page.request.delete(`${api}/file-categories/${id}?version=1`, { headers })
-    for (const id of profiles)
-      await page.request.delete(`${api}/settings/profiles/${id}?version=1`, { headers })
   }
 })
 

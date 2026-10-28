@@ -53,7 +53,7 @@ test('log center filters safe records and resumes a committed cleanup after a lo
     id = randomUUID()
   expect(
     (
-      await page.request.post(api + '/parameters?token=' + secret, {
+      await page.request.post(api + '/file-categories?token=' + secret, {
         headers: { ...headers, 'x-request-id': id },
         data: { privateField: secret },
       })
@@ -72,7 +72,7 @@ test('log center filters safe records and resumes a committed cleanup after a lo
   await expect(page.locator('body')).not.toContainText(secret)
   await page.getByRole('button', { name: '详情', exact: true }).first().click()
   const details = page.getByRole('dialog', { name: '日志详情', exact: true })
-  await expect(details).toContainText('/api/v1/parameters')
+  await expect(details).toContainText('/api/v1/file-categories')
   await expect(details).toContainText(id)
   await details.getByRole('button', { name: '关闭详情', exact: true }).click()
   await page.getByRole('tab', { name: '操作日志', exact: true }).click()

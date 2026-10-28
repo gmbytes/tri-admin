@@ -1,3 +1,5 @@
+> 当前范围以用户最新七模块白名单和 docs/superpowers/plans/2026-10-28-game-focused-retirement.md 为准。下列通用平台/开发模块记录仅为历史，不再作为交付功能。
+
 # tri-admin 实施记录
 
 当前规范：[全新实现计划 V3](superpowers/plans/2026-10-24-tri-admin-greenfield.md)。

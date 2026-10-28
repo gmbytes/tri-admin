@@ -1,3 +1,5 @@
+#[path = "support/storage.rs"]
+mod storage_support;
 mod support;
 use admin_api::{build_router, config::Config, state::AppState};
 use axum::{
@@ -978,24 +980,11 @@ async fn mock_s3(deferred: bool, error_response: bool) -> MockS3 {
         server,
     }
 }
-async fn default_s3(app: &TestApp, owner: &str, endpoint: &str) {
-    let(status,profile)=app.send("POST","/api/v1/settings/profiles",json!({"name":"fixture-s3","code":"fixture-s3","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"publication","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"private-fixture-secret"}}),Some(owner)).await;
-    assert_eq!(status, StatusCode::CREATED, "{profile}");
-    let (_, settings) = app
-        .send("GET", "/api/v1/settings/service", Value::Null, Some(owner))
-        .await;
-    assert_eq!(
-        app.send(
-            "PATCH",
-            "/api/v1/settings/service",
-            json!({"version":settings["data"]["version"],"storageProfileId":profile["data"]["id"]}),
-            Some(owner)
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
+async fn default_s3(app: &TestApp, _owner: &str, endpoint: &str) {
+    let profile=storage_support::seed(app,json!({"name":"fixture-s3","code":"fixture-s3","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"publication","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"private-fixture-secret"}})).await;
+    app.database.collection::<Document>("service_settings").update_many(doc!{},doc!{"$set":{"storageProfileId":ObjectId::parse_str(profile["id"].as_str().unwrap()).unwrap()},"$inc":{"version":1i64}}).await.unwrap();
 }
+
 #[tokio::test]
 async fn a_remote_error_after_storage_commit_reconciles_by_reading_without_another_put() {
     let (app, _root) = app().await;
@@ -1796,23 +1785,9 @@ async fn real_s3_published_files_download_and_cleanup_through_the_application_ap
     let (app, root) = app().await;
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
-    let(status,profile)=app.send("POST","/api/v1/settings/profiles",json!({"name":"real-file-s3","code":"real-file-s3","enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"api-publication","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":fixture["secretAccessKey"]}}),Some(token)).await;
-    assert_eq!(status, StatusCode::CREATED);
-    let profile = profile["data"]["id"].as_str().unwrap();
-    let (_, settings) = app
-        .send("GET", "/api/v1/settings/service", Value::Null, Some(token))
-        .await;
-    assert_eq!(
-        app.send(
-            "PATCH",
-            "/api/v1/settings/service",
-            json!({"version":settings["data"]["version"],"storageProfileId":profile}),
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
+    let profile=storage_support::seed(&app,json!({"name":"real-file-s3","code":"real-file-s3","enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"api-publication","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":fixture["secretAccessKey"]}})).await;
+    let profile = profile["id"].as_str().unwrap();
+    app.database.collection::<Document>("service_settings").update_many(doc!{},doc!{"$set":{"storageProfileId":ObjectId::parse_str(profile).unwrap()},"$inc":{"version":1i64}}).await.unwrap();
     let data = vec![b's'; 5 * 1024 * 1024 + 3];
     let hash = format!("{:x}", Sha256::digest(&data));
     let id = upload(&app, token, "s3-api.bin", &data, None).await;

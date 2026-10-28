@@ -30,6 +30,8 @@ struct DeleteQuery {
 }
 crate::api_routes! {
     prefix "";
+    get "/api/v1/files/storage-options"=>storage_options,"files.storageOptions","files","可选文件存储",Permission,&["files.write"];
+    get "/api/v1/files/storage-options/{id}"=>storage_option,"files.storageOption","files","文件存储选项",Permission,&["files.write"];
     get "/api/v1/file-categories"=>category_list,"fileCategories.list","files","文件分类列表",Permission,&["files.read"];
     post "/api/v1/file-categories"=>category_create,"fileCategories.create","files","创建文件分类",Permission,&["files.write"];
     get "/api/v1/file-categories/{id}"=>category_read,"fileCategories.get","files","读取文件分类",Permission,&["files.read"];
@@ -49,6 +51,29 @@ crate::api_routes! {
     patch "/api/v1/files/{id}"=>file_patch,"files.update","files","修改文件资料",Permission,&["files.write"];
     delete "/api/v1/files/{id}"=>file_delete,"files.delete","files","删除文件资源",Permission,&["files.write"];
     get "/api/v1/files/{id}/content"=>file_content,"files.content","files","授权下载文件",Permission,&["files.read"],"按当前所有者范围授权，附件下载，正文流校验长度和SHA-256";
+}
+async fn storage_options(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    input: Result<Query<PageInput>, QueryRejection>,
+) -> Result<Page<crate::modules::storage_profiles::service::StorageOption>, AppError> {
+    actor.require("files.write")?;
+    let Query(input) = input.map_err(|_| AppError::Validation("存储查询无效".into()))?;
+    crate::modules::storage_profiles::service::options(state.require_database()?, input).await
+}
+async fn storage_option(
+    State(state): State<AppState>,
+    actor: AuthContext,
+    Path(id): Path<String>,
+) -> Result<ApiResponse<crate::modules::storage_profiles::service::StorageOption>, AppError> {
+    actor.require("files.write")?;
+    Ok(ApiResponse::success(
+        crate::modules::storage_profiles::service::option(
+            state.require_database()?,
+            validation::object_id(&id)?,
+        )
+        .await?,
+    ))
 }
 async fn upload_retry(
     State(state): State<AppState>,

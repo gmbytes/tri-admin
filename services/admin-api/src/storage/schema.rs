@@ -12,27 +12,13 @@ const DESCRIPTOR: &str = "tri-admin/core/v1:users(usernameKey active unique),rol
 pub async fn is_initialized(database: &Database) -> Result<bool, AppError> {
     let count = database
         .collection::<Document>("_schema_migrations")
-        .count_documents(doc! {"$or":[
-            {"_id":"core","version":1,"bootstrapComplete":true},
-            {"_id":"auth","version":1},
-            {"_id":"rbac","version":2},
-            {"_id":"dictionaries","version":1},
-            {"_id":"parameters","version":1},
-            {"_id":"versions","version":2},
-            {"_id":"version-imports","version":1},
-            {"_id":"logs","version":super::logs_schema::VERSION},
-            {"_id":"settings","version":super::settings_schema::VERSION},
-            {"_id":"files","version":super::files_schema::VERSION}
-            ,{"_id":"data-tools","version":super::data_tools_schema::VERSION}
-            ,{"_id":"open-access","version":super::open_access_schema::VERSION}
-            ,{"_id":"codegen","version":super::codegen_schema::VERSION}
-            ,{"_id":"extensions","version":super::extensions_schema::VERSION}
-            ,{"_id":"mcp","version":super::mcp_schema::VERSION}
-            ,{"_id":"ai","version":super::ai_schema::VERSION}
-            ,{"_id":"workflows","version":super::workflow_schema::VERSION}
-        ]})
+.count_documents(doc!{"$or":[
+ {"_id":"core","version":1,"bootstrapComplete":true}, {"_id":"auth","version":1}, {"_id":"rbac","version":2},
+ {"_id":"logs","version":super::logs_schema::VERSION}, {"_id":"files","version":super::files_schema::VERSION},
+ {"_id":"file-storage","version":1}, {"_id":"game-scope","version":1}
+ ]})
         .await?;
-    Ok(count == 17)
+    Ok(count == 7)
 }
 
 pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
@@ -132,18 +118,8 @@ pub async fn migrate_database(database: &Database) -> Result<(), AppError> {
     metadata.update_one(doc!{"_id":"core"},doc!{"$setOnInsert":{"version":1,"checksum":checksum,"createdAt":DateTime::now(),"bootstrapComplete":false}}).upsert(true).await?;
     super::auth_schema::migrate_auth(database).await?;
     super::rbac_schema::migrate_rbac(database).await?;
-    super::dictionary_schema::migrate_dictionaries(database).await?;
-    super::parameter_schema::migrate_parameters(database).await?;
-    super::version_schema::migrate_versions(database).await?;
-    super::version_import_schema::migrate_imports(database).await?;
     super::logs_schema::migrate_logs(database).await?;
-    super::settings_schema::migrate_settings(database).await?;
+    super::file_storage_schema::migrate(database).await?;
     super::files_schema::migrate_files(database).await?;
-    super::data_tools_schema::migrate(database).await?;
-    super::open_access_schema::migrate(database).await?;
-    super::codegen_schema::migrate(database).await?;
-    super::extensions_schema::migrate(database).await?;
-    super::mcp_schema::migrate(database).await?;
-    super::ai_schema::migrate(database).await?;
-    super::workflow_schema::migrate(database).await
+    super::game_scope_schema::migrate(database).await
 }

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { MenuRecord, Permission } from '../core/types'
+import { filterPermissions } from '../core/navigation'
 import { errorText, notifyError } from '../ui'
 const session = useSession(),
   rows = ref<MenuRecord[]>([]),
@@ -25,18 +26,12 @@ const form = reactive({
 })
 const views = [
   { value: 'dashboard', label: '工作台' },
-  { value: 'settings', label: '配置中心' },
   { value: 'files', label: '文件管理' },
-  { value: 'exports', label: '数据工具' },
   { value: 'users', label: '用户管理' },
   { value: 'roles', label: '角色管理' },
   { value: 'menus', label: '菜单管理' },
   { value: 'permissions', label: '权限目录' },
-  { value: 'dictionaries', label: '字典管理' },
-  { value: 'parameters', label: '参数管理' },
-  { value: 'versions', label: '版本管理' },
   { value: 'audit', label: '日志中心' },
-  { value: 'mcp', label: 'MCP连接' },
 ]
 function tree(items: MenuRecord[], parent: string | null = null): MenuRecord[] {
   return items
@@ -135,7 +130,7 @@ onMounted(() => {
     void session
       .request<Permission[]>('/permissions')
       .then((value) => {
-        permissions.value = value.data
+        permissions.value = filterPermissions(value.data)
       })
       .catch(notifyError)
 })

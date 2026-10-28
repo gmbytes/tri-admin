@@ -4,7 +4,7 @@ use super::{
 use crate::modules::files::probes::ProbeJournal;
 use crate::{
     config::Config,
-    modules::settings::{
+    modules::storage_profiles::{
         dto::{Credentials, Integration},
         network,
     },
@@ -92,10 +92,7 @@ impl S3Store {
             access_key_id,
             secret_access_key,
             session_token,
-        } = &self.secret
-        else {
-            return Err(StorageError::InvalidInput);
-        };
+        } = &self.secret;
         use aws_sigv4::{
             http_request::{
                 PayloadChecksumKind, PercentEncodingMode, SignableBody, SignableRequest,

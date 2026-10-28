@@ -26,7 +26,6 @@ test('browser transport uploads chunks and verifies a scoped download through th
         vault: { load: async () => null, save: async () => {}, clear: async () => {} },
       })
       await client.login('admin', password, false)
-      const suffix = Date.now().toString(36)
       let profile: string | undefined,
         upload: string | undefined,
         file: string | undefined,
@@ -35,17 +34,9 @@ test('browser transport uploads chunks and verifies a scoped download through th
         | { bytes: number; sha256: string; received: number; progress: number; missingCode: string }
         | undefined
       try {
-        profile = (
-          await client.request<{ id: string }>('/settings/profiles', {
-            method: 'POST',
-            body: {
-              name: 'transport-' + suffix,
-              code: 'transport-' + suffix,
-              enabled: true,
-              configuration: { kind: 'localStorage', subdirectory: 'transport-' + suffix },
-            },
-          })
-        ).data.id
+        profile = (await client.request<Array<{ id: string }>>('/files/storage-options?pageSize=1'))
+          .data[0]?.id
+        if (!profile) throw new Error('Storage fixture unavailable')
         const bytes = new Uint8Array(5 * 1024 * 1024 + 17).fill(43),
           source = new Blob([bytes]),
           sha256 = await hashBrowserFile(source)
@@ -140,8 +131,6 @@ test('browser transport uploads chunks and verifies a scoped download through th
           await client
             .request(`/uploads/${upload}/cleanup`, { method: 'POST', body: {} })
             .catch(() => {})
-        if (profile)
-          await client.request(`/settings/profiles/${profile}?version=1`, { method: 'DELETE' })
         if (!(await client.logout()))
           throw new Error('transport fixture session could not be revoked')
       }

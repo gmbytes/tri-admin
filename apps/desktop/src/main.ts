@@ -26,6 +26,7 @@ router.beforeEach(async (to) => {
   await session.initialize()
   if (!session.user) return to.path === '/login' ? true : '/login'
   if (to.path === '/login' || to.path === '/') return session.firstPath
+  if (to.path !== '/profile' && !session.findMenu(to.path)?.viewKey) return session.firstPath
   return true
 })
 createApp(App).use(pinia).use(router).mount('#app')

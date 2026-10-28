@@ -12,14 +12,10 @@ pub struct Config {
     pub login_limit_per_ip: i64,
     mongodb_uri: Option<String>,
     jwt_signing_key: String,
-    open_jwt_signing_key: Option<Zeroizing<String>>,
     settings_keys: BTreeMap<String, Zeroizing<[u8; 32]>>,
     settings_active_key: Option<String>,
     pub storage_root: String,
     pub outbound_ca_file: Option<std::path::PathBuf>,
-    pub(crate) mcp_programs: std::sync::Arc<crate::modules::mcp::capabilities::Catalog>,
-    pub(crate) mcp_allowed_hosts: Vec<String>,
-    connection_epoch: String,
 }
 
 #[derive(Debug, Error)]
@@ -37,15 +33,6 @@ impl Config {
             lookup("TRI_JWT_SIGNING_KEY").ok_or(ConfigError("请设置 TRI_JWT_SIGNING_KEY"))?;
         if jwt_signing_key.len() < 32 {
             return Err(ConfigError("TRI_JWT_SIGNING_KEY 至少需要 32 字节"));
-        }
-        let open_jwt_signing_key = lookup("TRI_OPEN_JWT_SIGNING_KEY").map(Zeroizing::new);
-        if open_jwt_signing_key
-            .as_ref()
-            .is_some_and(|key| key.len() < 32 || key.as_str() == jwt_signing_key)
-        {
-            return Err(ConfigError(
-                "开放签名密钥至少 32 字节且必须独立于管理员密钥",
-            ));
         }
         let mongodb_uri = lookup("TRI_MONGODB_URI").filter(|value| !value.trim().is_empty());
         if mongodb_uri
@@ -150,51 +137,6 @@ impl Config {
         {
             return Err(ConfigError("TRI_OUTBOUND_CA_FILE 无效"));
         }
-        let mcp_programs = crate::modules::mcp::capabilities::Catalog::load(
-            lookup("TRI_MCP_PROGRAMS_FILE").as_deref(),
-        )?;
-        let mcp_allowed_hosts = lookup("TRI_MCP_ALLOWED_HOSTS")
-            .unwrap_or_else(|| "localhost,127.0.0.1,::1".into())
-            .split(',')
-            .map(str::trim)
-            .map(|host| {
-                if host == "::1" {
-                    return Ok(host.to_owned());
-                }
-                let url = url::Url::parse(&format!("http://{host}"))
-                    .map_err(|_| ConfigError("TRI_MCP_ALLOWED_HOSTS 必须为明确主机或主机端口"))?;
-                if host.is_empty()
-                    || host.len() > 255
-                    || !host.is_ascii()
-                    || host.contains('*')
-                    || host.chars().any(char::is_whitespace)
-                    || url.host_str().is_none()
-                    || !url.username().is_empty()
-                    || url.password().is_some()
-                    || url.path() != "/"
-                    || url.query().is_some()
-                    || url.fragment().is_some()
-                    || host.contains('/')
-                {
-                    return Err(ConfigError(
-                        "TRI_MCP_ALLOWED_HOSTS 必须为明确主机或主机端口",
-                    ));
-                }
-                Ok(host.to_ascii_lowercase())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if mcp_allowed_hosts.is_empty()
-            || mcp_allowed_hosts.len() > 32
-            || mcp_allowed_hosts
-                .iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                .len()
-                != mcp_allowed_hosts.len()
-        {
-            return Err(ConfigError(
-                "TRI_MCP_ALLOWED_HOSTS 需包含 1–32 个不重复主机",
-            ));
-        }
         Ok(Self {
             bind,
             database_name,
@@ -202,14 +144,10 @@ impl Config {
             login_limit_per_ip,
             mongodb_uri,
             jwt_signing_key,
-            open_jwt_signing_key,
             settings_keys,
             settings_active_key,
             storage_root,
             outbound_ca_file,
-            mcp_programs: std::sync::Arc::new(mcp_programs),
-            mcp_allowed_hosts,
-            connection_epoch: uuid::Uuid::new_v4().to_string(),
         })
     }
 
@@ -219,17 +157,11 @@ impl Config {
     pub fn jwt_signing_key(&self) -> &str {
         &self.jwt_signing_key
     }
-    pub fn open_jwt_signing_key(&self) -> Option<&str> {
-        self.open_jwt_signing_key.as_ref().map(|key| key.as_str())
-    }
     pub fn settings_key_ids(&self) -> Vec<String> {
         self.settings_keys.keys().cloned().collect()
     }
     pub fn settings_active_key(&self) -> Option<&str> {
         self.settings_active_key.as_deref()
-    }
-    pub(crate) fn connection_epoch(&self) -> &str {
-        &self.connection_epoch
     }
     pub(crate) fn settings_key(&self, id: &str) -> Option<&[u8; 32]> {
         self.settings_keys.get(id).map(|value| &**value)
@@ -246,10 +178,6 @@ impl fmt::Debug for Config {
                 &self.mongodb_uri.as_ref().map(|_| "<redacted>"),
             )
             .field("jwt_signing_key", &"<redacted>")
-            .field(
-                "open_jwt_signing_key",
-                &self.open_jwt_signing_key.as_ref().map(|_| "<redacted>"),
-            )
             .field("settings_key_ids", &self.settings_key_ids())
             .finish()
     }

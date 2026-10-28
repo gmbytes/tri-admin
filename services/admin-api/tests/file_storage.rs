@@ -1,3 +1,5 @@
+#[path = "support/storage.rs"]
+mod storage_support;
 mod support;
 use admin_api::{
     config::Config,
@@ -189,18 +191,13 @@ async fn real_s3_content_writes_reads_retries_rejects_overwrites_and_deletes() {
     let root = tempfile::tempdir().unwrap();
     let config = config(root.path());
     let app = support::TestApp::new().await;
-    let auth = app.login().await;
-    let token = auth["accessToken"].as_str().unwrap();
     let mut ids = Vec::new();
     for (code, key) in [
         ("file-good", fixture["secretAccessKey"].as_str().unwrap()),
         ("file-bad", "wrong-secret"),
     ] {
-        let (status,row)=app.send("POST","/api/v1/settings/profiles",serde_json::json!({"name":code,"code":code,"enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"file-acceptance","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":key}}),Some(token)).await;
-        assert_eq!(status, axum::http::StatusCode::CREATED, "{row}");
-        ids.push(
-            mongodb::bson::oid::ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap(),
-        );
+        let row=storage_support::seed(&app,serde_json::json!({"name":code,"code":code,"enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"file-acceptance","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":key}})).await;
+        ids.push(mongodb::bson::oid::ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap());
     }
     let store = BlobStore::from_profile(&app.database, config.clone(), ids[0])
         .await
@@ -285,12 +282,8 @@ async fn real_s3_without_atomic_create_is_rejected_before_user_content() {
     let root = tempfile::tempdir().unwrap();
     let config = config(root.path());
     let app = support::TestApp::new().await;
-    let auth = app.login().await;
-    let token = auth["accessToken"].as_str().unwrap();
-    let(status,row)=app.send("POST","/api/v1/settings/profiles",serde_json::json!({"name":"unsupported","code":"unsupported","enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"refused-objects","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":fixture["secretAccessKey"]}}),Some(token)).await;
-    assert_eq!(status, axum::http::StatusCode::CREATED);
-    let profile =
-        mongodb::bson::oid::ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap();
+    let row=storage_support::seed(&app,serde_json::json!({"name":"unsupported","code":"unsupported","enabled":true,"configuration":{"kind":"s3","endpoint":fixture["endpoint"],"bucket":fixture["bucket"],"region":fixture["region"],"prefix":"refused-objects","pathStyle":true},"secret":{"kind":"s3","accessKeyId":fixture["accessKeyId"],"secretAccessKey":fixture["secretAccessKey"]}})).await;
+    let profile = mongodb::bson::oid::ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap();
     let store = BlobStore::from_profile(&app.database, config.clone(), profile)
         .await
         .unwrap();
@@ -435,12 +428,8 @@ async fn cancelling_a_sent_remote_write_is_unknown_and_the_stored_content_can_be
     let root = tempfile::tempdir().unwrap();
     let config = config(root.path());
     let app = support::TestApp::new().await;
-    let auth = app.login().await;
-    let token = auth["accessToken"].as_str().unwrap();
-    let(status,row)=app.send("POST","/api/v1/settings/profiles",serde_json::json!({"name":"remote","code":"remote","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"fixture-private-key"}}),Some(token)).await;
-    assert_eq!(status, StatusCode::CREATED);
-    let profile =
-        mongodb::bson::oid::ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap();
+    let row=storage_support::seed(&app,serde_json::json!({"name":"remote","code":"remote","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"fixture-private-key"}})).await;
+    let profile = mongodb::bson::oid::ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap();
     let store = Arc::new(
         BlobStore::from_profile(&app.database, config.clone(), profile)
             .await
@@ -473,25 +462,20 @@ async fn storage_profile_consumers_reject_disabled_wrong_kind_and_missing_keys()
     let root = tempfile::tempdir().unwrap();
     let config = config(root.path());
     let app = support::TestApp::new().await;
-    let auth = app.login().await;
-    let token = auth["accessToken"].as_str().unwrap();
+    let _signed = app.login().await;
     for input in [
         serde_json::json!({"name":"disabled","code":"disabled","enabled":false,"configuration":{"kind":"localStorage","subdirectory":"disabled"}}),
         serde_json::json!({"name":"http","code":"http","enabled":true,"configuration":{"kind":"http","baseUrl":"https://example.test"}}),
     ] {
-        let (status, row) = app
-            .send("POST", "/api/v1/settings/profiles", input, Some(token))
-            .await;
-        assert_eq!(status, axum::http::StatusCode::CREATED);
-        let id =
-            mongodb::bson::oid::ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap();
+        let row = storage_support::seed(&app, input).await;
+        let id = mongodb::bson::oid::ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap();
         assert!(matches!(
             BlobStore::from_profile(&app.database, config.clone(), id).await,
             Err(StorageError::ConfigurationUnavailable)
         ));
     }
-    let (_,row)=app.send("POST","/api/v1/settings/profiles",serde_json::json!({"name":"s3","code":"s3","enabled":true,"configuration":{"kind":"s3","endpoint":"https://objects.example.test","bucket":"test-bucket","region":"us-east-1","prefix":"","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"private-fixture-key"}}),Some(token)).await;
-    let id = mongodb::bson::oid::ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap();
+    let row=storage_support::seed(&app,serde_json::json!({"name":"s3","code":"s3","enabled":true,"configuration":{"kind":"s3","endpoint":"https://objects.example.test","bucket":"test-bucket","region":"us-east-1","prefix":"","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"private-fixture-key"}})).await;
+    let id = mongodb::bson::oid::ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap();
     let without_keys = Arc::new(
         Config::from_lookup(|key| (key == "TRI_JWT_SIGNING_KEY").then(|| support::KEY.into()))
             .unwrap(),

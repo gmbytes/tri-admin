@@ -10,18 +10,8 @@ const views: Record<string, unknown> = {
   roles: defineAsyncComponent(() => import('./RolesView.vue')),
   menus: defineAsyncComponent(() => import('./MenusView.vue')),
   permissions: defineAsyncComponent(() => import('./PermissionsView.vue')),
-  dictionaries: defineAsyncComponent(() => import('./DictionariesView.vue')),
-  parameters: defineAsyncComponent(() => import('./ParametersView.vue')),
-  versions: defineAsyncComponent(() => import('./VersionsView.vue')),
   audit: defineAsyncComponent(() => import('./LogsView.vue')),
-  settings: defineAsyncComponent(() => import('./SettingsView.vue')),
   files: defineAsyncComponent(() => import('./FilesView.vue')),
-  exports: defineAsyncComponent(() => import('./DataToolsView.vue')),
-  tokens: defineAsyncComponent(() => import('./ApiTokensView.vue')),
-  apps: defineAsyncComponent(() => import('./ApplicationsView.vue')),
-  codegen: defineAsyncComponent(() => import('./CodegenView.vue')),
-  skills: defineAsyncComponent(() => import('./ExtensionsView.vue')),
-  mcp: defineAsyncComponent(() => import('./McpView.vue')),
 }
 const page = computed(() => views[session.findMenu(route.path)?.viewKey ?? ''])
 </script>

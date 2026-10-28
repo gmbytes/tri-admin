@@ -4,7 +4,7 @@ mod source;
 use super::probes::ProbeJournal;
 use crate::{
     config::Config,
-    modules::settings::{
+    modules::storage_profiles::{
         dto::{Credentials, Integration},
         service,
     },
@@ -151,9 +151,9 @@ impl BlobStore {
         secret: Option<Credentials>,
         journal: Option<ProbeJournal>,
     ) -> Result<Self, StorageError> {
-        crate::modules::settings::validate::public(&public)
+        crate::modules::storage_profiles::validate::public(&public)
             .map_err(|_| StorageError::InvalidInput)?;
-        crate::modules::settings::validate::credentials(&public, secret.as_ref(), true)
+        crate::modules::storage_profiles::validate::credentials(&public, secret.as_ref(), true)
             .map_err(|_| StorageError::InvalidInput)?;
         let driver = match public {
             Integration::LocalStorage { subdirectory } => Driver::Local(
@@ -165,7 +165,6 @@ impl BlobStore {
                 secret,
                 journal.ok_or(StorageError::ConfigurationUnavailable)?,
             )?)),
-            _ => return Err(StorageError::InvalidInput),
         };
         Ok(Self { driver })
     }

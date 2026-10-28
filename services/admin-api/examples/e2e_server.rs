@@ -1,14 +1,11 @@
-//! Isolated server for UI acceptance tests. Never points at a normal application database.
-#[path = "support/data_tool_fixtures.rs"]
-mod data_tool_fixtures;
+//! Isolated seven-module UI service. Never uses a normal application database.
 use admin_api::{
     bootstrap::{AdminInput, bootstrap_database},
     build_router,
     config::Config,
     state::AppState,
 };
-use mongodb::bson::{DateTime, Document, doc};
-
+use mongodb::bson::{DateTime, Document, doc, oid::ObjectId};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenvy::dotenv();
@@ -16,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !name.starts_with("tri_admin_e2e_")
         || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
     {
-        return Err("E2E database name must use tri_admin_e2e_ prefix".into());
+        return Err("Invalid isolated E2E database name".into());
     }
     let password = std::fs::read_to_string(std::env::var("TRI_E2E_PASSWORD_FILE")?)?;
     let config = Config::from_lookup(|key| match key {
@@ -29,92 +26,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.require_database()?,
         &AdminInput {
             username: "admin".into(),
-            password: password.clone(),
+            password,
         },
     )
     .await?;
-    data_tool_fixtures::seed(&state, &password).await?;
-    let mut resource_stop = None;
-    let mut resource_task = None;
-    let mut resource_api = None;
-    if let Ok(path) = std::env::var("TRI_E2E_RESOURCE_SCHEMA_FILE") {
-        let descriptor = std::fs::read(path)?;
-        if descriptor.len() > 64 * 1024 {
-            return Err("Generated fixture schema too large".into());
-        }
-        let schema =
-            tri_resource_runtime::schema::Schema::parse(serde_json::from_slice(&descriptor)?)?;
-        let config = tri_resource_runtime::Config::new(
-            std::env::var("TRI_E2E_RESOURCE_KEY")?,
-            std::env::var("TRI_E2E_RESOURCE_ORIGIN")?,
-        )?;
-        let resource =
-            tri_resource_runtime::State::new(state.require_database()?.clone(), schema, config)?;
-        resource.migrate().await?;
-        resource
-            .provision_admin("generated-admin", &password, true, true)
-            .await?;
-        resource
-            .provision_admin("generated-reader", &password, false, true)
-            .await?;
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-        resource_api = Some(format!("http://{}/api/v1", listener.local_addr()?));
-        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-        resource_stop = Some(stop);
-        resource_task = Some(tokio::spawn(async move {
-            axum::serve(
-                listener,
-                tri_resource_runtime::router(resource)
-                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-            .with_graceful_shutdown(async {
-                let _ = stopped.await;
-            })
-            .await
-        }));
-    }
-    // Backdated immutable events exist only in this isolated E2E database.
     let old = DateTime::from_millis(DateTime::now().timestamp_millis() - 3 * 86_400_000);
     state.require_database()?.collection::<Document>("audit_events").insert_many((0..3).map(|_|doc!{"kind":"operation","category":"administration","action":"fixture.old","outcome":"success","createdAt":old})).await?;
+    for index in 0..120 {
+        let now = DateTime::now();
+        state.require_database()?.collection::<Document>("integration_profiles").insert_one(doc!{"_id":ObjectId::new(),"name":format!("UI 文件存储 {}",index+1),"code":format!("ui-storage-{:03}",index),"kind":"localStorage","configurationJson":serde_json::json!({"kind":"localStorage","subdirectory":format!("ui-storage-{:03}",index)}).to_string(),"secretBox":null,"enabled":true,"version":1i64,"createdAt":now,"updatedAt":now,"deletedAt":null}).await?;
+    }
     let listener = tokio::net::TcpListener::bind(state.config.bind).await?;
-    let address = listener.local_addr()?;
     std::fs::write(
         std::env::var("TRI_E2E_META_FILE")?,
         serde_json::to_vec(
-            &serde_json::json!({"api":format!("http://{address}/api/v1"),"resourceApi":resource_api}),
+            &serde_json::json!({"api":format!("http://{}/api/v1",listener.local_addr()?)}),
         )?,
     )?;
-    println!("Isolated E2E service ready on {}", listener.local_addr()?);
     let database = state.require_database()?.clone();
     let workers = admin_api::modules::files::jobs::start_service(state.clone());
-    let data_workers = admin_api::modules::data_tools::retention::start_service(state.clone());
-    let export_workers =
-        admin_api::modules::data_tools::export_jobs::worker::start_service(state.clone());
-    let mcp_workers = admin_api::modules::mcp::service::start_service(state.clone());
     let shutdown_state = state.clone();
     let worker_state = state.clone();
     let result=axum::serve(listener,build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(async move{
-        tokio::select!{_=tokio::signal::ctrl_c()=>{},_=tokio::task::spawn_blocking(||{let mut command=String::new();let _=std::io::stdin().read_line(&mut command);})=>{}}
-        admin_api::modules::files::jobs::stop_service(&shutdown_state);
-        admin_api::modules::data_tools::retention::stop_service(&shutdown_state);
-        admin_api::modules::data_tools::export_jobs::worker::stop_service(&shutdown_state);
-        admin_api::modules::mcp::service::stop_service(&shutdown_state);
-    }).await;
+ tokio::select!{_=tokio::signal::ctrl_c()=>{},_=tokio::task::spawn_blocking(||{let mut command=String::new();let _=std::io::stdin().read_line(&mut command);})=>{}}
+ admin_api::modules::files::jobs::stop_service(&shutdown_state);
+ }).await;
     admin_api::modules::files::jobs::stop_service(&worker_state);
-    admin_api::modules::data_tools::retention::stop_service(&worker_state);
-    admin_api::modules::data_tools::export_jobs::worker::stop_service(&worker_state);
-    admin_api::modules::mcp::service::stop_service(&worker_state);
     let _ = workers.await;
-    let _ = data_workers.await;
-    let _ = export_workers.await;
-    let _ = mcp_workers.await;
-    admin_api::modules::mcp::service::shutdown(&worker_state).await;
-    if let Some(stop) = resource_stop {
-        let _ = stop.send(());
-    }
-    if let Some(task) = resource_task {
-        task.await??;
-    }
     result?;
     database.drop().await?;
     Ok(())

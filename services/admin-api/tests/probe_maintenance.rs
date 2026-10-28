@@ -1,3 +1,5 @@
+#[path = "support/storage.rs"]
+mod storage_support;
 mod support;
 use admin_api::{build_router, config::Config, modules::files::jobs, state::AppState};
 use axum::{
@@ -6,7 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use mongodb::bson::{DateTime, Document, doc, oid::ObjectId};
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::Digest;
 use std::{collections::HashMap, sync::Arc};
 async fn fixture() -> (
@@ -56,10 +58,9 @@ async fn fixture() -> (
     };
     (app, state, root, objects, server, endpoint)
 }
-async fn profile(app: &support::TestApp, token: &str, endpoint: &str) -> ObjectId {
-    let(status,row)=app.send("POST","/api/v1/settings/profiles",json!({"name":"probe-store","code":"probe-store","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"probe-test","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"fixture-private-secret"}}),Some(token)).await;
-    assert_eq!(status, StatusCode::CREATED);
-    ObjectId::parse_str(row["data"]["id"].as_str().unwrap()).unwrap()
+async fn profile(app: &support::TestApp, _token: &str, endpoint: &str) -> ObjectId {
+    let row=storage_support::seed(app,json!({"name":"probe-store","code":"probe-store","enabled":true,"configuration":{"kind":"s3","endpoint":endpoint,"bucket":"test-bucket","region":"test","prefix":"probe-test","pathStyle":true},"secret":{"kind":"s3","accessKeyId":"fixture","secretAccessKey":"fixture-private-secret"}})).await;
+    ObjectId::parse_str(row["id"].as_str().unwrap()).unwrap()
 }
 async fn journal(app: &support::TestApp, profile: ObjectId, phase: i64) -> String {
     let nonce = uuid::Uuid::new_v4().to_string();
@@ -77,23 +78,12 @@ async fn due(app: &support::TestApp, id: &str) {
         .unwrap();
 }
 #[tokio::test]
-async fn a_late_first_probe_write_is_tracked_and_blocks_profile_deletion_until_cleaned() {
+async fn a_late_first_probe_write_is_tracked_until_cleaned() {
     let (app, state, _root, objects, server, endpoint) = fixture().await;
     let auth = app.login().await;
     let token = auth["accessToken"].as_str().unwrap();
     let profile = profile(&app, token, &endpoint).await;
     let nonce = journal(&app, profile, 1).await;
-    assert_eq!(
-        app.send(
-            "DELETE",
-            &format!("/api/v1/settings/profiles/{profile}?version=1"),
-            Value::Null,
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
-    );
     jobs::maintenance_once(&state).await.unwrap();
     assert_eq!(
         app.database
@@ -121,17 +111,6 @@ async fn a_late_first_probe_write_is_tracked_and_blocks_profile_deletion_until_c
             .get_str("state")
             .unwrap(),
         "done"
-    );
-    assert_eq!(
-        app.send(
-            "DELETE",
-            &format!("/api/v1/settings/profiles/{profile}?version=1"),
-            Value::Null,
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::NO_CONTENT
     );
     server.abort();
     app.cleanup().await;
@@ -245,17 +224,6 @@ async fn a_probe_fenced_by_maintenance_cannot_issue_its_second_put() {
         .unwrap();
     app.database.collection::<Document>("file_storage_probes").update_many(doc!{"storageProfileId":profile},doc!{"$set":{"leaseUntil":DateTime::from_millis(0),"nextRunAt":DateTime::from_millis(0)}}).await.unwrap();
     jobs::maintenance_once(&state).await.unwrap();
-    assert_eq!(
-        app.send(
-            "DELETE",
-            &format!("/api/v1/settings/profiles/{profile}?version=1"),
-            Value::Null,
-            Some(token)
-        )
-        .await
-        .0,
-        StatusCode::NO_CONTENT
-    );
     release.cancel();
     assert_eq!(writer.await.unwrap().unwrap_err(), StorageError::Cancelled);
     assert_eq!(puts.load(Ordering::SeqCst), 1);

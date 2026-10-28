@@ -99,38 +99,31 @@ try {
     JSON.stringify({ endpoint, region: 'garage', bucket, accessKeyId, secretAccessKey }),
     { mode: 0o600 },
   )
-  console.log('Isolated S3 fixture ready; running real authentication acceptance test.')
+  console.log('Isolated S3 fixture ready; testing file-store publication rules.')
   const result = spawnSync(
     'cargo',
-    ['test', '-p', 'admin-api', '--test', 's3_connection', '--', '--ignored'],
+    [
+      'test',
+      '-p',
+      'admin-api',
+      '--test',
+      'file_storage',
+      'real_s3_without_atomic_create',
+      '--',
+      '--ignored',
+    ],
     {
-      env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
+      env: {
+        ...process.env,
+        CARGO_INCREMENTAL: '0',
+        CARGO_BUILD_JOBS: '2',
+        TRI_S3_FIXTURE_FILE: fixture,
+      },
       stdio: 'inherit',
       windowsHide: true,
     },
   )
   exitCode = result.status ?? 1
-  if (exitCode === 0) {
-    const unsupported = spawnSync(
-      'cargo',
-      [
-        'test',
-        '-p',
-        'admin-api',
-        '--test',
-        'file_storage',
-        'real_s3_without_atomic_create',
-        '--',
-        '--ignored',
-      ],
-      {
-        env: { ...process.env, CARGO_INCREMENTAL: '0', TRI_S3_FIXTURE_FILE: fixture },
-        stdio: 'inherit',
-        windowsHide: true,
-      },
-    )
-    exitCode = unsupported.status ?? 1
-  }
 } finally {
   if (id) {
     const inspected = docker(['inspect', id])

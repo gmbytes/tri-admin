@@ -67,7 +67,7 @@ pub async fn login(
     enforce_login_rate(
         database,
         &format!("ip:{peer}"),
-        crate::modules::settings::service::login_limit(database, &state.config).await?,
+        state.config.login_limit_per_ip,
     )
     .await?;
     enforce_login_rate(database, &format!("account:{username_key}"), 10).await?;
