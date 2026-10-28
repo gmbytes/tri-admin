@@ -68,7 +68,7 @@ impl Config {
             .parse()
             .map_err(|_| ConfigError("TRI_ADMIN_BIND 地址无效"))?;
         let origins = lookup("TRI_CORS_ORIGINS").unwrap_or_else(|| {
-            "http://localhost:1420,http://tauri.localhost,tauri://localhost".into()
+            "http://localhost:1420,http://127.0.0.1:1420,http://tauri.localhost,tauri://localhost".into()
         });
         let cors_origins = origins
             .split(',')
