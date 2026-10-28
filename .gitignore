@@ -1,16 +1,67 @@
+# 安装依赖、编译输出和工具缓存（覆盖各个工作区）
 node_modules/
 target/
 dist/
+.vite/
+.vite-temp/
+.cache/
+*.tsbuildinfo
+
+# 本机环境配置；仅允许不含真实凭据的示例和模板进入版本
 .env
-.env.*.local
-*.log
+.env.*
+.envrc
+!.env.example
+!.env.*.example
+!.env.template
+!.env.*.template
+
+# 私钥、签名凭据和本机机密目录
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+/secrets/
+/.secrets/
+
+# 运行数据、上传文件、数据库备份和本机产物
+/data/
+/backups/
+/dumps/
+/artifacts/
+/tmp/
+/temp/
 *.db
 *.sqlite*
+*.log
+*.log.*
+
+# 测试报告、覆盖率、浏览器认证状态与自动化工作记录
 coverage/
+.nyc_output/
 test-results/
 playwright-report/
-apps/desktop/src-tauri/gen/
+blob-report/
+playwright/.auth/
 .superpowers/
-artifacts/
-/data/
-!deploy/.env.example
+
+# Tauri 自动生成的 schema；配置、capabilities、图标及 Cargo.lock 仍需入库
+/apps/desktop/src-tauri/gen/
+
+# 本机编辑器设置、操作系统文件和临时备份
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rs.bk
+*.swp
+*.swo
+*~
