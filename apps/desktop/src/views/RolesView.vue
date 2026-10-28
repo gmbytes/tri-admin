@@ -5,7 +5,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { DataScope, Permission, RoleRecord } from '../core/types'
 import { filterPermissions, filterPermissionCodes } from '../core/navigation'
-import { errorText, notifyError, scopeText } from '../ui'
+import { errorText, notifyError, scopeText, permissionGroupLabels } from '../ui'
 const session = useSession(),
   rows = ref<RoleRecord[]>([]),
   permissions = ref<Permission[]>([]),
@@ -144,7 +144,6 @@ onMounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">ACCESS CONTROL</div>
       <h1>角色管理</h1>
       <p>按职责组织操作权限与数据范围。</p>
     </div>
@@ -247,7 +246,7 @@ onMounted(() => {
       </div>
       <div class="permission-editor">
         <section v-for="[name, items] in groups" :key="name">
-          <h4>{{ name }}</h4>
+          <h4>{{ permissionGroupLabels[name] ?? name }}</h4>
           <el-checkbox-group v-model="form.permissions"
             ><el-checkbox v-for="item in items" :key="item.code" :value="item.code">{{
               item.label

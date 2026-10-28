@@ -232,7 +232,6 @@ onUnmounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">SECURITY & OPERATIONS</div>
       <h1>日志中心</h1>
       <p>追踪登录与管理操作，通过安全摘要和关联号定位失败请求。</p>
     </div>
@@ -500,7 +499,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0 14px;
-  padding: 12px 20px 0;
+  padding: 20px 0 0;
 }
 .date-input {
   width: 100%;
@@ -515,6 +514,10 @@ onUnmounted(() => {
 .date-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.date-input:focus-visible {
+  outline: 2px solid var(--tri-accent);
+  outline-offset: 2px;
 }
 .sort-select {
   width: 145px;
@@ -539,6 +542,14 @@ code {
 @media (max-width: 1100px) {
   .log-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .log-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pending-cleanup {
+    flex-wrap: wrap;
   }
 }
 </style>

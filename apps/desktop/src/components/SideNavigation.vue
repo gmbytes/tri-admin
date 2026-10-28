@@ -9,8 +9,7 @@ import {
   Menu,
   Lock,
   FolderOpened,
-  Sort,
-  Connection,
+  DocumentChecked,
 } from '@element-plus/icons-vue'
 import type { MenuRecord } from '../core/types'
 defineOptions({ name: 'SideNavigation' })
@@ -30,8 +29,7 @@ const icons: Record<string, unknown> = {
   menus: Menu,
   permissions: Lock,
   files: FolderOpened,
-  exports: Sort,
-  mcp: Connection,
+  audit: DocumentChecked,
 }
 </script>
 <template>
@@ -41,7 +39,12 @@ const icons: Record<string, unknown> = {
       :class="{ active: route.path === node.path }"
       :style="{ paddingLeft: `${14 + Math.min(props.depth, 5) * 12}px` }"
     >
-      <button :title="node.label" @click="node.viewKey ? router.push(node.path) : toggle(node.id)">
+      <button
+        :title="node.label"
+        :aria-label="node.label"
+        :aria-current="route.path === node.path ? 'page' : undefined"
+        @click="node.viewKey ? router.push(node.path) : toggle(node.id)"
+      >
         <el-icon><component :is="icons[node.viewKey ?? ''] ?? Grid" /></el-icon
         ><span>{{ node.label }}</span></button
       ><button

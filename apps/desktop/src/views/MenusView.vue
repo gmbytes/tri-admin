@@ -138,7 +138,6 @@ onMounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">NAVIGATION</div>
       <h1>菜单管理</h1>
       <p>组织页面入口，按权限呈现清晰导航。</p>
     </div>

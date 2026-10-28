@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { User, UserFilled, Menu, Lock, ArrowRight } from '@element-plus/icons-vue'
+import {
+  User,
+  UserFilled,
+  Menu,
+  Lock,
+  ArrowRight,
+  Grid,
+  DocumentChecked,
+  FolderOpened,
+} from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { useSession } from '../stores/session'
 import type { MenuRecord, Permission } from '../core/types'
@@ -43,6 +52,15 @@ const cards = [
     path: '/permissions',
   },
 ]
+const navigationIcons: Record<string, unknown> = {
+  dashboard: Grid,
+  users: User,
+  roles: UserFilled,
+  menus: Menu,
+  permissions: Lock,
+  audit: DocumentChecked,
+  files: FolderOpened,
+}
 async function load() {
   loading.value = true
   try {
@@ -77,7 +95,7 @@ onMounted(load)
     </div>
     <el-button @click="load" :loading="loading">刷新概览</el-button>
   </div>
-  <div class="stat-grid">
+  <div class="stat-grid" role="group" aria-label="资源概览">
     <section
       v-for="card in cards.filter((card) => session.can(card.permission))"
       :key="card.key"
@@ -100,13 +118,19 @@ onMounted(load)
           :key="node.id"
           @click="router.push(node.path)"
         >
-          <span>{{ node.label }}</span
+          <span class="quick-label">
+            <el-icon><component :is="navigationIcons[node.viewKey ?? ''] ?? Grid" /></el-icon>
+            <span>{{ node.label }}</span> </span
           ><el-icon><ArrowRight /></el-icon>
         </button>
       </div>
     </section>
-    <section class="surface">
+    <section class="surface session-panel">
       <h3>当前会话</h3>
+      <div class="session-identity">
+        <span class="avatar">{{ session.user?.displayName?.slice(0, 1) ?? 'U' }}</span>
+        <strong>{{ session.user?.displayName }}</strong>
+      </div>
       <div class="info-list">
         <span
           >账号<b>{{ session.user?.username }}</b></span

@@ -1,6 +1,15 @@
 import { ElMessage } from 'element-plus'
 import { ApiError } from './core/client'
 import type { DataScope } from './core/types'
+export const permissionGroupLabels: Record<string, string> = {
+  dashboard: '工作台',
+  users: '用户管理',
+  roles: '角色管理',
+  menus: '菜单管理',
+  permissions: '权限目录',
+  audit: '日志中心',
+  files: '文件管理',
+}
 export function scopeText(scope: DataScope | undefined) {
   return scope === 'all' ? '全部数据' : scope === 'roles' ? '自身及指定角色' : '自身数据'
 }

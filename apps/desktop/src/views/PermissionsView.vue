@@ -4,7 +4,7 @@ import { Search, Refresh } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import type { Permission, ApiCatalog } from '../core/types'
 import { filterPermissions, filterApiEndpoints } from '../core/navigation'
-import { notifyError } from '../ui'
+import { notifyError, permissionGroupLabels } from '../ui'
 const session = useSession(),
   rows = ref<Permission[]>([]),
   loading = ref(false),
@@ -82,7 +82,6 @@ onMounted(load)
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">PERMISSION CATALOG</div>
       <h1>权限目录</h1>
       <p>查看可授权的操作能力和当前服务的接口，通过角色统一分配。</p>
     </div>
@@ -111,8 +110,12 @@ onMounted(load)
           ><template #default="{ row }"
             ><code class="permission-code">{{ row.code }}</code></template
           ></el-table-column
-        ><el-table-column prop="group" label="分组" min-width="160"
-      /></el-table>
+        ><el-table-column label="分组" min-width="160">
+          <template #default="{ row }">{{
+            permissionGroupLabels[row.group] ?? row.group
+          }}</template>
+        </el-table-column></el-table
+      >
     </template>
     <template v-else>
       <div class="table-toolbar">
@@ -182,7 +185,7 @@ onMounted(load)
 </template>
 <style scoped>
 .catalog-tabs {
-  padding: 12px 24px 0;
+  padding: 0;
 }
 .method-select {
   width: 140px;
@@ -191,7 +194,13 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 24px;
+  padding: 20px 0 0;
+  flex-wrap: wrap;
+}
+.catalog-footer .el-pagination {
+  max-width: 100%;
+  flex-wrap: wrap;
+  row-gap: 10px;
 }
 .catalog-footer .subtle {
   font-size: 12px;

@@ -179,7 +179,6 @@ onMounted(() => {
 <template>
   <div class="page-heading">
     <div>
-      <div class="eyebrow muted">MEMBERS</div>
       <h1>用户管理</h1>
       <p>维护工作空间成员、角色和访问状态。</p>
     </div>

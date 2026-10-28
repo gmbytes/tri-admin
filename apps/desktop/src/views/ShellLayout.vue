@@ -98,8 +98,8 @@ async function command(value: string) {
       </header>
       <main class="page-content"><RouterView /></main>
       <footer class="workspace-footer">
-        <span>{{ session.application.displayName }}</span
-        ><span>让每一次操作都有迹可循</span>
+        <span>{{ session.application.displayName }}</span>
+        <span>{{ session.application.version }}</span>
       </footer>
     </div>
     <ServerDialog v-model="serverOpen" />

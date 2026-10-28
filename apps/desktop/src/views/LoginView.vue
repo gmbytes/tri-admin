@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Connection, Lock, User, ArrowRight } from '@element-plus/icons-vue'
+import { Connection, Lock, User } from '@element-plus/icons-vue'
 import { useSession } from '../stores/session'
 import { errorText } from '../ui'
 import ServerDialog from '../components/ServerDialog.vue'
@@ -43,16 +43,14 @@ async function submit() {
         >
       </div>
       <div class="story-copy">
-        <div class="eyebrow">WORKSPACE, CONNECTED.</div>
-        <h1>让管理，<br />回归清晰。</h1>
-        <p>连接服务、协作管理、掌握运行状态。<br />在一个专注的工作空间里，处理每一天的工作。</p>
-        <div class="story-line"><span></span> 一个入口 · 有序协作</div>
+        <h1>清晰授权，<br />有序管理。</h1>
+        <p>用户与角色、菜单与文件。<br />在同一工作空间，完成日常管理。</p>
       </div>
-      <div class="story-foot">Tri Admin <span>DESKTOP WORKSPACE</span></div>
+      <div class="story-foot">Tri Admin <span>管理工作空间</span></div>
     </section>
     <section class="login-panel">
       <div class="login-card">
-        <div class="eyebrow muted">欢迎回来</div>
+        <div class="login-kicker">欢迎回来</div>
         <h2>登录工作空间</h2>
         <p class="subtle">使用你的管理账号继续</p>
         <el-form label-position="top" @submit.prevent="submit"
@@ -83,14 +81,16 @@ async function submit() {
             type="error"
             :closable="false"
             show-icon
-            class="login-error" /><el-button
+            class="login-error"
+          /><el-button
             class="login-submit"
             size="large"
             type="primary"
             native-type="submit"
             :loading="session.busy"
             :disabled="!session.settings.apiBaseUrl"
-            >登录<el-icon><ArrowRight /></el-icon></el-button></el-form
+            >登录</el-button
+          ></el-form
         ><button class="server-link" @click="serverOpen = true">
           <el-icon><Connection /></el-icon><span>{{ serverLabel }}</span
           ><i :class="session.connection" />

@@ -476,3 +476,65 @@ test('seven approved modules remain and retired role permissions and routes stay
     await expect(page).toHaveURL(/#\/dashboard$/)
   }
 })
+
+test('workspace and role editor remain usable on desktop and narrow screens', async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await login(page)
+  for (const width of [1440, 900, 390]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    await expect(page.locator('nav').getByRole('button')).toHaveCount(7)
+    const layout = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      viewport: window.innerWidth,
+      compact: window.matchMedia('(max-width: 600px)').matches,
+      header: [
+        '.sidebar',
+        '.workspace',
+        '.topbar',
+        '.breadcrumb',
+        '.top-actions',
+        '.user-button',
+        '.user-button .avatar',
+      ].map((selector) => {
+        const element = document.querySelector(selector)!
+        const style = getComputedStyle(element)
+        return {
+          selector,
+          width: element.getBoundingClientRect().width,
+          flexShrink: style.flexShrink,
+          display: style.display,
+          padding: style.padding,
+        }
+      }),
+      overflow: [...document.querySelectorAll('body *')]
+        .map((element) => ({
+          tag: element.tagName,
+          className: element.getAttribute('class'),
+          right: element.getBoundingClientRect().right,
+          width: element.getBoundingClientRect().width,
+        }))
+        .filter((element) => element.width > 0 && element.right > window.innerWidth + 1),
+    }))
+    expect(layout.width, JSON.stringify(layout)).toBeLessThanOrEqual(width)
+    const content = await page.locator('.page-content').boundingBox()
+    expect(content).not.toBeNull()
+    expect(content!.x + content!.width).toBeLessThanOrEqual(width)
+    if (width === 390) await page.screenshot({ path: testInfo.outputPath('narrow-dashboard.png') })
+  }
+  await page.setViewportSize({ width: 390, height: 500 })
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  await navigate(page, '角色管理')
+  await page.getByRole('button', { name: '新增角色', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新增角色', exact: true })
+  const bounds = await dialog.boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(500)
+  await page.screenshot({ path: testInfo.outputPath('short-role-dialog.png') })
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+})

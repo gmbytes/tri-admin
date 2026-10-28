@@ -18,7 +18,6 @@ function openUpload() {
   <div class="file-workspace">
     <div class="page-heading">
       <div>
-        <div class="eyebrow muted">FILE WORKSPACE</div>
         <h1>文件管理</h1>
         <p>管理文件与分类，核对上传进度并继续未完成的任务。</p>
       </div>
@@ -42,11 +41,12 @@ function openUpload() {
   width: 210px;
 }
 .file-picker {
-  padding: 18px;
+  padding: 28px 20px;
   margin: 16px 0;
-  border: 1px dashed var(--el-border-color);
+  border: 1px dashed #c5d5ed;
   border-radius: 10px;
-  background: var(--el-fill-color-light);
+  background: #f7faff;
+  text-align: center;
 }
 .file-picker > .el-tag,
 .file-picker > .subtle {
@@ -97,5 +97,16 @@ function openUpload() {
 }
 .file-workspace .pagination-row > .subtle {
   white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .file-workspace .search-input,
+  .file-filter.el-select,
+  .file-workspace .sort-select {
+    width: 100%;
+    flex-basis: 100%;
+  }
+  .file-workspace .pagination-row > .subtle {
+    white-space: normal;
+  }
 }
 </style>
